@@ -1,0 +1,6 @@
+[submodule "addons/godot-ai"]
+	path = addons/godot-ai
+	url = https://github.com/hi-godot/godot-ai.git
+[submodule "submodules/godot-ai"]
+	path = submodules/godot-ai
+	url = https://github.com/hi-godot/godot-ai.git
