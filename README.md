@@ -1,20 +1,39 @@
-# 2D Stylized Pixel Art Grass Game
+# 3D Stylized Pixel Art Grass Multiplayer Game
 
-This project is a 2D stylized pixel-art grass system in Godot, featuring a player-controlled blue square moving around a 2D scene with WASD and Arrow keys, with grass blades displacing dynamically as the player walks over them.
+A multiplayer Godot 4 game featuring a stylized 3D pixel-art grass meadow with locked 2.5D orthogonal perspective, multiplayer lobby, and RPC-based player synchronization.
 
-This project was generated using the **AntiGravity** coding assistant.
+---
 
-## Credits & Attribution
+## Tutorial & Attribution
 
-The grass textures (`grassleaf.png` and `accentleaf.png`) are created by **Dylearn** and licensed under **Creative Commons Attribution 4.0 (CC BY 4.0)**.
-- Grass assets by **Dylearn** (refer to the [Dylearn-3D-Pixel-Art-Grass-Demo repository](https://github.com/DylearnDev/Dylearn-3D-Pixel-Art-Grass-Demo)).
+The grass shader techniques and visual assets in this project are based on the tutorial:
+- **YouTube Video**: [How I made grass better than 99% of games | Stylized grass 3D pixel art](https://youtu.be/OxsuWDtjuGw?si=g1qIPgq77vQv5eYT) by **Dylearn**
+- **Demo Repository**: [DylearnDev/Dylearn-3D-Pixel-Art-Grass-Demo](https://github.com/DylearnDev/Dylearn-3D-Pixel-Art-Grass-Demo)
 
-All source code (scripts, shaders, and tools) is licensed under the **MIT License**.
+### Asset & Shader Credits
+
+- **Textures & Sprites** (`grassleaf.png`, `accentleaf.png`): Created by **Dylearn**, licensed under **Creative Commons Attribution 4.0 International (CC BY 4.0)**.
+- **Shaders & Algorithms** (`Grass.gdshader`, `Floor.gdshader`, `clouds.gdshaderinc`, `ToonShader.gdshader`): Created by **Dylearn** (adapted from atzuk4451's Flexible Toon Shader), licensed under the **MIT License**.
+- **Procedural Noise Resources** (`WindNoise.tres`, `Cloud_Noise.tres`, `Albedo2Noise.tres`, `Albedo3Noise.tres`): Created by **Dylearn**, licensed under the **MIT License**.
+
+All game networking, lobby, multi-instance debug tools, and 3D player integration code are licensed under the **MIT License**.
+
+---
 
 ## Features
 
-- Stylized 2D pixel-art grass (Sprite2D instances)
-- Wind-animated grass sprites using a custom CanvasItem shader
-- Player-reactive displacement via a global shader uniform
-- Stepped height-based toon shading
-- Smooth camera tracking and movement (WASD & Arrow Keys)
+- **Massive Stylized Grass Meadow**: Over 40,000 billboarded grass blades rendered via `MultiMeshInstance3D` in a single GPU draw call.
+- **Multiplayer Character Displacement**: Grass automatically bends and parts around all connected players walking through the field.
+- **3D Pixel-Art Look in Locked 2.5D**:
+  - Orthogonal `Camera3D` locked to an isometric 2.5D viewing angle.
+  - SubViewport pixel-art downscaling (`stretch_shrink = 2`) with nearest-neighbor texture filtering.
+  - Stepped, quantized animation framerate (5 FPS) for retro animated character and grass flair.
+- **Dynamic Wind & Atmosphere**:
+  - Dual-layer noise-driven wind swaying with fake perspective UV scaling.
+  - Cloud shadows dynamically drifting across the terrain and grass.
+  - Stepped hybrid toon lighting with color heterogeneity across patches.
+- **Multiplayer Lobby & Networking**:
+  - Pre-game lobby supporting Quick Host / Quick Join via `ENetMultiplayerPeer`.
+  - RPC-based position synchronization with smooth client-side interpolation.
+  - Simple 3D box player model with customizable peer colors, nametags, and non-overlapping collision shapes.
+  - Multi-instance debug window auto-tiling in 16:9 aspect ratio.

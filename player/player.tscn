@@ -1,42 +1,40 @@
-[gd_scene load_steps=3 format=3 uid="uid://d4e4v31fyvpwo"]
+[gd_scene load_steps=5 format=3 uid="uid://d4e4v31fyvpwo"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_oul6g"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_box"]
-size = Vector2(48, 48)
+[sub_resource type="BoxMesh" id="BoxMesh_body"]
+size = Vector3(0.5, 0.6, 0.5)
 
-[node name="Player" type="CharacterBody2D"]
-motion_mode = 1
+[sub_resource type="BoxMesh" id="BoxMesh_visor"]
+size = Vector3(0.36, 0.12, 0.1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_player"]
+size = Vector3(0.5, 0.6, 0.5)
+
+[node name="Player" type="CharacterBody3D" groups=["characters"]]
+collision_layer = 1
+collision_mask = 1
 script = ExtResource("1_oul6g")
 
-[node name="Visual" type="ColorRect" parent="."]
-offset_left = -24.0
-offset_top = -48.0
-offset_right = 24.0
-color = Color(0.231373, 0.509804, 0.964706, 1)
+[node name="VisualRoot" type="Node3D" parent="."]
 
-[node name="Visor" type="ColorRect" parent="Visual"]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 8.0
-offset_right = 42.0
-offset_bottom = 16.0
-color = Color(0.1, 0.12, 0.16, 0.85)
+[node name="Visual" type="MeshInstance3D" parent="VisualRoot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+mesh = SubResource("BoxMesh_body")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -24)
-shape = SubResource("RectangleShape2D_box")
+[node name="Visor" type="MeshInstance3D" parent="VisualRoot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.42, 0.23)
+mesh = SubResource("BoxMesh_visor")
 
-[node name="NameTag" type="Label" parent="."]
-offset_left = -80.0
-offset_top = -74.0
-offset_right = 80.0
-offset_bottom = -51.0
-theme_override_font_sizes/font_size = 13
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+shape = SubResource("BoxShape3D_player")
+
+[node name="NameTag" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+billboard = 1
+no_depth_test = true
 text = "Player"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(0, -24)
-position_smoothing_enabled = true
+font_size = 28
+outline_size = 6
+pixel_size = 0.005

@@ -1,10 +1,14 @@
-extends Node2D
+extends Node3D
 
 const PLAYER_SCENE = preload("res://player/player.tscn")
 
-@onready var players_container: Node2D = $Players
+@onready var players_container: Node3D = $SubViewportContainer/SubViewport/Players
+@onready var camera: Camera3D = $SubViewportContainer/SubViewport/Camera3D
 @onready var info_label: Label = $HUD/MarginContainer/HBoxContainer/InfoLabel
 @onready var leave_button: Button = $HUD/MarginContainer/HBoxContainer/LeaveButton
+
+# Locked isometric offset from target on ground (Y=0) to Camera3D
+var camera_offset: Vector3 = Vector3(-12.02, 5.975, 8.61)
 
 func _ready() -> void:
 	NetworkManager.player_disconnected.connect(_on_player_disconnected)
@@ -13,6 +17,14 @@ func _ready() -> void:
 	
 	spawn_players()
 	_update_hud()
+
+func _process(delta: float) -> void:
+	# Smoothly track local player with Camera3D
+	var my_id = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	var local_player = players_container.get_node_or_null(str(my_id))
+	if local_player and camera:
+		var target_pos = local_player.global_position + camera_offset
+		camera.global_position = camera.global_position.lerp(target_pos, clampf(10.0 * delta, 0.0, 1.0))
 
 func spawn_players() -> void:
 	# Clear any existing players in container
@@ -24,7 +36,7 @@ func spawn_players() -> void:
 		# Direct scene run fallback (e.g. running Main.tscn standalone from editor)
 		var solo_player = PLAYER_SCENE.instantiate()
 		solo_player.name = "1"
-		solo_player.position = Vector2.ZERO
+		solo_player.position = Vector3.ZERO
 		players_container.add_child(solo_player)
 		solo_player.setup(1, {
 			"name": "SoloPlayer",
@@ -42,12 +54,12 @@ func spawn_players() -> void:
 		var player_instance = PLAYER_SCENE.instantiate()
 		player_instance.name = str(peer_id)
 		
-		# Stagger spawn positions evenly around center so players don't overlap
+		# Stagger spawn positions around center
 		if count > 1:
 			var angle = i * (TAU / count)
-			player_instance.position = Vector2(cos(angle), sin(angle)) * 80.0
+			player_instance.position = Vector3(cos(angle) * 2.0, 0, sin(angle) * 2.0)
 		else:
-			player_instance.position = Vector2.ZERO
+			player_instance.position = Vector3.ZERO
 			
 		players_container.add_child(player_instance)
 		player_instance.setup(peer_id, info)

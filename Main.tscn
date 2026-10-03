@@ -1,27 +1,89 @@
-[gd_scene load_steps=4 format=3 uid="uid://bb81uw3441b8t"]
+[gd_scene load_steps=10 format=3 uid="uid://bb81uw3441b8t"]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
-[ext_resource type="Shader" path="res://checkered_ground.gdshader" id="2_shader"]
+[ext_resource type="Script" path="res://scripts/ShaderGlobals.gd" id="2_shader_globals"]
+[ext_resource type="Script" path="res://scripts/LightDirection.gd" id="3_light_dir"]
+[ext_resource type="Material" path="res://assets/floor_material.tres" id="4_floor_mat"]
+[ext_resource type="Material" path="res://assets/grass_material.tres" id="5_grass_mat"]
+[ext_resource type="MultiMesh" path="res://assets/grass_multimesh.tres" id="6_grass_mm"]
+[ext_resource type="Script" path="res://scripts/CharacterManager.gd" id="7_char_mgr"]
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_ground"]
-shader = ExtResource("2_shader")
-shader_parameter/color1 = Color(0.239216, 0.270588, 0.321569, 1)
-shader_parameter/color2 = Color(0.180392, 0.2, 0.239216, 1)
-shader_parameter/cell_size = 64.0
+[sub_resource type="Environment" id="Environment_main"]
+ambient_light_source = 2
+ambient_light_color = Color(0.65098, 0.74902, 0.85098, 1)
+ambient_light_energy = 0.8
+background_energy_multiplier = 2.0
 
-[node name="Main" type="Node2D"]
-y_sort_enabled = true
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(25, 25)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
+size = Vector3(25, 0.2, 25)
+
+[node name="Main" type="Node3D"]
 script = ExtResource("1_main")
 
-[node name="CheckeredGround" type="ColorRect" parent="."]
-material = SubResource("ShaderMaterial_ground")
-offset_left = -2500.0
-offset_top = -2500.0
-offset_right = 2500.0
-offset_bottom = 2500.0
+[node name="ShaderGlobals" type="Node" parent="."]
+script = ExtResource("2_shader_globals")
+cloud_contrast = 3.845
+cloud_direction = Vector2(0, -1)
+cloud_diverge_angle = 20.0
+cloud_scale = 40.0
+cloud_speed = -0.01
+cloud_threshold = 0.27
+cloud_shadow_min = 0.2
+cloud_world_y = 50.0
 
-[node name="Players" type="Node2D" parent="."]
-y_sort_enabled = true
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
+texture_filter = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+stretch_shrink = 2
+
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
+handle_input_locally = false
+size = Vector2i(640, 360)
+render_target_update_mode = 4
+
+[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(0.582123, 0.304593, -0.753894, 0, 0.927184, 0.374607, 0.813101, -0.218067, 0.539735, -12.02, 5.975, 8.61)
+projection = 1
+size = 6.085
+near = 0.001
+current = true
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(0.994881, 0.0733036, -0.0695626, 0, 0.688354, 0.725375, 0.101056, -0.721661, 0.684831, 0, 3.81, 0)
+shadow_enabled = true
+script = ExtResource("3_light_dir")
+
+[node name="Floor" type="MeshInstance3D" parent="SubViewportContainer/SubViewport"]
+material_override = ExtResource("4_floor_mat")
+mesh = SubResource("PlaneMesh_floor")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="SubViewportContainer/SubViewport/Floor"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SubViewportContainer/SubViewport/Floor/StaticBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+shape = SubResource("BoxShape3D_ground")
+
+[node name="Grass" type="MultiMeshInstance3D" parent="SubViewportContainer/SubViewport/Floor"]
+material_override = ExtResource("5_grass_mat")
+cast_shadow = 0
+multimesh = ExtResource("6_grass_mm")
+
+[node name="CharacterManager" type="Node" parent="SubViewportContainer/SubViewport" node_paths=PackedStringArray("grass")]
+script = ExtResource("7_char_mgr")
+grass = NodePath("../Floor/Grass")
+
+[node name="Players" type="Node3D" parent="SubViewportContainer/SubViewport"]
 
 [node name="HUD" type="CanvasLayer" parent="."]
 

@@ -19,16 +19,13 @@ config/icon="res://icon.svg"
 
 DebugTools="*res://debug_tools.gd"
 NetworkManager="*res://network/network_manager.gd"
-_mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/godot_ai/plugin.cfg")
+window/size/window_width_override=960
+window/size/window_height_override=540
 
 [global_group]
 
@@ -64,16 +61,50 @@ move_down={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-rendering_device/driver.windows="d3d12"
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
+lights_and_shadows/positional_shadow/atlas_size=4096
 
 [shader_globals]
 
-player_position={
-"type": "vec2",
-"value": {
-"x": 0.0,
-"y": 0.0
+cloud_contrast={
+"type": "float",
+"value": 3.845
 }
+cloud_scale={
+"type": "float",
+"value": 40.0
+}
+cloud_speed={
+"type": "float",
+"value": -0.01
+}
+cloud_threshold={
+"type": "float",
+"value": 0.27
+}
+cloud_world_y={
+"type": "float",
+"value": 50.0
+}
+cloud_noise={
+"type": "sampler2D",
+"value": "res://assets/Cloud_Noise.tres"
+}
+cloud_direction={
+"type": "vec2",
+"value": Vector2(0, -1)
+}
+light_direction={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+cloud_shadow_min={
+"type": "float",
+"value": 0.2
+}
+cloud_diverge_angle={
+"type": "float",
+"value": 20.0
 }
