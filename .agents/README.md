@@ -1,0 +1,37 @@
+# Godot AI Project Agent System
+
+Welcome to the `.agents` documentation and reference hub for **Godot AI**.
+
+This project is a Godot 4 multiplayer game with dynamic multi-instance grid layout debugging, ENet multiplayer networking, and component-based 2D/2.5D gameplay.
+
+## Reference Directory
+
+| Document / Skill | Purpose |
+| :--- | :--- |
+| [`.agents/GODOT_RULES.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/GODOT_RULES.md) | Godot 4 syntax rules, static typing guidelines, signal bus & component patterns. |
+| [`.agents/TESTING_AND_SETUP.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/TESTING_AND_SETUP.md) | Headless test execution, local Godot binary path, and multi-instance grid launch scripts. |
+| [`.agents/SUBAGENT_WORKFLOWS.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/SUBAGENT_WORKFLOWS.md) | Role specifications for decomposing complex features into isolated subagent tasks. |
+| [`setup-godot-ai-mcp`](file:///c:/Users/user7/PA/Godot-AI/.agents/skills/setup-godot-ai-mcp/SKILL.md) | Automated skill to install, configure, or update the Godot AI MCP server across fresh clones. |
+
+## Quick Commands & Verification
+
+### Run Headless Syntax & Scene Check
+```powershell
+& "C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "." --quit
+```
+
+### Launch 2-Instance Local Multiplayer Test
+```powershell
+powershell -ExecutionPolicy Bypass -File .\launch_multiplayer_test.ps1
+```
+*(Or double-click `launch_multiplayer_test.bat`)*
+
+## Core Project Architecture
+- **Engine Version**: Godot 4.3+ (`config/features=PackedStringArray("4.7", "GL Compatibility")`).
+- **Autoloads**:
+  - `DebugTools` (`res://debug_tools.gd`): Automatic window placement & multi-instance port detection.
+  - `NetworkManager` (`res://network/network_manager.gd`): ENet peer management, player dictionary, and connection signals.
+- **Scenes**:
+  - `res://ui/lobby.tscn`: Start scene with quick host/join buttons.
+  - `res://Main.tscn`: Game arena with checkered ground plane and player container.
+  - `res://player/player.tscn`: Box character body with name tag, camera authority, and RPC position sync.
