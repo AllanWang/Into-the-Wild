@@ -61,8 +61,8 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scrip
        "disabled": false
      }
      ```
-5. **Headless Verification**:
-   - Executes `godot.exe --headless --path "." --quit` to confirm scripts compile with zero cyclic errors or missing references.
+5. **Headless Verification (Initial Setup / CI Only)**:
+   - Executes `godot.exe --headless --path "." --quit` solely as a one-time sanity check during initial bootstrap or in headless CI pipelines to confirm scripts compile without syntax or cyclic errors.
 
 ---
 
@@ -70,9 +70,10 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scrip
  
  1. Have the user open the project in the Godot Editor (agents must **never** launch the interactive editor directly).
  2. Verify the **Godot AI** dock tab appears in the editor interface and shows connected/listening on port `9500`.
- 3. Query or modify the project prioritizing the MCP server tools (`godot-ai`).
+ 3. Query, modify, and verify the project prioritizing the MCP server tools (`godot-ai`).
  
  ## Operational Rules for AI Agents
- - **Prioritize MCP Tools**: When editing the Godot project, always prioritize using MCP tools. If disconnected, ask the user to verify Godot is open.
+ - **Prioritize MCP Tools**: When inspecting, modifying, or testing the Godot project, always prioritize using MCP tools. Headless execution is restricted to initial setup scripts or CI pipelines.
+ - **Prompt User If Disconnected**: If the MCP server is not connected or the editor is closed, **ask the user to open the project in the Godot editor** instead of falling back to headless execution.
  - **Do Not Launch Godot**: Never run commands to launch or restart the Godot editor GUI from the agent shell.
  - **Restarts**: Hot-reloading handles most changes. If an editor restart is genuinely required, prompt the user.

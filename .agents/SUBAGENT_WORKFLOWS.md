@@ -36,13 +36,10 @@ To maintain code quality, separation of concerns, and clean context boundaries, 
 - **Rules**: Passive observer pattern only. Listens to signals from entities or autoloads; never mutates game simulation directly.
 
 ### 5. `Quality Assurance & Verification Subagent`
-- **Focus**: Headless compilation check, unit testing, launch script validation.
+- **Focus**: In-editor test runs via MCP (`test_run`), editor state verification (`editor_state`), and diagnostic log inspection (`logs_read`).
 - **Inputs**: Modified `.gd` and `.tscn` files.
 - **Outputs**: Test results, error logs, fix suggestions.
-- **Command**:
-  ```powershell
-  & "C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "." --quit
-  ```
+- **Rules**: Always verify via the `godot-ai` MCP server tools. Do not use headless CLI checks during normal development; headless execution is reserved only for initial bootstrap or offline CI. If MCP is disconnected, ask the user to open Godot.
 
 ---
 

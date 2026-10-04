@@ -13,9 +13,16 @@ This project is a Godot 4 multiplayer game with dynamic multi-instance grid layo
 | [`.agents/SUBAGENT_WORKFLOWS.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/SUBAGENT_WORKFLOWS.md) | Role specifications for decomposing complex features into isolated subagent tasks. |
 | [`setup-godot-ai-mcp`](file:///c:/Users/user7/PA/Godot-AI/.agents/skills/setup-godot-ai-mcp/SKILL.md) | Automated skill to install, configure, or update the Godot AI MCP server across fresh clones. |
 
-## Quick Commands & Verification
+## Verification & Quick Commands
 
-### Run Headless Syntax & Scene Check
+### Primary Verification: Godot AI MCP Server
+During normal development, keep the Godot Editor open and verify via the `godot-ai` MCP server:
+- Check editor state and live scene: `editor_state`
+- Run in-editor test suites: `test_run`
+- Check editor/runtime error output: `logs_read`
+- *Note: If the MCP server is not connected, ask the user to open the project in Godot rather than falling back to headless execution.*
+
+### Headless Syntax & Scene Check (Initial Setup / CI Only)
 ```powershell
 & "C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "." --quit
 ```
