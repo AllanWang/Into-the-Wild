@@ -40,12 +40,14 @@ func _ready() -> void:
 	if not is_active:
 		return
 	
-	# If launch arguments explicitly specified position/resolution, respect them and don't override
-	var all_args = OS.get_cmdline_args() + OS.get_cmdline_user_args()
-	for arg in all_args:
-		if arg.begins_with("--position") or arg.begins_with("--resolution"):
-			print("[DebugTools] Detected command line position/resolution args; skipping automatic layout")
+	# Only skip automatic tiling if explicitly requested with --no-tiling
+	for arg in OS.get_cmdline_args():
+		if arg == "--no-tiling":
+			print("[DebugTools] --no-tiling detected; skipping automatic layout")
 			return
+	
+	if "--wid" in OS.get_cmdline_args():
+		push_warning("[DebugTools] Instance is embedded in editor (--wid). To tile freely on desktop, uncheck 'Embed Game on Next Play' in Godot's Game tab.")
 	
 	# Debounce initial positioning so companion instances have time to boot and connect (~200ms).
 	# This prevents the primary window from jumping to the center and then jumping to the side.
