@@ -14,7 +14,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Resolve-Path "$PSScriptRoot\..\..\.."
+$ProjectRoot = Resolve-Path "$PSScriptRoot\..\..\..\.."
 Write-Host "Setting up Godot AI MCP in project root: $ProjectRoot" -ForegroundColor Cyan
 
 # 1. Determine release version & download URL

@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 DebugTools="*res://debug_tools.gd"
 NetworkManager="*res://network/network_manager.gd"
+_mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
 [display]
 
@@ -26,6 +27,10 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/size/window_width_override=960
 window/size/window_height_override=540
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_ai/plugin.cfg")
 
 [global_group]
 
@@ -61,13 +66,10 @@ move_down={
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-scaling_3d/mode=0
-scaling_3d/scale=0.5
 rendering_device/driver.windows="d3d12"
-lights_and_shadows/directional_shadow/size=4096
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
 lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
-lights_and_shadows/positional_shadow/atlas_size=4096
+scaling_3d/scale=0.5
 
 [shader_globals]
 

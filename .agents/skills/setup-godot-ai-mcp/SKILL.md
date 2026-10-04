@@ -67,7 +67,12 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scrip
 ---
 
 ## Verification & Usage
-
-1. Open the project in the Godot Editor.
-2. Verify the **Godot AI** dock tab appears in the editor interface and shows connected/listening on port `9500`.
-3. Start or query tools through the MCP client.
+ 
+ 1. Have the user open the project in the Godot Editor (agents must **never** launch the interactive editor directly).
+ 2. Verify the **Godot AI** dock tab appears in the editor interface and shows connected/listening on port `9500`.
+ 3. Query or modify the project prioritizing the MCP server tools (`godot-ai`).
+ 
+ ## Operational Rules for AI Agents
+ - **Prioritize MCP Tools**: When editing the Godot project, always prioritize using MCP tools. If disconnected, ask the user to verify Godot is open.
+ - **Do Not Launch Godot**: Never run commands to launch or restart the Godot editor GUI from the agent shell.
+ - **Restarts**: Hot-reloading handles most changes. If an editor restart is genuinely required, prompt the user.

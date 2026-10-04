@@ -19,6 +19,10 @@ To run a specific test script headlessly:
 & "C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --headless --path "." -s "res://test_script.gd" --quit
 ```
 
+> [!NOTE]
+> **Why Headless Works via Antigravity**:
+> Headless mode (`--headless --quit`) runs purely as a command-line parser and validator without initializing the Windows display server, DirectX/Vulkan swapchain, or Steam overlay hooks. It terminates synchronously in ~2 seconds and works reliably from Antigravity. Only **interactive GUI modes** (`--editor` or interactive game windows) fail when launched from Antigravity subshells.
+
 ## 3. Multi-Instance Testing Workflow
 The project includes automated scripts for multi-instance multiplayer testing:
 - **PowerShell**: [`launch_multiplayer_test.ps1`](file:///c:/Users/user7/PA/Godot-AI/launch_multiplayer_test.ps1)
@@ -89,4 +93,16 @@ When running multiple AI agent conversations or git worktrees concurrently, netw
 - **MCP Client Transport**: `uvx --from godot-ai==4.3.0 godot-ai attach --port 8000 --ws-port 9500`
 - **Configuration File**: Automatically recognized by Antigravity at `~/.gemini/config/mcp_config.json`.
 - When the Godot editor is running with this project open, the Godot AI editor plugin starts the internal WebSocket bridge on port 9500 and the MCP server exposes over 120+ live editor operations (node hierarchy, inspector properties, runtime scene tree, etc.).
+
+### Critical Agent Workflow & Execution Rules
+1. **Prioritize Using the MCP Server**:
+   - When inspecting or editing the Godot project (scenes, nodes, properties, script attachment, editor state), **always prioritize using the `godot-ai` MCP server tools** (`scene_manage`, `node_create`, `node_set_property`, `script_patch`, etc.).
+   - If the MCP server is not connected (`PLUGIN_DISCONNECTED` or session count 0), **ask the user to take a look first to make sure Godot is running and open to this project**.
+2. **Never Launch the Godot Editor Directly**:
+   - AI agents must **NEVER** attempt to launch or restart the Godot editor GUI (e.g. `godot.exe --editor`, `godot.exe -e`, or spawning background GUI tasks).
+   - Launching interactive Godot through Antigravity terminal runners causes stdout/stderr handle locking, Steam DRM/hook conflicts, frozen window rendering, and blocked background tasks.
+   - Headless CLI checks (`--headless --quit`) for static syntax/compile verification are fully supported and encouraged.
+3. **Editor Restarts & Hot-Reloading**:
+   - Restarts should **rarely be needed**: Godot automatically hot-reloads modified GDScript files, resources, and scenes on disk, and the MCP WebSocket bridge maintains or restores connections seamlessly.
+   - If an editor restart is genuinely required (e.g. initial plugin enablement or severe engine freeze), **prompt the user** to close and reopen the editor themselves. Do not attempt to kill or restart the editor process programmatically.
 

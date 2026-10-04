@@ -54,3 +54,15 @@ This document provides foundational rules and standards for all agents working o
   3. *UI / Integration Layer* (connecting signals and visual presentation).
   4. *Testing & Verification* (scene test or script verification).
 - Keep agent contexts concise and task-specific.
+
+## 6. Godot Editor Process & Execution Rules for AI Agents
+- **Prioritize Using the MCP Server**:
+  - When inspecting or modifying the Godot project (scenes, nodes, properties, script attachment, editor state), **always prioritize using the `godot-ai` MCP server tools** (`scene_manage`, `node_create`, `node_set_property`, `script_patch`, etc.).
+  - If the MCP server is not connected (`PLUGIN_DISCONNECTED` or session count 0), **ask the user to take a look first to make sure Godot is running and open to this project**.
+- **NEVER Launch the Godot Editor Directly**:
+  - AI agents must **NEVER** run commands to launch or restart the interactive Godot editor GUI (e.g. `godot.exe --editor`, `godot.exe -e`, or spawning background GUI tasks).
+  - Spawning the interactive Godot editor from an Antigravity/agent terminal runner causes stdout/handle locking, Steam DRM/hook conflicts, window focus stalls, and hanging background tasks.
+  - Headless execution for static compilation/syntax checks (`godot.exe --headless --path "." --quit`) is safe and encouraged.
+- **Handling Editor Restarts**:
+  - Restarts should **rarely be needed** in normal development (Godot automatically hot-reloads modified GDScript files, resources, and scenes on disk, and the `godot-ai` MCP bridge maintains live state).
+  - If an editor restart is ever genuinely required (e.g., after initial plugin installation or after engine crash/freeze), **PROMPT THE USER** to restart the Godot editor themselves instead of attempting to do so autonomously.
