@@ -34,6 +34,7 @@ All game networking, lobby, multi-instance debug tools, and 3D player integratio
   - Stepped hybrid toon lighting with color heterogeneity across patches.
 - **Multiplayer Lobby & Networking**:
   - Pre-game lobby supporting Quick Host / Quick Join via `ENetMultiplayerPeer`.
+  - Automatic 2-Player Quick Join when launching in 2-window mode (pass `--no-auto-join`, `--no-autostart`, or `--manual` to disable).
   - RPC-based position synchronization with smooth client-side interpolation.
-  - Simple 3D box player model with customizable peer colors, nametags, and non-overlapping collision shapes.
-  - Multi-instance debug window auto-tiling in 16:9 aspect ratio.
+  - 3D box player model with omnidirectional `CapsuleShape3D` collision (radius `0.25`, height `0.6`), customizable peer colors, and billboarded nametags.
+  - Multi-instance debug window auto-tiling: side-by-side on landscape screens, and top-to-bottom (top-center aligned with slight top padding) on portrait screens.

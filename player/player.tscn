@@ -19,8 +19,9 @@ size = Vector3(0.5, 0.6, 0.5)
 [sub_resource type="BoxMesh" id="BoxMesh_visor"]
 size = Vector3(0.36, 0.12, 0.1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_player"]
-size = Vector3(0.5, 0.6, 0.5)
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+radius = 0.25
+height = 0.6
 
 [node name="Player" type="CharacterBody3D" groups=["characters"]]
 collision_layer = 1
@@ -39,7 +40,7 @@ mesh = SubResource("BoxMesh_visor")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
-shape = SubResource("BoxShape3D_player")
+shape = SubResource("CapsuleShape3D_player")
 
 [node name="NameTag" type="Label3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)

@@ -10,11 +10,13 @@ const MAX_SEARCH_INSTANCES: int = 8
 const WINDOW_SPACING: int = 16
 const SCREEN_MARGIN: int = 24
 const ESTIMATED_TITLE_BAR: int = 32
+const PORTRAIT_TOP_PADDING: int = 16
 
 const MSG_INSTANCE_COUNT: int = 101
 const MSG_AUTO_JOIN: int = 102
 
 signal auto_join_requested(port: int)
+signal instance_count_updated(count: int)
 
 var base_port: int = DEFAULT_BASE_PORT
 var instance_index: int = 0
@@ -74,6 +76,7 @@ func _ready() -> void:
 			if not _stabilized:
 				_stabilized = true
 				apply_grid_layout(maxi(active_instance_count, instance_index + 1))
+				instance_count_updated.emit(maxi(active_instance_count, instance_index + 1))
 		)
 
 func _process(_delta: float) -> void:
@@ -124,6 +127,7 @@ func _process(_delta: float) -> void:
 							_stabilized = true
 							print("[DebugTools Client ", instance_index, "] Received active count: ", active_instance_count)
 							apply_grid_layout(active_instance_count)
+							instance_count_updated.emit(active_instance_count)
 
 func broadcast_auto_join(port: int) -> void:
 	if instance_index != 0:
@@ -143,6 +147,7 @@ func _on_peers_changed() -> void:
 		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 			peer.put_8(total)
 	apply_grid_layout(active_instance_count)
+	instance_count_updated.emit(active_instance_count)
 
 func _on_startup_debounce() -> void:
 	if not _stabilized:
@@ -243,10 +248,10 @@ func apply_grid_layout(total_instances: int) -> void:
 	
 	if not is_landscape and total_instances == 2:
 		# Vertical monitor 2-instance layout:
-		# Horizontally centered, bottom panel vertically centered, top panel directly above it
+		# Horizontally centered, top window top-aligned with slight padding, bottom window directly below
 		pos_x = screen_rect.position.x + (screen_rect.size.x - win_size.x) / 2
-		var bottom_y = screen_rect.position.y + (screen_rect.size.y - win_size.y) / 2
-		var top_y = bottom_y - win_size.y - (WINDOW_SPACING + ESTIMATED_TITLE_BAR)
+		var top_y = screen_rect.position.y + PORTRAIT_TOP_PADDING
+		var bottom_y = top_y + win_size.y + (WINDOW_SPACING + ESTIMATED_TITLE_BAR)
 		pos_y = top_y if instance_index == 0 else bottom_y
 	else:
 		# Center the entire layout group inside the usable screen

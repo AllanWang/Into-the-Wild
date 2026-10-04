@@ -9,5 +9,5 @@ exit /b 1
 :launch
 
 echo Launching 2-Player Auto-Join Debug Windows...
-start "" "%GODOT_EXE%" --path "%~dp0." res://debug/multiplayer_debug.tscn
-start "" "%GODOT_EXE%" --path "%~dp0." res://debug/multiplayer_debug.tscn
+start "" "%GODOT_EXE%" --path "%~dp0." res://ui/lobby.tscn
+start "" "%GODOT_EXE%" --path "%~dp0." res://ui/lobby.tscn

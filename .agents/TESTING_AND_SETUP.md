@@ -36,11 +36,17 @@ We implemented an automatic port-probing grid layout based on [Godot Proposal #1
 2. **Desktop Grid Snapping**:
    - Probes active instances and queries `DisplayServer.screen_get_usable_rect()` to avoid overlapping the Windows taskbar.
    - 1 instance: Centered `1280x720`.
-   - 2 instances: Left / Right halves.
+   - 2 instances (Landscape): Left / Right halves.
+   - 2 instances (Portrait): Vertically stacked (top window centered horizontally with 16px top padding; bottom window directly below).
    - 3-4 instances: $2 \times 2$ quadrant grid.
-3. **Auto-naming**:
+3. **Auto-naming & 2-Window Auto-Join**:
    - Instance 0 defaults to `"HostPlayer"`.
    - Instance 1 defaults to `"Player_2"`, etc.
+   - **2-Window Auto-Join**: When launching in 2-window mode, Instance 0 automatically hosts and broadcasts an auto-join signal to Instance 1, immediately launching both players into the match without manual button clicks.
+   - **CLI Override**: Pass `--no-auto-join`, `--no-autostart`, or `--manual` to disable auto-join and remain on the Lobby UI.
+4. **Player Collision Geometry**:
+   - Player characters use a `CapsuleShape3D` (`radius = 0.25`, `height = 0.6`) centered at `(0, 0.3, 0)`.
+   - The capsule provides a radially symmetric horizontal footprint that avoids edge catching and eliminates perspective diamond distortion when rotating.
 
 ## 4. Multiplayer Network Protocol & Worktree Isolation Conventions
 - **Autoload**: `NetworkManager` (`res://network/network_manager.gd`)

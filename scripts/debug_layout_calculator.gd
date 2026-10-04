@@ -80,10 +80,10 @@ func _run():
 		print("\n--- FOR ", n, " INSTANCES (Window Size: ", win_size.x, "x", win_size.y, ") ---")
 		if not is_landscape and n == 2:
 			var pos_x = screen_rect.position.x + (screen_rect.size.x - win_size.x) / 2
-			var bottom_y = screen_rect.position.y + (screen_rect.size.y - win_size.y) / 2
-			var top_y = bottom_y - win_size.y - (spacing + title_bar)
+			var top_y = screen_rect.position.y + 16
+			var bottom_y = top_y + win_size.y + (spacing + title_bar)
 			print("Instance 1 (Top) Launch Arg: --position ", pos_x, ",", top_y, " --resolution ", win_size.x, "x", win_size.y)
-			print("Instance 2 (Bottom Centered) Launch Arg: --position ", pos_x, ",", bottom_y, " --resolution ", win_size.x, "x", win_size.y)
+			print("Instance 2 (Bottom) Launch Arg: --position ", pos_x, ",", bottom_y, " --resolution ", win_size.x, "x", win_size.y)
 		else:
 			var total_w = cols * win_size.x + (cols - 1) * spacing
 			var total_h = rows * win_size.y + (rows - 1) * (spacing + title_bar)

@@ -11,6 +11,9 @@ extends Control
 @onready var start_button: Button = $CenterContainer/PanelContainer/MarginContainer/MainVBox/RoomPanel/ActionsRow/StartButton
 @onready var debug_row: HBoxContainer = $CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/DebugRow
 
+static var _has_auto_joined_once: bool = false
+var _auto_join_disabled: bool = false
+
 func _ready() -> void:
 	# Request window focus on desktop
 	DisplayServer.window_move_to_foreground()
@@ -40,10 +43,14 @@ func _ready() -> void:
 	# Connect companion instance auto-join signaling
 	if DebugTools and DebugTools.is_active:
 		DebugTools.auto_join_requested.connect(_on_auto_join_requested)
+		DebugTools.instance_count_updated.connect(_on_instance_count_updated)
 	
 	_show_setup_panel()
 	_setup_worktree_badge()
 	_check_cli_args()
+	
+	if DebugTools and DebugTools.is_active and DebugTools.instance_index == 0 and DebugTools.active_instance_count == 2:
+		_check_auto_join_2p()
 
 func _setup_worktree_badge() -> void:
 	var wt_name: String = _get_worktree_name()
@@ -115,10 +122,14 @@ func _check_cli_args() -> void:
 		var arg = args[i]
 		if arg == "--host":
 			should_host = true
+			_auto_join_disabled = true
 		elif arg == "--client":
 			should_join = true
+			_auto_join_disabled = true
 		elif arg == "--autostart":
 			should_autostart = true
+		elif arg == "--no-auto-join" or arg == "--no-autostart" or arg == "--manual":
+			_auto_join_disabled = true
 		elif arg == "--name" and i + 1 < args.size():
 			custom_name = args[i + 1]
 		elif (arg == "--port" or arg == "-p") and i + 1 < args.size():
@@ -294,6 +305,9 @@ func _on_multi_debug_pressed() -> void:
 		status_label.modulate = Color(1.0, 0.3, 0.3)
 
 func _on_auto_join_requested(port: int) -> void:
+	if _auto_join_disabled:
+		print("[Lobby] Companion requested auto-join on port %d, but auto-join is disabled via CLI flag." % port)
+		return
 	print("[Lobby] Companion requested auto-join on port: ", port)
 	port_input.text = str(port)
 	ip_input.text = "127.0.0.1"
@@ -301,3 +315,15 @@ func _on_auto_join_requested(port: int) -> void:
 	status_label.modulate = Color(0.3, 0.8, 1.0)
 	_on_join_pressed()
 
+func _on_instance_count_updated(count: int) -> void:
+	if count == 2 and DebugTools and DebugTools.instance_index == 0:
+		_check_auto_join_2p()
+
+func _check_auto_join_2p() -> void:
+	if _has_auto_joined_once or _auto_join_disabled:
+		return
+	if NetworkManager.peer != null:
+		return
+	_has_auto_joined_once = true
+	print("[Lobby] 2-window mode detected! Auto-initiating 2-Player Quick Join...")
+	get_tree().create_timer(0.2).timeout.connect(_on_multi_debug_pressed)
