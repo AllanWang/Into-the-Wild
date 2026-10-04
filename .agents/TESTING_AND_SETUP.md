@@ -76,6 +76,13 @@ When running multiple AI agent conversations or git worktrees concurrently, netw
 5. **DebugTools Window Layout Isolation (`debug_tools.gd`)**:
    - Window layout coordination similarly uses a workspace-derived base port (`5900 + (hash % 50) * 10`) so window tiling servers do not cross-talk between different conversations.
 
+6. **Automated Worktree Merge & Cleanup Rule**:
+   - When the user asks to merge a feature worktree back into `main`:
+     1. Commit all worktree changes and rebase onto latest `main`.
+     2. Fast-forward merge into `main` and execute headless verification.
+     3. Upon successful merge and zero remaining diff, **automatically remove the worktree** (`git worktree remove <path>`) and **delete the merged branch** (`git branch -d <branch>`) without asking for manual confirmation.
+     4. Note on Windows: If the conversation session process still holds an open directory handle on the empty worktree folder, Git cleanly deregisters the worktree and deletes the branch, and the empty directory is cleaned up when the session handle releases.
+
 ## 5. Godot AI MCP Server Setup (`hi-godot/godot-ai`)
 - **Plugin Location**: `addons/godot_ai/` (v4.3.0)
 - **Editor Plugin Setting**: Enabled in `project.godot` under `[editor_plugins]`.
