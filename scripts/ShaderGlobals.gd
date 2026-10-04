@@ -49,14 +49,22 @@ extends Node
 
 func _ready():
 	if Engine.is_editor_hint():
-		cloud_contrast = RenderingServer.global_shader_parameter_get("cloud_contrast")
-		cloud_direction = RenderingServer.global_shader_parameter_get("cloud_direction")
-		cloud_diverge_angle = RenderingServer.global_shader_parameter_get("cloud_diverge_angle")
-		cloud_scale = RenderingServer.global_shader_parameter_get("cloud_scale")
-		cloud_speed = RenderingServer.global_shader_parameter_get("cloud_speed")
-		cloud_threshold = RenderingServer.global_shader_parameter_get("cloud_threshold")
-		cloud_shadow_min = RenderingServer.global_shader_parameter_get("cloud_shadow_min")
-		cloud_world_y = RenderingServer.global_shader_parameter_get("cloud_world_y")
+		var val = RenderingServer.global_shader_parameter_get("cloud_contrast")
+		if val != null: cloud_contrast = val
+		val = RenderingServer.global_shader_parameter_get("cloud_direction")
+		if val != null: cloud_direction = val
+		val = RenderingServer.global_shader_parameter_get("cloud_diverge_angle")
+		if val != null: cloud_diverge_angle = val
+		val = RenderingServer.global_shader_parameter_get("cloud_scale")
+		if val != null: cloud_scale = val
+		val = RenderingServer.global_shader_parameter_get("cloud_speed")
+		if val != null: cloud_speed = val
+		val = RenderingServer.global_shader_parameter_get("cloud_threshold")
+		if val != null: cloud_threshold = val
+		val = RenderingServer.global_shader_parameter_get("cloud_shadow_min")
+		if val != null: cloud_shadow_min = val
+		val = RenderingServer.global_shader_parameter_get("cloud_world_y")
+		if val != null: cloud_world_y = val
 	else:
 		RenderingServer.global_shader_parameter_set("cloud_contrast", cloud_contrast)
 		RenderingServer.global_shader_parameter_set("cloud_direction", cloud_direction)

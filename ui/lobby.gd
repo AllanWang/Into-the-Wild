@@ -41,12 +41,16 @@ func _check_cli_args() -> void:
 	var should_host = false
 	var should_join = false
 	
+	var should_autostart = false
+	
 	for i in range(args.size()):
 		var arg = args[i]
 		if arg == "--host":
 			should_host = true
 		elif arg == "--client":
 			should_join = true
+		elif arg == "--autostart":
+			should_autostart = true
 		elif arg == "--name" and i + 1 < args.size():
 			custom_name = args[i + 1]
 			
@@ -54,7 +58,13 @@ func _check_cli_args() -> void:
 		name_input.text = custom_name
 		
 	if should_host:
-		get_tree().create_timer(0.2).timeout.connect(_on_host_pressed)
+		get_tree().create_timer(0.2).timeout.connect(func():
+			_on_host_pressed()
+			if should_autostart:
+				NetworkManager.player_connected.connect(func(_id, _info):
+					get_tree().create_timer(0.4).timeout.connect(_on_start_pressed)
+				, CONNECT_ONE_SHOT)
+		)
 	elif should_join:
 		get_tree().create_timer(0.5).timeout.connect(_on_join_pressed)
 

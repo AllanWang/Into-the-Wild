@@ -41,7 +41,8 @@ func _ready() -> void:
 		return
 	
 	# If launch arguments explicitly specified position/resolution, respect them and don't override
-	for arg in OS.get_cmdline_args():
+	var all_args = OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	for arg in all_args:
 		if arg.begins_with("--position") or arg.begins_with("--resolution"):
 			print("[DebugTools] Detected command line position/resolution args; skipping automatic layout")
 			return
@@ -177,8 +178,8 @@ func apply_grid_layout(total_instances: int) -> void:
 			rows = ceili(float(total_instances) / 2.0)
 			
 	# Window size calculation: identical dimensions for all windows
-	var max_avail_w = float(screen_rect.size.x - 2 * SCREEN_MARGIN - (cols - 1) * WINDOW_SPACING) / float(cols)
-	var max_avail_h = float(screen_rect.size.y - 2 * SCREEN_MARGIN - (rows - 1) * (WINDOW_SPACING + ESTIMATED_TITLE_BAR) - ESTIMATED_TITLE_BAR) / float(rows)
+	var max_avail_w = maxf(float(screen_rect.size.x - 2 * SCREEN_MARGIN - (cols - 1) * WINDOW_SPACING) / float(cols), 320.0)
+	var max_avail_h = maxf(float(screen_rect.size.y - 2 * SCREEN_MARGIN - (rows - 1) * (WINDOW_SPACING + ESTIMATED_TITLE_BAR) - ESTIMATED_TITLE_BAR) / float(rows), 180.0)
 	
 	var target_w = max_avail_w
 	var target_h = target_w / base_aspect

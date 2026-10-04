@@ -7,6 +7,7 @@ signal connection_succeeded
 signal connection_failed
 signal server_disconnected
 signal game_started
+signal match_ready
 
 const DEFAULT_PORT: int = 7777
 const MAX_CLIENTS: int = 8
@@ -25,6 +26,9 @@ const PLAYER_COLORS: Array[Color] = [
 var peer: ENetMultiplayerPeer = null
 var players: Dictionary = {}
 var local_player_name: String = "Player"
+var clients_ready: Dictionary = {}
+var is_match_ready: bool = false
+var is_game_running: bool = false
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -74,17 +78,54 @@ func leave_game() -> void:
 		peer = null
 	multiplayer.multiplayer_peer = null
 	players.clear()
+	clients_ready.clear()
+	is_match_ready = false
+	is_game_running = false
 	player_list_updated.emit()
 
 func start_game() -> void:
 	if not multiplayer.is_server():
 		return
+	is_game_running = true
+	clients_ready.clear()
+	is_match_ready = false
 	_load_game_scene.rpc()
 
 @rpc("call_local", "reliable")
 func _load_game_scene() -> void:
 	game_started.emit()
 	get_tree().change_scene_to_file("res://Main.tscn")
+
+func mark_client_ready() -> void:
+	if not multiplayer.has_multiplayer_peer() or players.size() <= 1:
+		is_match_ready = true
+		match_ready.emit()
+		return
+		
+	if multiplayer.is_server():
+		clients_ready[1] = true
+		_check_all_ready()
+	else:
+		var my_id = multiplayer.get_unique_id()
+		_notify_server_ready.rpc_id(1, my_id)
+
+@rpc("any_peer", "call_local", "reliable")
+func _notify_server_ready(peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	clients_ready[peer_id] = true
+	_check_all_ready()
+
+func _check_all_ready() -> void:
+	for p_id in players:
+		if not clients_ready.get(p_id, false):
+			return
+	_all_ready_start.rpc()
+
+@rpc("call_local", "reliable")
+func _all_ready_start() -> void:
+	is_match_ready = true
+	match_ready.emit()
 
 func _on_connected_to_server() -> void:
 	var my_id = multiplayer.get_unique_id()
@@ -102,7 +143,8 @@ func _on_connection_failed() -> void:
 func _on_server_disconnected() -> void:
 	leave_game()
 	server_disconnected.emit()
-	get_tree().change_scene_to_file("res://ui/lobby.tscn")
+	if get_tree() and get_tree().current_scene and get_tree().current_scene.scene_file_path != "res://ui/lobby.tscn":
+		get_tree().change_scene_to_file("res://ui/lobby.tscn")
 
 func _on_peer_connected(id: int) -> void:
 	# Handled via registration RPC
@@ -127,11 +169,19 @@ func _register_player_to_server(id: int, info: Dictionary) -> void:
 	players[id] = info
 	
 	_sync_all_players.rpc(players)
+	player_connected.emit(id, info)
+	
+	if is_game_running:
+		_load_game_scene.rpc_id(id)
 
 @rpc("call_local", "reliable")
 func _sync_all_players(updated_players: Dictionary) -> void:
+	var old_keys = players.keys()
 	players = updated_players
 	player_list_updated.emit()
+	for p_id in players:
+		if not old_keys.has(p_id):
+			player_connected.emit(p_id, players[p_id])
 
 func get_player_count() -> int:
 	return players.size()

@@ -12,6 +12,10 @@ const ACCELERATION: float = 25.0
 
 var target_position: Vector3 = Vector3.ZERO
 var target_velocity: Vector3 = Vector3.ZERO
+var _has_synced: bool = false
+var _last_synced_pos: Vector3 = Vector3.ZERO
+var _last_synced_vel: Vector3 = Vector3.ZERO
+var _sync_timer: float = 0.0
 
 # Isometric camera basis vectors projected to (X, Z) ground plane
 var cam_right: Vector3 = Vector3(0.582123, 0.0, -0.753894).normalized()
@@ -67,12 +71,18 @@ func _physics_process(delta: float) -> void:
 			var target_angle = atan2(move_dir.x, move_dir.z)
 			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, target_angle, 15.0 * delta)
 			
-		# Broadcast state to other peers
-		if multiplayer.has_multiplayer_peer() and multiplayer.get_peers().size() > 0:
-			sync_state.rpc(global_position, velocity)
+		# Broadcast state to other peers once all players have loaded the game scene
+		if NetworkManager.is_match_ready and multiplayer.has_multiplayer_peer() and multiplayer.get_peers().size() > 0:
+			_sync_timer += delta
+			var moved = not global_position.is_equal_approx(_last_synced_pos) or not velocity.is_equal_approx(_last_synced_vel)
+			if moved or _sync_timer >= 0.2:
+				_sync_timer = 0.0
+				_last_synced_pos = global_position
+				_last_synced_vel = velocity
+				sync_state.rpc(global_position, velocity)
 	else:
 		# Remote player interpolation
-		if target_position != Vector3.ZERO:
+		if _has_synced:
 			global_position = global_position.lerp(target_position, clampf(18.0 * delta, 0.0, 1.0))
 			if target_velocity.length() > 0.1:
 				var target_angle = atan2(target_velocity.x, target_velocity.z)
@@ -82,3 +92,5 @@ func _physics_process(delta: float) -> void:
 func sync_state(pos: Vector3, vel: Vector3) -> void:
 	target_position = pos
 	target_velocity = vel
+	_has_synced = true
+

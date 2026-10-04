@@ -11,12 +11,14 @@ const PLAYER_SCENE = preload("res://player/player.tscn")
 var camera_offset: Vector3 = Vector3(-12.02, 5.975, 8.61)
 
 func _ready() -> void:
+	NetworkManager.player_connected.connect(_on_player_connected)
 	NetworkManager.player_disconnected.connect(_on_player_disconnected)
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
 	leave_button.pressed.connect(_on_leave_pressed)
 	
 	spawn_players()
 	_update_hud()
+	NetworkManager.mark_client_ready()
 
 func _process(delta: float) -> void:
 	# Smoothly track local player with Camera3D
@@ -63,6 +65,11 @@ func spawn_players() -> void:
 			
 		players_container.add_child(player_instance)
 		player_instance.setup(peer_id, info)
+	
+	var my_id = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
+	var local_player = players_container.get_node_or_null(str(my_id))
+	if local_player and camera:
+		camera.global_position = local_player.global_position + camera_offset
 
 func _update_hud() -> void:
 	if not is_inside_tree() or not info_label:
@@ -73,6 +80,16 @@ func _update_hud() -> void:
 		total = 1
 	info_label.text = "Peer ID: %d | Players: %d" % [my_id, total]
 
+func _on_player_connected(peer_id: int, info: Dictionary) -> void:
+	if not players_container.has_node(str(peer_id)):
+		var player_instance = PLAYER_SCENE.instantiate()
+		player_instance.name = str(peer_id)
+		var angle = (peer_id % 8) * (TAU / 8.0)
+		player_instance.position = Vector3(cos(angle) * 2.0, 0, sin(angle) * 2.0)
+		players_container.add_child(player_instance)
+		player_instance.setup(peer_id, info)
+	_update_hud()
+
 func _on_player_disconnected(peer_id: int) -> void:
 	var player_node = players_container.get_node_or_null(str(peer_id))
 	if player_node:
@@ -80,7 +97,8 @@ func _on_player_disconnected(peer_id: int) -> void:
 	_update_hud()
 
 func _on_server_disconnected() -> void:
-	get_tree().change_scene_to_file("res://ui/lobby.tscn")
+	if get_tree() and get_tree().current_scene and get_tree().current_scene.scene_file_path != "res://ui/lobby.tscn":
+		get_tree().change_scene_to_file("res://ui/lobby.tscn")
 
 func _on_leave_pressed() -> void:
 	NetworkManager.leave_game()

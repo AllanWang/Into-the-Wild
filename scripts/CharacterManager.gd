@@ -21,7 +21,9 @@ func _ready():
 		character_positions[i] = hidden_location
 
 func _process(delta):
-	var grass_frametime = 1.0 / grass_framerate
+	if not is_inside_tree():
+		return
+	var grass_frametime = 1.0 / maxf(grass_framerate, 0.1)
 	grass_timer += delta
 	if grass_timer >= grass_frametime: # update grass
 		grass_timer -= grass_frametime
@@ -41,9 +43,8 @@ func _process(delta):
 			character_positions[i] = Vector4(position.x, position.y, position.z, size)
 		
 		# Pass info to the shader
-		if grass and grass.material_override:
-			grass.material_override.set(
-				"shader_parameter/character_positions",
-				character_positions
-			)
+		if grass and grass.material_override is ShaderMaterial:
+			grass.material_override.set_shader_parameter("character_positions", character_positions)
+		elif grass and grass.material_override:
+			grass.material_override.set("shader_parameter/character_positions", character_positions)
 		

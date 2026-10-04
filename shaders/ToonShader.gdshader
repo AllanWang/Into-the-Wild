@@ -5,7 +5,7 @@
 shader_type spatial;
 
 uniform vec4 albedo : source_color = vec4(1.0f);
-uniform sampler2D albedo_texture;
+uniform sampler2D albedo_texture : source_color, hint_default_white;
 
 uniform int cuts : hint_range(1, 8) = 3;
 uniform float wrap : hint_range(-2.0f, 2.0f) = 0.0f;

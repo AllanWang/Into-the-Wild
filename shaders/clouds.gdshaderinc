@@ -20,7 +20,8 @@ vec2 rotate_vec2(vec2 vector, float angle) {
 }
 
 float get_cloud_noise(vec3 world_pos) {
-	float t = (cloud_world_y - world_pos.y) / light_direction.y;
+	float l_dir_y = abs(light_direction.y) > 0.0001 ? light_direction.y : 0.0001;
+	float t = (cloud_world_y - world_pos.y) / l_dir_y;
 	vec3 hit_pos = world_pos + t * light_direction;
 	float inv_scale = 1.0 / cloud_scale;
 	
