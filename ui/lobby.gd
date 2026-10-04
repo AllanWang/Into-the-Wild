@@ -23,6 +23,9 @@ func _ready() -> void:
 	else:
 		name_input.text = "Player_%d" % randi_range(100, 999)
 	
+	# Initialize port with discovered or worktree default port
+	port_input.text = str(NetworkManager.get_discovered_host_port())
+	
 	# Connect NetworkManager signals
 	NetworkManager.player_list_updated.connect(_update_player_list)
 	NetworkManager.connection_succeeded.connect(_on_connection_succeeded)
@@ -30,7 +33,64 @@ func _ready() -> void:
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
 	
 	_show_setup_panel()
+	_setup_worktree_badge()
 	_check_cli_args()
+
+func _setup_worktree_badge() -> void:
+	var wt_name: String = _get_worktree_name()
+	if wt_name.is_empty():
+		return
+		
+	var container = MarginContainer.new()
+	container.name = "WorktreeBadgeContainer"
+	container.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	container.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	container.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	container.add_theme_constant_override("margin_right", 16)
+	container.add_theme_constant_override("margin_bottom", 12)
+	
+	var panel = PanelContainer.new()
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.14, 0.18, 0.85)
+	style.border_color = Color(0.35, 0.5, 0.75, 0.7)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 4
+	style.content_margin_bottom = 4
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var label = Label.new()
+	label.text = "worktree: %s" % wt_name
+	label.modulate = Color(0.75, 0.88, 1.0, 0.95)
+	label.add_theme_font_size_override("font_size", 12)
+	
+	panel.add_child(label)
+	container.add_child(panel)
+	add_child(container)
+
+func _get_worktree_name() -> String:
+	if not OS.is_debug_build():
+		return ""
+	var git_path = "res://.git"
+	var global_git = ProjectSettings.globalize_path(git_path)
+	# If .git is a directory, this is the main repository root, so show nothing.
+	if DirAccess.dir_exists_absolute(global_git):
+		return ""
+	# If .git is a file, this is an active Git worktree.
+	if FileAccess.file_exists(git_path):
+		var f = FileAccess.open(git_path, FileAccess.READ)
+		if f:
+			var content = f.get_as_text().strip_edges()
+			f.close()
+			if content.begins_with("gitdir:"):
+				var raw_path = content.trim_prefix("gitdir:").strip_edges().replace("\\", "/")
+				var parts = raw_path.split("/")
+				if parts.size() > 0 and not parts[parts.size() - 1].is_empty():
+					return parts[parts.size() - 1]
+			return ProjectSettings.globalize_path("res://").replace("\\", "/").trim_suffix("/").get_file()
+	return ""
 
 func _check_cli_args() -> void:
 	var args = OS.get_cmdline_user_args()
@@ -40,7 +100,6 @@ func _check_cli_args() -> void:
 	var custom_name = ""
 	var should_host = false
 	var should_join = false
-	
 	var should_autostart = false
 	
 	for i in range(args.size()):
@@ -53,6 +112,8 @@ func _check_cli_args() -> void:
 			should_autostart = true
 		elif arg == "--name" and i + 1 < args.size():
 			custom_name = args[i + 1]
+		elif (arg == "--port" or arg == "-p") and i + 1 < args.size():
+			port_input.text = args[i + 1]
 			
 	if not custom_name.is_empty():
 		name_input.text = custom_name
@@ -85,14 +146,15 @@ func _on_host_pressed() -> void:
 		p_name = "Host"
 	var port = port_input.text.to_int()
 	if port <= 0:
-		port = NetworkManager.DEFAULT_PORT
+		port = NetworkManager.get_workspace_default_port()
 		
-	status_label.text = "Hosting server on port %d..." % port
+	status_label.text = "Hosting server..."
 	status_label.modulate = Color(0.3, 0.9, 0.4)
 	
 	var err = NetworkManager.host_game(port, p_name)
 	if err == OK:
-		room_info_label.text = "Hosting on Port %d" % port
+		port_input.text = str(NetworkManager.active_port)
+		room_info_label.text = "Hosting on Port %d" % NetworkManager.active_port
 		_show_room_panel()
 	else:
 		status_label.text = "Failed to host: Error code %d" % err
@@ -107,7 +169,7 @@ func _on_join_pressed() -> void:
 		ip = "127.0.0.1"
 	var port = port_input.text.to_int()
 	if port <= 0:
-		port = NetworkManager.DEFAULT_PORT
+		port = NetworkManager.get_discovered_host_port()
 		
 	status_label.text = "Connecting to %s:%d..." % [ip, port]
 	status_label.modulate = Color(0.9, 0.8, 0.2)

@@ -5,12 +5,13 @@ extends Node
 ## Works on both landscape and portrait screens, guarantees identical dimensions,
 ## and eliminates startup jitter.
 
-const BASE_PORT: int = 5920
+const DEFAULT_BASE_PORT: int = 5920
 const MAX_SEARCH_INSTANCES: int = 8
 const WINDOW_SPACING: int = 16
 const SCREEN_MARGIN: int = 24
 const ESTIMATED_TITLE_BAR: int = 32
 
+var base_port: int = DEFAULT_BASE_PORT
 var instance_index: int = 0
 var instance_socket: TCPServer = null
 var active_instance_count: int = 1
@@ -29,12 +30,16 @@ func _init() -> void:
 	_detect_instance_index()
 
 func _detect_instance_index() -> void:
+	var project_dir = ProjectSettings.globalize_path("res://")
+	var offset = (abs(project_dir.hash()) % 50) * 10
+	base_port = 5900 + offset
+	
 	instance_socket = TCPServer.new()
 	for idx in range(MAX_SEARCH_INSTANCES):
-		if instance_socket.listen(BASE_PORT + idx) == OK:
+		if instance_socket.listen(base_port + idx) == OK:
 			instance_index = idx
 			break
-	print("[DebugTools] Instance initialized with index: ", instance_index, " (port ", BASE_PORT + instance_index, ")")
+	print("[DebugTools] Instance initialized with index: ", instance_index, " (port ", base_port + instance_index, ")")
 
 func _ready() -> void:
 	if not is_active:
@@ -57,7 +62,7 @@ func _ready() -> void:
 	else:
 		# Secondary instances connect to Instance 0 to announce presence and receive current count
 		_client_peer = StreamPeerTCP.new()
-		_client_peer.connect_to_host("127.0.0.1", BASE_PORT)
+		_client_peer.connect_to_host("127.0.0.1", base_port)
 		
 		# Fallback probe in case Instance 0 was launched separately
 		get_tree().create_timer(0.30).timeout.connect(func():
