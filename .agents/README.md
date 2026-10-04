@@ -11,6 +11,7 @@ This project is a Godot 4 multiplayer game with dynamic multi-instance grid layo
 | [`.agents/GODOT_RULES.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/GODOT_RULES.md) | Godot 4 syntax rules, static typing guidelines, signal bus & component patterns. |
 | [`.agents/TESTING_AND_SETUP.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/TESTING_AND_SETUP.md) | Headless test execution, local Godot binary path, and multi-instance grid launch scripts. |
 | [`.agents/SUBAGENT_WORKFLOWS.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/SUBAGENT_WORKFLOWS.md) | Role specifications for decomposing complex features into isolated subagent tasks. |
+| [`game-feature`](file:///c:/Users/user7/PA/Godot-AI/.agents/skills/game-feature/SKILL.md) | 3-stage sequential feature creation pipeline (Discovery -> Design Plan -> Implementation & MCP Validation). |
 | [`setup-godot-ai-mcp`](file:///c:/Users/user7/PA/Godot-AI/.agents/skills/setup-godot-ai-mcp/SKILL.md) | Automated skill to install, configure, or update the Godot AI MCP server across fresh clones. |
 
 ## Verification & Quick Commands

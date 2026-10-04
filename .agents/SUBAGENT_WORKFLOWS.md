@@ -5,7 +5,7 @@ To maintain code quality, separation of concerns, and clean context boundaries, 
 ## Why Subagent Decomposition?
 - **Context Preservation**: Prevents token saturation and keeps hallucination low.
 - **Entity & Domain Separation**: Game engines combine networking, physics, rendering, shaders, and UI. Blurring these together produces monolithic, fragile code.
-- **Piece-by-Piece Verification**: Every subagent produces a discrete, verifiable chunk that can be tested with headless runs or scene checks before moving on.
+- **Piece-by-Piece Verification**: Every subagent produces a discrete, verifiable chunk verified via the `godot-ai` MCP server (e.g. `editor_state`, `scene_get_hierarchy`, `test_run`, `logs_read`) before moving on.
 
 ---
 
@@ -18,7 +18,7 @@ To maintain code quality, separation of concerns, and clean context boundaries, 
 - **Rules**: Does NOT write low-level game loops or physics algorithms; defines boundaries and contracts.
 
 ### 2. `Gameplay & Entity Specialist`
-- **Focus**: `CharacterBody2D`, state machines, physics, component nodes (e.g., `HitboxComponent`, `HealthComponent`), player controls.
+- **Focus**: `CharacterBody2D` / `CharacterBody3D`, state machines, physics, component nodes (e.g., `HitboxComponent`, `HealthComponent`), player controls.
 - **Inputs**: Architecture contract, scene requirements.
 - **Outputs**: Isolated entity scripts and corresponding `.tscn` composition.
 - **Rules**: Strictly follows Godot 4 syntax, static typing, and component composition. Never hardcodes UI updates directly into entity logic.
@@ -43,9 +43,35 @@ To maintain code quality, separation of concerns, and clean context boundaries, 
 
 ---
 
+## Standard Feature Creation Pipeline
+
+For developing features cleanly without write conflicts, every feature progresses through three discrete, sequential stages:
+
+```
+[1. Discovery Agent] ──> [2. Design Agent (Plan for Review)] ──> [3. Implementation Agent & MCP Verify] ──> [Git Commit]
+```
+
+### Stage 1: Discovery (`feature_discovery`)
+- **Game Profile**: Fast-paced 2.5D action roguelike / shooter / platformer (*Shape of Dreams*, *Windblown*, *Hades*).
+- **Deliverables**: Research peer conventions, gameplay feel, juice/feedback cues, mechanical interactions, and common pitfalls.
+
+### Stage 2: Design (`feature_designer`)
+- **Deliverables**: Comprehensive technical plan for user review before implementation.
+  - Component & Resource hierarchy breakdown.
+  - Signal signatures and public API boundaries.
+  - Edge case matrix (buffering, cancels, state interruption, disconnects).
+  - Multiplayer synchronization plan (Authority, RPC vs Synchronizer, lag compensation).
+
+### Stage 3: Implementation & Validation (`feature_implementer`)
+- **Deliverables**:
+  - Sequential code and scene implementation.
+  - Validation via `godot-ai` MCP server (`editor_state`, `scene_get_hierarchy`, `test_run`, `logs_read`).
+  - Self-contained, conflict-free commit readiness.
+
+---
+
 ## Incremental Build Protocol
-When tackling a feature request:
-1. **Deconstruct**: Identify the 2–4 distinct layers (e.g. Data/Resource -> Component -> UI -> Network).
-2. **Execute Sequentially**: Spawn or delegate to a subagent for layer 1. Validate.
-3. **Integrate**: Delegate the next layer with the completed interface contract.
-4. **Verify**: Run headless check or multi-window launch test.
+When tackling multiple features:
+1. **Queue Sequentially**: Process one feature through Stages 1 -> 2 -> 3 completely before starting the next to avoid conflicting scene tree or resource modifications.
+2. **Review Milestone**: Pause after Stage 2 to align on edge cases and multiplayer strategy with the team.
+3. **Commit Cleanly**: Each implemented and MCP-verified feature forms a clean, atomic git commit.
