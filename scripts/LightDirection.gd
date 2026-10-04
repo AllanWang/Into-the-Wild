@@ -28,6 +28,6 @@ func _update_light_direction(force: bool) -> void:
 func _ensure_global_param(default_val: Vector3) -> void:
 	if _registered:
 		return
+	_registered = true
 	if RenderingServer.global_shader_parameter_get_type("light_direction") == RenderingServer.GLOBAL_VAR_TYPE_MAX:
 		RenderingServer.global_shader_parameter_add("light_direction", RenderingServer.GLOBAL_VAR_TYPE_VEC3, default_val)
-	_registered = true

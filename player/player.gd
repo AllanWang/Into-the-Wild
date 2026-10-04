@@ -17,10 +17,6 @@ var _last_synced_pos: Vector3 = Vector3.ZERO
 var _last_synced_vel: Vector3 = Vector3.ZERO
 var _sync_timer: float = 0.0
 
-# Isometric camera basis vectors projected to (X, Z) ground plane
-var cam_right: Vector3 = Vector3(0.582123, 0.0, -0.753894).normalized()
-var cam_up: Vector3 = Vector3(0.7917, 0.0, 0.6108).normalized()
-
 func _ready() -> void:
 	target_position = global_position
 	# Setup visual material
@@ -52,10 +48,22 @@ func setup(peer_id: int, info: Dictionary) -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_multiplayer_authority():
-		var input_x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
-		var input_y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
+		var input_dir = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 		
-		var move_dir = (cam_right * input_x - cam_up * input_y)
+		# Derive ground movement vectors dynamically from the active camera
+		var cam = get_viewport().get_camera_3d()
+		var move_dir := Vector3.ZERO
+		if cam:
+			var cam_right = cam.global_basis.x
+			var cam_forward = -cam.global_basis.z
+			var ground_right = Vector3(cam_right.x, 0.0, cam_right.z).normalized()
+			var ground_forward = Vector3(cam_forward.x, 0.0, cam_forward.z).normalized()
+			# input_dir.x: +1 is Right (D), -1 is Left (A)
+			# input_dir.y: -1 is Up (W), +1 is Down (S)
+			move_dir = ground_right * input_dir.x - ground_forward * input_dir.y
+		else:
+			move_dir = Vector3(input_dir.x, 0.0, input_dir.y)
+			
 		if move_dir.length() > 1.0:
 			move_dir = move_dir.normalized()
 			

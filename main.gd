@@ -2,13 +2,13 @@ extends Node3D
 
 const PLAYER_SCENE = preload("res://player/player.tscn")
 
-@onready var players_container: Node3D = $SubViewportContainer/SubViewport/Players
-@onready var camera: Camera3D = $SubViewportContainer/SubViewport/Camera3D
+@onready var players_container: Node3D = $Players
+@onready var camera: Camera3D = $Camera3D
 @onready var info_label: Label = $HUD/MarginContainer/HBoxContainer/InfoLabel
 @onready var leave_button: Button = $HUD/MarginContainer/HBoxContainer/LeaveButton
 
 # Locked isometric offset from target on ground (Y=0) to Camera3D
-var camera_offset: Vector3 = Vector3(-12.02, 5.975, 8.61)
+var camera_offset: Vector3 = Vector3(-10.0, 10.0, 10.0)
 
 func _ready() -> void:
 	NetworkManager.player_connected.connect(_on_player_connected)

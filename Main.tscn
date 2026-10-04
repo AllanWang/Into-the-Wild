@@ -37,53 +37,38 @@ cloud_world_y = 50.0
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
 
-[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
-texture_filter = 0
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-stretch = true
-stretch_shrink = 2
-
-[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
-handle_input_locally = false
-size = Vector2i(640, 360)
-render_target_update_mode = 4
-
-[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
-transform = Transform3D(0.582123, 0.304593, -0.753894, 0, 0.927184, 0.374607, 0.813101, -0.218067, 0.539735, -12.02, 5.975, 8.61)
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.707107, 0.408248, -0.57735, 0, 0.816497, 0.57735, 0.707107, -0.408248, 0.57735, -10, 10, 10)
 projection = 1
 size = 6.085
 near = 0.001
 current = true
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport"]
-transform = Transform3D(0.994881, 0.0733036, -0.0695626, 0, 0.688354, 0.725375, 0.101056, -0.721661, 0.684831, 0, 3.81, 0)
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, 0.383022, -0.321394, 0, 0.642788, 0.766044, 0.5, -0.663414, 0.55667, 0, 5, 0)
 shadow_enabled = true
 script = ExtResource("3_light_dir")
 
-[node name="Floor" type="MeshInstance3D" parent="SubViewportContainer/SubViewport"]
+[node name="Floor" type="MeshInstance3D" parent="."]
 material_override = ExtResource("4_floor_mat")
 mesh = SubResource("PlaneMesh_floor")
 
-[node name="StaticBody3D" type="StaticBody3D" parent="SubViewportContainer/SubViewport/Floor"]
+[node name="StaticBody3D" type="StaticBody3D" parent="Floor"]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="SubViewportContainer/SubViewport/Floor/StaticBody3D"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor/StaticBody3D"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
 shape = SubResource("BoxShape3D_ground")
 
-[node name="Grass" type="MultiMeshInstance3D" parent="SubViewportContainer/SubViewport/Floor"]
+[node name="Grass" type="MultiMeshInstance3D" parent="Floor"]
 material_override = ExtResource("5_grass_mat")
 cast_shadow = 0
 multimesh = ExtResource("6_grass_mm")
 
-[node name="CharacterManager" type="Node" parent="SubViewportContainer/SubViewport" node_paths=PackedStringArray("grass")]
+[node name="CharacterManager" type="Node" parent="." node_paths=PackedStringArray("grass")]
 script = ExtResource("7_char_mgr")
 grass = NodePath("../Floor/Grass")
 
-[node name="Players" type="Node3D" parent="SubViewportContainer/SubViewport"]
+[node name="Players" type="Node3D" parent="."]
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
