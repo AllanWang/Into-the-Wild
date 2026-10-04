@@ -117,6 +117,12 @@ func host_game(port: int = 0, player_name: String = "Host") -> Error:
 	player_list_updated.emit()
 	return OK
 
+func start_single_player(player_name: String = "SoloPlayer") -> Error:
+	var err = host_game(0, player_name)
+	if err == OK:
+		start_game()
+	return err
+
 func join_game(address: String = "127.0.0.1", port: int = 0, player_name: String = "Client") -> Error:
 	leave_game()
 	local_player_name = player_name

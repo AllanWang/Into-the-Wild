@@ -25,10 +25,14 @@ func _run():
 		var cols = 1
 		var rows = 1
 		if n == 2:
-			var avail_w_for_2 = (float(screen_rect.size.x) - 2.0 * margin - spacing) / 2.0
-			if avail_w_for_2 >= 480.0:
-				cols = 2
-				rows = 1
+			if is_landscape:
+				var avail_w_for_2 = (float(screen_rect.size.x) - 2.0 * margin - spacing) / 2.0
+				if avail_w_for_2 >= 480.0:
+					cols = 2
+					rows = 1
+				else:
+					cols = 1
+					rows = 2
 			else:
 				cols = 1
 				rows = 2
@@ -60,24 +64,38 @@ func _run():
 			h = max_h
 			w = h * base_aspect
 			
-		if is_landscape and n <= 2:
+		if not is_landscape and n == 2:
+			var max_h_for_top = (float(screen_rect.size.y) / 2.0 - (spacing + title_bar) - margin) / 1.5
+			if h > max_h_for_top:
+				h = max_h_for_top
+				w = h * base_aspect
+			w *= 0.75
+			h *= 0.75
+		elif is_landscape and n <= 2:
 			w = minf(w, 1152.0)
 			h = w / base_aspect
 			
 		var win_size = Vector2i(int(w), int(h))
-		var total_w = cols * win_size.x + (cols - 1) * spacing
-		var total_h = rows * win_size.y + (rows - 1) * (spacing + title_bar)
-		
-		var start_x = screen_rect.position.x + (screen_rect.size.x - total_w) / 2
-		var start_y = screen_rect.position.y + (screen_rect.size.y - total_h) / 2
-		start_y = maxi(start_y, screen_rect.position.y)
 		
 		print("\n--- FOR ", n, " INSTANCES (Window Size: ", win_size.x, "x", win_size.y, ") ---")
-		for i in range(n):
-			var col = i % cols
-			var row = i / cols
-			var x = start_x + col * (win_size.x + spacing)
-			var y = start_y + row * (win_size.y + spacing + title_bar)
-			print("Instance ", i + 1, " Launch Arg: --position ", x, ",", y, " --resolution ", win_size.x, "x", win_size.y)
+		if not is_landscape and n == 2:
+			var pos_x = screen_rect.position.x + (screen_rect.size.x - win_size.x) / 2
+			var bottom_y = screen_rect.position.y + (screen_rect.size.y - win_size.y) / 2
+			var top_y = bottom_y - win_size.y - (spacing + title_bar)
+			print("Instance 1 (Top) Launch Arg: --position ", pos_x, ",", top_y, " --resolution ", win_size.x, "x", win_size.y)
+			print("Instance 2 (Bottom Centered) Launch Arg: --position ", pos_x, ",", bottom_y, " --resolution ", win_size.x, "x", win_size.y)
+		else:
+			var total_w = cols * win_size.x + (cols - 1) * spacing
+			var total_h = rows * win_size.y + (rows - 1) * (spacing + title_bar)
+			
+			var start_x = screen_rect.position.x + (screen_rect.size.x - total_w) / 2
+			var start_y = screen_rect.position.y + (screen_rect.size.y - total_h) / 2
+			start_y = maxi(start_y, screen_rect.position.y)
+			for i in range(n):
+				var col = i % cols
+				var row = i / cols
+				var x = start_x + col * (win_size.x + spacing)
+				var y = start_y + row * (win_size.y + spacing + title_bar)
+				print("Instance ", i + 1, " Launch Arg: --position ", x, ",", y, " --resolution ", win_size.x, "x", win_size.y)
 			
 	print("==================================================================")

@@ -11,6 +11,11 @@ const WINDOW_SPACING: int = 16
 const SCREEN_MARGIN: int = 24
 const ESTIMATED_TITLE_BAR: int = 32
 
+const MSG_INSTANCE_COUNT: int = 101
+const MSG_AUTO_JOIN: int = 102
+
+signal auto_join_requested(port: int)
+
 var base_port: int = DEFAULT_BASE_PORT
 var instance_index: int = 0
 var instance_socket: TCPServer = null
@@ -106,18 +111,34 @@ func _process(_delta: float) -> void:
 			_client_peer.poll()
 			if _client_peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 				while _client_peer.get_available_bytes() > 0:
-					var count = _client_peer.get_8()
-					if count > 0 and count != active_instance_count:
-						active_instance_count = count
-						_stabilized = true
-						print("[DebugTools Client ", instance_index, "] Received active count: ", active_instance_count)
-						apply_grid_layout(active_instance_count)
+					var msg = _client_peer.get_8()
+					if msg == MSG_AUTO_JOIN:
+						if _client_peer.get_available_bytes() >= 2:
+							var port = _client_peer.get_16()
+							print("[DebugTools Client ", instance_index, "] Received auto-join request for port: ", port)
+							auto_join_requested.emit(port)
+					elif msg in range(1, MAX_SEARCH_INSTANCES + 1):
+						# Direct atomic instance count
+						if msg != active_instance_count:
+							active_instance_count = msg
+							_stabilized = true
+							print("[DebugTools Client ", instance_index, "] Received active count: ", active_instance_count)
+							apply_grid_layout(active_instance_count)
+
+func broadcast_auto_join(port: int) -> void:
+	if instance_index != 0:
+		return
+	print("[DebugTools Host] Broadcasting auto-join request for port: ", port)
+	for peer in _connected_peers:
+		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+			peer.put_8(MSG_AUTO_JOIN)
+			peer.put_16(port)
 
 func _on_peers_changed() -> void:
 	var total = _connected_peers.size() + 1
 	active_instance_count = total
 	_stabilized = true
-	# Broadcast updated count to all companion instances
+	# Broadcast updated count to all companion instances atomically
 	for peer in _connected_peers:
 		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
 			peer.put_8(total)
@@ -157,12 +178,16 @@ func apply_grid_layout(total_instances: int) -> void:
 		# so it doesn't jump or twitch on launch.
 		return
 	elif total_instances == 2:
-		# Check if 2 instances fit side-by-side horizontally with comfortable min width
-		var avail_w_for_2 = (float(screen_rect.size.x) - 2.0 * SCREEN_MARGIN - WINDOW_SPACING) / 2.0
-		if avail_w_for_2 >= 480.0:
-			cols = 2
-			rows = 1
+		if is_landscape:
+			var avail_w_for_2 = (float(screen_rect.size.x) - 2.0 * SCREEN_MARGIN - WINDOW_SPACING) / 2.0
+			if avail_w_for_2 >= 480.0:
+				cols = 2
+				rows = 1
+			else:
+				cols = 1
+				rows = 2
 		else:
+			# On vertical / portrait monitor: stack vertically so instances are much bigger
 			cols = 1
 			rows = 2
 	elif total_instances == 3:
@@ -194,8 +219,17 @@ func apply_grid_layout(total_instances: int) -> void:
 		target_h = max_avail_h
 		target_w = target_h * base_aspect
 		
-	# Cap maximum size so windows don't needlessly fill the entire screen
-	if total_instances <= 2 and is_landscape:
+	if not is_landscape and total_instances == 2:
+		# Ensure top panel does not exceed top screen margin when bottom panel is centered
+		var max_h_for_top = (float(screen_rect.size.y) / 2.0 - (WINDOW_SPACING + ESTIMATED_TITLE_BAR) - SCREEN_MARGIN) / 1.5
+		if target_h > max_h_for_top:
+			target_h = max_h_for_top
+			target_w = target_h * base_aspect
+		# Scale to 75% size for comfortable vertical viewing
+		target_w *= 0.75
+		target_h *= 0.75
+	elif total_instances <= 2 and is_landscape:
+		# Cap maximum size so windows don't needlessly fill the entire screen
 		target_w = minf(target_w, 1152.0)
 		target_h = target_w / base_aspect
 	elif total_instances == 1:
@@ -204,19 +238,30 @@ func apply_grid_layout(total_instances: int) -> void:
 		
 	var win_size = Vector2i(int(target_w), int(target_h))
 	
-	# Center the entire layout group inside the usable screen
-	var total_w = cols * win_size.x + (cols - 1) * WINDOW_SPACING
-	var total_h = rows * win_size.y + (rows - 1) * (WINDOW_SPACING + ESTIMATED_TITLE_BAR)
+	var pos_x = 0
+	var pos_y = 0
 	
-	var start_x = screen_rect.position.x + (screen_rect.size.x - total_w) / 2
-	var start_y = screen_rect.position.y + (screen_rect.size.y - total_h) / 2
-	start_y = maxi(start_y, screen_rect.position.y)
-	
-	var col_idx = instance_index % cols
-	var row_idx = instance_index / cols
-	
-	var pos_x = start_x + col_idx * (win_size.x + WINDOW_SPACING)
-	var pos_y = start_y + row_idx * (win_size.y + WINDOW_SPACING + ESTIMATED_TITLE_BAR)
+	if not is_landscape and total_instances == 2:
+		# Vertical monitor 2-instance layout:
+		# Horizontally centered, bottom panel vertically centered, top panel directly above it
+		pos_x = screen_rect.position.x + (screen_rect.size.x - win_size.x) / 2
+		var bottom_y = screen_rect.position.y + (screen_rect.size.y - win_size.y) / 2
+		var top_y = bottom_y - win_size.y - (WINDOW_SPACING + ESTIMATED_TITLE_BAR)
+		pos_y = top_y if instance_index == 0 else bottom_y
+	else:
+		# Center the entire layout group inside the usable screen
+		var total_w = cols * win_size.x + (cols - 1) * WINDOW_SPACING
+		var total_h = rows * win_size.y + (rows - 1) * (WINDOW_SPACING + ESTIMATED_TITLE_BAR)
+		
+		var start_x = screen_rect.position.x + (screen_rect.size.x - total_w) / 2
+		var start_y = screen_rect.position.y + (screen_rect.size.y - total_h) / 2
+		start_y = maxi(start_y, screen_rect.position.y)
+		
+		var col_idx = instance_index % cols
+		var row_idx = instance_index / cols
+		
+		pos_x = start_x + col_idx * (win_size.x + WINDOW_SPACING)
+		pos_y = start_y + row_idx * (win_size.y + WINDOW_SPACING + ESTIMATED_TITLE_BAR)
 	
 	_set_window_rect(win_size, Vector2i(pos_x, pos_y))
 

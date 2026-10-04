@@ -36,5 +36,6 @@ billboard = 1
 no_depth_test = true
 text = "Player"
 font_size = 28
-outline_size = 6
+outline_size = 4
 pixel_size = 0.005
+texture_filter = 3

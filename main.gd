@@ -11,6 +11,9 @@ const PLAYER_SCENE = preload("res://player/player.tscn")
 var camera_offset: Vector3 = Vector3(-10.0, 10.0, 10.0)
 
 func _ready() -> void:
+	if not NetworkManager.peer:
+		NetworkManager.host_game(0, "SoloPlayer")
+		
 	NetworkManager.player_connected.connect(_on_player_connected)
 	NetworkManager.player_disconnected.connect(_on_player_disconnected)
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)

@@ -125,6 +125,22 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "⚡ Quick Join (127.0.0.1)"
 
+[node name="DebugRow" type="HBoxContainer" parent="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SoloDebugButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/DebugRow"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "🎮 Quick Solo World"
+
+[node name="MultiDebugButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/DebugRow"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "👥 Quick 2P Auto-Join"
+
 [node name="RoomPanel" type="VBoxContainer" parent="CenterContainer/PanelContainer/MarginContainer/MainVBox"]
 visible = false
 layout_mode = 2
@@ -176,5 +192,7 @@ autowrap_mode = 2
 [connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/ButtonsRow/JoinButton" to="." method="_on_join_pressed"]
 [connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/QuickTestRow/QuickHostButton" to="." method="_on_quick_host_pressed"]
 [connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/QuickTestRow/QuickJoinButton" to="." method="_on_quick_join_pressed"]
+[connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/DebugRow/SoloDebugButton" to="." method="_on_solo_debug_pressed"]
+[connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/DebugRow/MultiDebugButton" to="." method="_on_multi_debug_pressed"]
 [connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/RoomPanel/ActionsRow/StartButton" to="." method="_on_start_pressed"]
 [connection signal="pressed" from="CenterContainer/PanelContainer/MarginContainer/MainVBox/RoomPanel/ActionsRow/LeaveButton" to="." method="_on_leave_pressed"]

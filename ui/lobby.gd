@@ -9,10 +9,15 @@ extends Control
 @onready var room_info_label: Label = $CenterContainer/PanelContainer/MarginContainer/MainVBox/RoomPanel/RoomInfoLabel
 @onready var player_list_container: VBoxContainer = $CenterContainer/PanelContainer/MarginContainer/MainVBox/RoomPanel/PlayerListScroll/PlayerList
 @onready var start_button: Button = $CenterContainer/PanelContainer/MarginContainer/MainVBox/RoomPanel/ActionsRow/StartButton
+@onready var debug_row: HBoxContainer = $CenterContainer/PanelContainer/MarginContainer/MainVBox/SetupPanel/DebugRow
 
 func _ready() -> void:
 	# Request window focus on desktop
 	DisplayServer.window_move_to_foreground()
+	
+	# Only show debug quick buttons in debug builds
+	if not OS.is_debug_build():
+		debug_row.visible = false
 	
 	# Assign clean default player name based on debug instance index
 	if DebugTools and DebugTools.is_active:
@@ -31,6 +36,10 @@ func _ready() -> void:
 	NetworkManager.connection_succeeded.connect(_on_connection_succeeded)
 	NetworkManager.connection_failed.connect(_on_connection_failed)
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
+	
+	# Connect companion instance auto-join signaling
+	if DebugTools and DebugTools.is_active:
+		DebugTools.auto_join_requested.connect(_on_auto_join_requested)
 	
 	_show_setup_panel()
 	_setup_worktree_badge()
@@ -245,3 +254,50 @@ func _on_quick_join_pressed() -> void:
 	ip_input.text = "127.0.0.1"
 	port_input.text = "7777"
 	_on_join_pressed()
+
+func _on_solo_debug_pressed() -> void:
+	var p_name = name_input.text.strip_edges()
+	if p_name.is_empty():
+		p_name = "SoloPlayer"
+	status_label.text = "Starting solo world..."
+	status_label.modulate = Color(0.3, 0.9, 0.4)
+	NetworkManager.start_single_player(p_name)
+
+func _on_multi_debug_pressed() -> void:
+	var p_name = name_input.text.strip_edges()
+	if p_name.is_empty():
+		p_name = "HostPlayer"
+	var port = port_input.text.to_int()
+	if port <= 0:
+		port = NetworkManager.get_workspace_default_port()
+		
+	status_label.text = "Hosting and signaling companion instance to join..."
+	status_label.modulate = Color(0.3, 0.9, 0.4)
+	
+	var err = NetworkManager.host_game(port, p_name)
+	if err == OK:
+		port_input.text = str(NetworkManager.active_port)
+		room_info_label.text = "Hosting on Port %d" % NetworkManager.active_port
+		_show_room_panel()
+		
+		# Signal companion window to join
+		if DebugTools and DebugTools.is_active:
+			DebugTools.broadcast_auto_join(NetworkManager.active_port)
+			
+		# Auto-start game once companion connects
+		NetworkManager.player_connected.connect(func(_id, _info):
+			status_label.text = "Companion joined! Auto-starting game..."
+			get_tree().create_timer(0.3).timeout.connect(_on_start_pressed)
+		, CONNECT_ONE_SHOT)
+	else:
+		status_label.text = "Failed to host: Error code %d" % err
+		status_label.modulate = Color(1.0, 0.3, 0.3)
+
+func _on_auto_join_requested(port: int) -> void:
+	print("[Lobby] Companion requested auto-join on port: ", port)
+	port_input.text = str(port)
+	ip_input.text = "127.0.0.1"
+	status_label.text = "Companion host detected on port %d. Auto-joining..." % port
+	status_label.modulate = Color(0.3, 0.8, 1.0)
+	_on_join_pressed()
+
