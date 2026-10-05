@@ -4,19 +4,14 @@ A multiplayer Godot 4 game featuring a stylized 3D pixel-art grass meadow with l
 
 ---
 
-## Tutorial & Attribution
+## Attributions & Credits
 
-The grass shader techniques and visual assets in this project are based on the tutorial:
-- **YouTube Video**: [How I made grass better than 99% of games | Stylized grass 3D pixel art](https://youtu.be/OxsuWDtjuGw?si=g1qIPgq77vQv5eYT) by **Dylearn**
-- **Demo Repository**: [DylearnDev/Dylearn-3D-Pixel-Art-Grass-Demo](https://github.com/DylearnDev/Dylearn-3D-Pixel-Art-Grass-Demo)
+This project builds on open-source shaders, tutorials, and assets from the Godot community:
+- **Stylized Grass & Environment**: Based on tutorial and demo by [Dylearn](https://youtu.be/OxsuWDtjuGw?si=g1qIPgq77vQv5eYT).
+- **Stylized Toon Water**: Inspired by [IronWarrior (Erik Roystan Ross)](https://github.com/IronWarrior/ToonWaterShader).
+- **Toon Shading Foundation**: Adapted from [atzuk4451's Flexible Toon Shader](https://godotshaders.com/shader/flexible-toon-shader-godot-4/).
 
-### Asset & Shader Credits
-
-- **Textures & Sprites** (`grassleaf.png`, `accentleaf.png`): Created by **Dylearn**, licensed under **Creative Commons Attribution 4.0 International (CC BY 4.0)**.
-- **Shaders & Algorithms** (`Grass.gdshader`, `Floor.gdshader`, `clouds.gdshaderinc`, `ToonShader.gdshader`): Created by **Dylearn** (adapted from atzuk4451's Flexible Toon Shader), licensed under the **MIT License**.
-- **Procedural Noise Resources** (`WindNoise.tres`, `Cloud_Noise.tres`, `Albedo2Noise.tres`, `Albedo3Noise.tres`): Created by **Dylearn**, licensed under the **MIT License**.
-
-All game networking, lobby, multi-instance debug tools, and 3D player integration code are licensed under the **MIT License**.
+See [**`Attribution.md`**](file:///c:/Users/user7/PA/Godot-AI/Attribution.md) for full licensing information, author credits, and original project links.
 
 ---
 
