@@ -1,0 +1,34 @@
+[gd_scene format=3 uid="uid://c6v2n7x4qaayq"]
+
+[ext_resource type="Script" uid="uid://eqey1qpqein2" path="res://debug/projectile_preview.gd" id="1_script"]
+[ext_resource type="Material" path="res://assets/floor_material.tres" id="3_floor"]
+
+[sub_resource type="Environment" id="Environment_prev"]
+background_mode = 1
+background_color = Color(0.12, 0.14, 0.18, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.75, 0.85, 1)
+ambient_light_energy = 0.8
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(12, 12)
+
+[node name="ProjectilePreview" type="Node3D" unique_id=1610009176]
+script = ExtResource("1_script")
+record_gif_frames = false
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1314071230]
+environment = SubResource("Environment_prev")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1455003109]
+transform = Transform3D(0.866025, 0.383022, -0.321394, 0, 0.642788, 0.766044, 0.5, -0.663414, 0.55667, 0, 5, 0)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=743939166]
+transform = Transform3D(1, 0, 0, 0, 0.965926, 0.258819, 0, -0.258819, 0.965926, 0, 0.65, 1.9)
+current = true
+fov = 36.0
+
+[node name="Floor" type="MeshInstance3D" parent="." unique_id=380624561]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+material_override = ExtResource("3_floor")
+mesh = SubResource("PlaneMesh_floor")

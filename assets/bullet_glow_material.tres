@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/BulletGlow.gdshader" id="1_glow_shader"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_glow_shader")
+shader_parameter/base_color = Color(1, 0.86, 0.35, 1)
+shader_parameter/rim_color = Color(1, 0.98, 0.75, 1)
+shader_parameter/fresnel_power = 2.5
+shader_parameter/rim_strength = 0.45

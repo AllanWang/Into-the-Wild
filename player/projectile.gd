@@ -1,16 +1,18 @@
 extends Area3D
 
-const SPEED: float = 22.0
+@export var speed: float = 14.0
 const MAX_RANGE: float = 10.0
 
 var direction: Vector3 = Vector3.FORWARD
 var traveled_distance: float = 0.0
 var shooter_id: int = 0
 
-func setup(p_shooter_id: int, p_start_pos: Vector3, p_dir: Vector3) -> void:
+func setup(p_shooter_id: int, p_start_pos: Vector3, p_dir: Vector3, p_speed: float = -1.0) -> void:
 	shooter_id = p_shooter_id
 	direction = p_dir.normalized()
 	global_position = p_start_pos
+	if p_speed > 0.0:
+		speed = p_speed
 	# Point projectile mesh along travel direction
 	if direction.length_squared() > 0.001:
 		look_at(global_position + direction, Vector3.UP)
@@ -20,7 +22,7 @@ func _ready() -> void:
 	area_entered.connect(_on_area_entered)
 
 func _physics_process(delta: float) -> void:
-	var step = SPEED * delta
+	var step = speed * delta
 	global_position += direction * step
 	traveled_distance += step
 	if traveled_distance >= MAX_RANGE:

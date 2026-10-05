@@ -1,6 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://df7w8y1qm3hpo"]
+[gd_scene format=3 uid="uid://df7w8y1qm3hpo"]
 
-[ext_resource type="Script" path="res://player/projectile.gd" id="1_proj_script"]
+[ext_resource type="Script" uid="uid://wq8wmnw4ep73" path="res://player/projectile.gd" id="1_proj_script"]
+[ext_resource type="Material" path="res://assets/bullet_glow_material.tres" id="2_q5b1o"]
+[ext_resource type="Script" path="res://scripts/trail_3d.gd" id="3_trail_script"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_proj"]
 shading_mode = 0
@@ -8,19 +10,29 @@ albedo_color = Color(1, 0.85, 0.25, 1)
 
 [sub_resource type="SphereMesh" id="SphereMesh_proj"]
 material = SubResource("StandardMaterial3D_proj")
-radius = 0.12
-height = 0.24
+radius = 0.09
+height = 0.18
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_proj"]
-radius = 0.12
+radius = 0.09
 
-[node name="Projectile" type="Area3D"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_trail"]
+
+[node name="Projectile" type="Area3D" unique_id=1904972833]
 collision_layer = 2
-collision_mask = 1
 script = ExtResource("1_proj_script")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=466021309]
+material_override = ExtResource("2_q5b1o")
 mesh = SubResource("SphereMesh_proj")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=798524407]
 shape = SubResource("SphereShape3D_proj")
+
+[node name="Trail3D" type="MeshInstance3D" parent="." unique_id=1014278072]
+mesh = SubResource("ImmediateMesh_trail")
+script = ExtResource("3_trail_script")
+trail_width = 0.08
+max_points = 24
+trail_color = Color(1, 0.98, 0.9, 0.2)
+offset_along_direction = -0.05
