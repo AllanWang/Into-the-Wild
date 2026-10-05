@@ -36,6 +36,10 @@ uniform vec4 accent_albedo2 : source_color = vec4(1.0f); // Colour for accent gr
 uniform float accent_height2 : hint_range(0.0, 1.0, 0.001) = 0.5; // Height for accent grass 2
 uniform float accent_scale2 : hint_range(0.0, 2.0, 0.001) = 1.0; // Scale (xy) for accent grass 2
 
+group_uniforms water_exclusion;
+uniform vec3 water_pool_center = vec3(0.0, 0.0, 0.0);
+uniform float water_pool_radius = 4.2;
+
 
 group_uniforms animation;
 uniform float framerate = 5.0; // Framerate for worldspace and viewspace grass rotation
@@ -264,6 +268,16 @@ void vertex() {
 		MODEL_MATRIX[3]
 	);
 
+	// Exclude grass blades from inside the organic water pool
+	if (water_pool_radius > 0.0) {
+		float pool_angle = atan(object_origin.z - water_pool_center.z, object_origin.x - water_pool_center.x);
+		float pool_distort = sin(pool_angle * 2.0) * 0.45 + cos(pool_angle * 3.0 + 0.8) * 0.3 + sin(pool_angle * 5.0) * 0.15;
+		float dynamic_bound = 2.45 + pool_distort;
+		if (distance(object_origin.xz, water_pool_center.xz) < dynamic_bound) {
+			VERTEX = vec3(0.0);
+		}
+	}
+
 	// Save model origin for lighting
 	model_origin = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	MODELVIEW_MATRIX = modified_model_view;
@@ -316,7 +330,15 @@ void fragment() {
 
 	LIGHT_VERTEX = model_origin;
 	ALPHA = albedo_tex.a;
-	ALPHA_SCISSOR_THRESHOLD = 1.0;
+	if (water_pool_radius > 0.0) {
+		float pool_angle = atan(object_origin.z - water_pool_center.z, object_origin.x - water_pool_center.x);
+		float pool_distort = sin(pool_angle * 2.0) * 0.45 + cos(pool_angle * 3.0 + 0.8) * 0.3 + sin(pool_angle * 5.0) * 0.15;
+		float dynamic_bound = 2.45 + pool_distort;
+		if (distance(object_origin.xz, water_pool_center.xz) < dynamic_bound) {
+			ALPHA = 0.0;
+		}
+	}
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
 	//ALBEDO = vec3(UV.y);
 	if (debug_noise) {
 		ALBEDO = vec3(debug_wind_color);

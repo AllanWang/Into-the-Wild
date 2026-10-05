@@ -36,6 +36,12 @@ void vertex() {
 	vertex_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
+group_uniforms water_bank;
+uniform vec3 water_pool_center = vec3(0.0, 0.0, 0.0);
+uniform float water_pool_radius = 3.5;
+uniform vec4 bank_color : source_color = vec4(0.55, 0.62, 0.35, 1.0);
+uniform float bank_width = 0.45;
+
 void fragment() {
 	// Texture noises for grass patches
 	float albedo2_noise_tex = texture(albedo2_noise, vertex_world.xz * (albedo2_scale)).r;
@@ -46,6 +52,18 @@ void fragment() {
 		ALBEDO = albedo2.rgb;
 	} if (albedo3_noise_tex > albedo3_threshold) {
 		ALBEDO = albedo3.rgb;
+	}
+
+	// Subtle, harmonious shore transition around the organic pool
+	if (water_pool_radius > 0.0) {
+		float angle = atan(vertex_world.z - water_pool_center.z, vertex_world.x - water_pool_center.x);
+		float distort = sin(angle * 2.0) * 0.45 + cos(angle * 3.0 + 0.8) * 0.3 + sin(angle * 5.0) * 0.15;
+		float dynamic_radius = 2.3 + distort;
+		float dist = distance(vertex_world.xz, water_pool_center.xz);
+		if (dist >= dynamic_radius - 0.1 && dist < dynamic_radius + bank_width) {
+			float bank_factor = smoothstep(dynamic_radius - 0.1, dynamic_radius + bank_width, dist);
+			ALBEDO = mix(bank_color.rgb, ALBEDO, bank_factor);
+		}
 	}
 }
 

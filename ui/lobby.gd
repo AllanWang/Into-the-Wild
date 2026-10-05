@@ -15,8 +15,10 @@ static var _has_auto_joined_once: bool = false
 var _auto_join_disabled: bool = false
 
 func _ready() -> void:
-	# Request window focus on desktop
-	DisplayServer.window_move_to_foreground()
+	# Request window focus on desktop if not embedded in editor
+	var is_emb: bool = ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
+	if not is_emb:
+		DisplayServer.window_move_to_foreground()
 	
 	# Only show debug quick buttons in debug builds
 	if not OS.is_debug_build():

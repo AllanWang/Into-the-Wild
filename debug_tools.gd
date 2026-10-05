@@ -32,12 +32,37 @@ var _connected_peers: Array[StreamPeerTCP] = []
 var _client_peer: StreamPeerTCP = null
 var _debounce_timer: SceneTreeTimer = null
 var _stabilized: bool = false
+var host_is_embedded: bool = false
 
 func _init() -> void:
 	if not OS.is_debug_build():
 		return
 	is_active = true
+	_detect_embedded_status()
 	_detect_instance_index()
+
+func _detect_embedded_status() -> void:
+	var args = OS.get_cmdline_args()
+	for i in range(args.size()):
+		var arg = args[i]
+		if arg == "--wid" or arg.begins_with("--wid="):
+			is_embedded = true
+		elif arg == "--position" and i + 1 < args.size():
+			var parts = args[i + 1].replace("\"", "").replace("'", "").split(",")
+			if parts.size() == 2:
+				host_window_rect.position = Vector2i(int(parts[0]), int(parts[1]))
+		elif arg == "--resolution" and i + 1 < args.size():
+			var parts = args[i + 1].replace("\"", "").replace("'", "").to_lower().split("x")
+			if parts.size() == 2:
+				host_window_rect.size = Vector2i(int(parts[0]), int(parts[1]))
+
+	# In Godot 4, check if the window is an embedded subwindow or embedded in editor
+	var win = get_window()
+	if win and win.is_embedded():
+		is_embedded = true
+
+	if is_embedded:
+		print("[DebugTools] Detected embedded in editor. Initial rect estimate: ", host_window_rect)
 
 func _detect_instance_index() -> void:
 	var project_dir = ProjectSettings.globalize_path("res://")
@@ -55,11 +80,6 @@ func _ready() -> void:
 	if not is_active:
 		return
 	
-	# Detect if this instance is embedded into the Godot editor
-	for arg in OS.get_cmdline_args():
-		if arg == "--wid":
-			is_embedded = true
-			break
 	if is_embedded:
 		print("[DebugTools] Instance is embedded in editor (--wid).")
 	
@@ -135,11 +155,9 @@ func _process(_delta: float) -> void:
 							var hy = _client_peer.get_32()
 							var hw = _client_peer.get_32()
 							var hh = _client_peer.get_32()
-							var host_is_emb = (_client_peer.get_8() == 1)
+							host_is_embedded = (_client_peer.get_8() == 1)
 							host_window_rect = Rect2i(hx, hy, hw, hh)
-							if host_is_emb:
-								is_embedded = false # Client is separate window
-							print("[DebugTools Client ", instance_index, "] Received Host Rect: ", host_window_rect, " Host Embedded: ", host_is_emb)
+							print("[DebugTools Client ", instance_index, "] Received Host Rect: ", host_window_rect, " Host Embedded: ", host_is_embedded)
 							apply_grid_layout(active_instance_count)
 					elif msg in range(1, MAX_SEARCH_INSTANCES + 1):
 						# Direct atomic instance count
@@ -168,6 +186,12 @@ func broadcast_host_rect() -> void:
 	if win:
 		pos = win.position
 		size = win.size
+	# If embedded, fallback to command line rect if DisplayServer returned (0,0)
+	if is_embedded:
+		if size.x <= 0 or size.y <= 0:
+			size = host_window_rect.size
+		if pos == Vector2i.ZERO and host_window_rect.position != Vector2i.ZERO:
+			pos = host_window_rect.position
 	host_window_rect = Rect2i(pos, size)
 	for peer in _connected_peers:
 		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
@@ -204,6 +228,14 @@ func _notification(what: int) -> void:
 			instance_socket = null
 
 func apply_grid_layout(total_instances: int) -> void:
+	# If Instance 0 is embedded in the editor, it must never be moved or floated.
+	if instance_index == 0 and is_embedded:
+		print("[DebugTools Host] Embedded in editor; leaving Host window embedded and untouched.")
+		return
+
+	if total_instances <= 1:
+		return
+
 	var current_screen = DisplayServer.window_get_current_screen()
 	var screen_rect: Rect2i = DisplayServer.screen_get_usable_rect(current_screen)
 	if screen_rect.size.x <= 0 or screen_rect.size.y <= 0:
@@ -219,11 +251,7 @@ func apply_grid_layout(total_instances: int) -> void:
 	var cols: int = 1
 	var rows: int = 1
 	
-	if total_instances <= 1:
-		# When running as a single instance, leave it at the engine's default placement
-		# so it doesn't jump or twitch on launch.
-		return
-	elif total_instances == 2:
+	if total_instances == 2:
 		if is_landscape:
 			var avail_w_for_2 = (float(screen_rect.size.x) - 2.0 * SCREEN_MARGIN - WINDOW_SPACING) / 2.0
 			if avail_w_for_2 >= 480.0:
@@ -294,16 +322,16 @@ func apply_grid_layout(total_instances: int) -> void:
 		print("[DebugTools Host] Embedded in editor; leaving Host window in place.")
 		return
 		
-	if instance_index == 1 and host_window_rect.size.x > 0 and host_window_rect.size.y > 0:
-		# If the host is embedded or has established its rect, companion window 2 matches its exact size
+	if instance_index == 1 and (host_is_embedded or (host_window_rect.size.x > 0 and host_window_rect.size.y > 0)):
+		# When the host is embedded (or has sent its rect), companion window matches its exact size
 		# and aligns directly below it (following portrait orientation).
-		var companion_size: Vector2i = host_window_rect.size
+		var companion_size: Vector2i = host_window_rect.size if host_window_rect.size.x > 0 else win_size
 		var companion_pos: Vector2i = Vector2i(
-			host_window_rect.position.x,
-			host_window_rect.position.y + host_window_rect.size.y + (WINDOW_SPACING + ESTIMATED_TITLE_BAR)
+			host_window_rect.position.x if host_window_rect.position.x > 0 else screen_rect.position.x + (screen_rect.size.x - companion_size.x) / 2,
+			host_window_rect.position.y + companion_size.y + WINDOW_SPACING
 		)
 		
-		# If positioning below would push the window off the bottom of the screen, clamp or adjust safely
+		# If positioning below would push the window off the bottom of the screen, clamp safely
 		if companion_pos.y + companion_size.y > screen_rect.position.y + screen_rect.size.y:
 			companion_pos.y = screen_rect.position.y + screen_rect.size.y - companion_size.y - SCREEN_MARGIN
 			
@@ -345,9 +373,14 @@ func _set_window_rect(target_size: Vector2i, target_pos: Vector2i, bring_to_top:
 	DisplayServer.window_set_position(target_pos)
 	
 	if bring_to_top:
-		# Ensure window is visible at top z-index above background / editor windows
+		# Bring window to foreground on launch without keeping it permanently locked ALWAYS_ON_TOP.
+		# Momentarily set ALWAYS_ON_TOP so Windows raises it cleanly above the editor and other windows,
+		# then release the flag so other clicked apps can pop over it.
 		DisplayServer.window_move_to_foreground()
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
+		get_tree().create_timer(0.25).timeout.connect(func():
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, false)
+		)
 		
-	print("[DebugTools ", instance_index, "] Positioned window: size=", target_size, " pos=", target_pos, " always_on_top=", bring_to_top)
+	print("[DebugTools ", instance_index, "] Positioned window: size=", target_size, " pos=", target_pos, " initial_top=", bring_to_top)
 
