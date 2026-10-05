@@ -40,8 +40,11 @@ Always execute features **sequentially** (one feature through all 3 stages befor
 3. **Mechanical Interactions**:
    - How does this feature interact with existing movement (velocity, dashing, deceleration) and multiplayer latency?
 
-### Stage 2: Technical Design & Architecture (`feature_designer`)
-Before touching code or scene files, create a plan and present it for review:
+### Stage 2: Technical Design & Architecture (`feature_designer` / `/plan`)
+Before touching ANY game code or scene files, create a detailed `/plan` artifact and present it for review:
+> [!IMPORTANT]
+> **Zero Code Modifications During Planning**:
+> We are strictly in the planning phase. **Do NOT modify any code, scene, or project configuration files** until the user has explicitly approved the plan (via "Proceed" or written confirmation). Only markdown plan/artifact files or skill files may be created/modified during Stage 2.
 1. **Component & Resource Architecture**:
    - Strict "Signal Down, Call Down, Never Crawl Up" structure.
    - Component nodes (e.g. `HitboxComponent`, `HealthComponent`) vs Data Resources (`Resource`).
@@ -55,7 +58,9 @@ Before touching code or scene files, create a plan and present it for review:
    - Input buffering during cooldowns or animation locks.
    - What happens if the host or a client disconnects mid-cast or mid-state?
 4. **Implementation & Review Checklist**:
-   - Provide the complete blueprint for user review and approval before proceeding.
+   - Provide the complete blueprint artifact (`RequestFeedback: true`) for user review and approval before proceeding.
+   - **Verification Strategy**: Always specify in-editor MCP server validation (`editor_state`, `logs_read`, `test_run`). Do NOT propose headless CLI execution for active editor sessions.
+   - **Awaiting User Approval**: Halt and wait for the user to review, comment on, and explicitly approve the plan before proceeding to Stage 3.
 
 ### Stage 3: Implementation & In-Editor MCP Validation (`feature_implementer`)
 Once the plan is approved:

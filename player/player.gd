@@ -10,6 +10,11 @@ const DASH_DURATION: float = 0.21
 const DASH_COOLDOWN: float = 2.0
 const DASH_BUFFER_WINDOW: float = 0.2
 
+# Attack tuning parameters
+const ATTACK_COOLDOWN: float = 0.25
+const ATTACK_BUFFER_WINDOW: float = 0.2
+const PROJECTILE_SCENE = preload("res://player/projectile.tscn")
+
 @export var grass_displacement_size: float = 0.6
 
 @onready var visual_root: Node3D = $VisualRoot
@@ -19,11 +24,14 @@ const DASH_BUFFER_WINDOW: float = 0.2
 @onready var synchronizer: MultiplayerSynchronizer = $MultiplayerSynchronizer
 
 var _move_dir: Vector3 = Vector3.ZERO
-var _facing_dir: Vector3 = Vector3.FORWARD
+var _aim_dir: Vector3 = Vector3.FORWARD
+var _target_rotation_y: float = 0.0
 var _dash_dir: Vector3 = Vector3.ZERO
 var _dash_timer: float = 0.0
 var _dash_cooldown_timer: float = 0.0
 var _dash_buffer_timer: float = 0.0
+var _attack_cooldown_timer: float = 0.0
+var _attack_buffer_timer: float = 0.0
 var is_dashing: bool = false
 
 func _ready() -> void:
@@ -57,23 +65,27 @@ func setup(peer_id: int, info: Dictionary) -> void:
 		name_tag.text = display_name
 
 func _process(delta: float) -> void:
-	# Smooth visual rotation on render frames for buttery-smooth visuals
-	var dir_to_face = Vector3.ZERO
-	if is_multiplayer_authority():
-		if is_dashing:
-			dir_to_face = _dash_dir
-		else:
-			dir_to_face = _move_dir
-	else:
-		dir_to_face = Vector3(velocity.x, 0.0, velocity.z)
-		
-	if dir_to_face.length() > 0.1 and visual_root:
-		var target_angle = atan2(dir_to_face.x, dir_to_face.z)
-		if is_dashing:
-			# Snap rotation instantly during dash for crisp, responsive responsiveness
-			visual_root.rotation.y = target_angle
-		else:
-			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, target_angle, 15.0 * delta)
+	if visual_root and is_multiplayer_authority():
+		# Project mouse cursor onto ground plane at character altitude (Y = global_position.y)
+		# Only update aim direction if the window is currently focused by the OS
+		var cam = get_viewport().get_camera_3d()
+		if cam and DisplayServer.window_is_focused():
+			var mouse_pos = get_viewport().get_mouse_position()
+			var ray_origin = cam.project_ray_origin(mouse_pos)
+			var ray_normal = cam.project_ray_normal(mouse_pos)
+			var ground_plane = Plane(Vector3.UP, global_position.y)
+			var hit_pos = ground_plane.intersects_ray(ray_origin, ray_normal)
+			if hit_pos != null:
+				var look_vec = (hit_pos as Vector3) - global_position
+				look_vec.y = 0.0
+				# Deadzone check (0.2m radius) to prevent jitter when cursor is right over player
+				if look_vec.length_squared() > 0.04:
+					_aim_dir = look_vec.normalized()
+
+		# Continuously face mouse cursor direction at all times
+		if _aim_dir.length() > 0.1:
+			_target_rotation_y = atan2(_aim_dir.x, _aim_dir.z)
+			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, _target_rotation_y, 25.0 * delta)
 
 	# Procedural squash & stretch visual recovery
 	if visual_root:
@@ -90,9 +102,19 @@ func _physics_process(delta: float) -> void:
 	if _dash_buffer_timer > 0.0:
 		_dash_buffer_timer = maxf(0.0, _dash_buffer_timer - delta)
 
-	# Action buffering: capture button press even during cooldown/dash
-	if Input.is_action_just_pressed("dash"):
-		_dash_buffer_timer = DASH_BUFFER_WINDOW
+	if _attack_cooldown_timer > 0.0:
+		_attack_cooldown_timer = maxf(0.0, _attack_cooldown_timer - delta)
+
+	if _attack_buffer_timer > 0.0:
+		_attack_buffer_timer = maxf(0.0, _attack_buffer_timer - delta)
+
+	# Action buffering: capture button presses even during cooldown/dash (only if window is focused)
+	if DisplayServer.window_is_focused():
+		if Input.is_action_just_pressed("dash"):
+			_dash_buffer_timer = DASH_BUFFER_WINDOW
+
+		if Input.is_action_just_pressed("attack"):
+			_attack_buffer_timer = ATTACK_BUFFER_WINDOW
 
 	var input_dir = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	
@@ -113,10 +135,6 @@ func _physics_process(delta: float) -> void:
 	if _move_dir.length() > 1.0:
 		_move_dir = _move_dir.normalized()
 
-	# Track last non-zero movement direction as facing direction
-	if _move_dir.length() > 0.1:
-		_facing_dir = _move_dir
-
 	# Trigger dash when buffered input is active and cooldown has elapsed
 	if _dash_buffer_timer > 0.0 and _dash_cooldown_timer <= 0.0 and not is_dashing:
 		_dash_buffer_timer = 0.0
@@ -124,13 +142,19 @@ func _physics_process(delta: float) -> void:
 		_dash_timer = DASH_DURATION
 		is_dashing = true
 		
-		# Dash direction: input direction if moving, otherwise current facing direction
+		# Hybrid Dash: input direction if moving, otherwise current aim direction
 		if _move_dir.length() > 0.1:
 			_dash_dir = _move_dir
 		else:
-			_dash_dir = _facing_dir
+			_dash_dir = _aim_dir
 
 		_play_dash_effects.rpc()
+
+	# Combat execution: Paradigm A (shooting locked while dashing, buffered clicks fire on exit)
+	if _attack_buffer_timer > 0.0 and _attack_cooldown_timer <= 0.0 and not is_dashing:
+		_attack_buffer_timer = 0.0
+		_attack_cooldown_timer = ATTACK_COOLDOWN
+		_execute_attack()
 
 	# Movement execution
 	if is_dashing:
@@ -148,6 +172,16 @@ func _physics_process(delta: float) -> void:
 	velocity.y = 0.0 # Stay on ground
 	
 	move_and_slide()
+
+func _execute_attack() -> void:
+	var spawn_pos = global_position + Vector3(0.0, 0.35, 0.0) + _aim_dir * 0.4
+	_spawn_projectile.rpc(get_multiplayer_authority(), spawn_pos, _aim_dir)
+
+@rpc("call_local", "reliable")
+func _spawn_projectile(p_shooter_id: int, p_pos: Vector3, p_dir: Vector3) -> void:
+	var proj = PROJECTILE_SCENE.instantiate()
+	get_parent().add_child(proj)
+	proj.setup(p_shooter_id, p_pos, p_dir)
 
 @rpc("call_local", "reliable")
 func _play_dash_effects() -> void:
