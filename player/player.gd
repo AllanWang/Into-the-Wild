@@ -148,7 +148,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			_dash_dir = _aim_dir
 
-		_play_dash_effects.rpc()
+		_play_dash_effects.rpc(_dash_dir)
 
 	# Combat execution: Paradigm A (shooting locked while dashing, buffered clicks fire on exit)
 	if _attack_buffer_timer > 0.0 and _attack_cooldown_timer <= 0.0 and not is_dashing:
@@ -184,7 +184,19 @@ func _spawn_projectile(p_shooter_id: int, p_pos: Vector3, p_dir: Vector3) -> voi
 	proj.setup(p_shooter_id, p_pos, p_dir)
 
 @rpc("call_local", "reliable")
-func _play_dash_effects() -> void:
-	if visual_root:
+func _play_dash_effects(p_dash_dir: Vector3) -> void:
+	if visual_root and p_dash_dir.length_squared() > 0.001:
+		# Calculate angle between dash direction and visual facing forward (+Z in model space)
+		var model_forward = visual_root.global_transform.basis.z.normalized()
+		var norm_dash = p_dash_dir.normalized()
+		var dot_forward = clampf(model_forward.dot(norm_dash), -1.0, 1.0)
+		var abs_cos = absf(dot_forward)
+		var abs_sin = sqrt(maxf(0.0, 1.0 - abs_cos * abs_cos))
+
+		# Stretch along dash momentum, squash perpendicular to momentum
+		var scale_z = lerpf(0.75, 1.35, abs_cos)
+		var scale_x = lerpf(0.75, 1.35, abs_sin)
+		visual_root.scale = Vector3(scale_x, 0.8, scale_z)
+	elif visual_root:
 		visual_root.scale = Vector3(0.75, 0.8, 1.35)
 
