@@ -42,6 +42,38 @@ func _init() -> void:
 	_detect_instance_index()
 
 func _detect_embedded_status() -> void:
+	var cmd_str: String = ""
+	if OS.get_name() == "Windows":
+		var out: Array = []
+		var pid: int = OS.get_process_id()
+		var pcmd: String = "(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine" % pid
+		var err: int = OS.execute("powershell", ["-NoProfile", "-Command", pcmd], out)
+		if err == OK and out.size() > 0:
+			cmd_str = out[0].strip_edges()
+	elif OS.get_name() == "Linux":
+		if FileAccess.file_exists("/proc/self/cmdline"):
+			var f = FileAccess.open("/proc/self/cmdline", FileAccess.READ)
+			if f:
+				cmd_str = f.get_as_text()
+				f.close()
+
+	if not cmd_str.is_empty():
+		if "--wid" in cmd_str:
+			is_embedded = true
+		
+		var regex_pos = RegEx.new()
+		regex_pos.compile("--position\\s+[\"']?(-?\\d+),(-?\\d+)[\"']?")
+		var match_pos = regex_pos.search(cmd_str)
+		if match_pos:
+			host_window_rect.position = Vector2i(match_pos.get_string(1).to_int(), match_pos.get_string(2).to_int())
+			
+		var regex_res = RegEx.new()
+		regex_res.compile("--resolution\\s+[\"']?(\\d+)x(\\d+)[\"']?")
+		var match_res = regex_res.search(cmd_str)
+		if match_res:
+			host_window_rect.size = Vector2i(match_res.get_string(1).to_int(), match_res.get_string(2).to_int())
+
+	# Fallback to standard command-line args if available
 	var args = OS.get_cmdline_args()
 	for i in range(args.size()):
 		var arg = args[i]
@@ -60,6 +92,14 @@ func _detect_embedded_status() -> void:
 	var win = get_window()
 	if win and win.is_embedded():
 		is_embedded = true
+
+	# Ensure host_window_rect has size and position from DisplayServer if available
+	var ds_size = DisplayServer.window_get_size()
+	if host_window_rect.size == Vector2i.ZERO and ds_size.x > 0 and ds_size.y > 0:
+		host_window_rect.size = ds_size
+	var ds_pos = DisplayServer.window_get_position()
+	if host_window_rect.position == Vector2i.ZERO and ds_pos != Vector2i.ZERO:
+		host_window_rect.position = ds_pos
 
 	if is_embedded:
 		print("[DebugTools] Detected embedded in editor. Initial rect estimate: ", host_window_rect)
@@ -180,18 +220,21 @@ func broadcast_auto_join(port: int) -> void:
 func broadcast_host_rect() -> void:
 	if instance_index != 0:
 		return
-	var win = get_window()
 	var pos: Vector2i = DisplayServer.window_get_position()
 	var size: Vector2i = DisplayServer.window_get_size()
-	if win:
-		pos = win.position
-		size = win.size
 	# If embedded, fallback to command line rect if DisplayServer returned (0,0)
 	if is_embedded:
 		if size.x <= 0 or size.y <= 0:
 			size = host_window_rect.size
 		if pos == Vector2i.ZERO and host_window_rect.position != Vector2i.ZERO:
 			pos = host_window_rect.position
+	elif pos == Vector2i.ZERO or size == Vector2i.ZERO:
+		var win = get_window()
+		if win:
+			if pos == Vector2i.ZERO:
+				pos = win.position
+			if size == Vector2i.ZERO:
+				size = win.size
 	host_window_rect = Rect2i(pos, size)
 	for peer in _connected_peers:
 		if peer.get_status() == StreamPeerTCP.STATUS_CONNECTED:
@@ -365,12 +408,29 @@ func apply_grid_layout(total_instances: int) -> void:
 func _set_window_rect(target_size: Vector2i, target_pos: Vector2i, bring_to_top: bool = false) -> void:
 	if is_embedded:
 		return
-	var win = get_window()
-	if win:
-		win.size = target_size
-		win.position = target_pos
+		
 	DisplayServer.window_set_size(target_size)
 	DisplayServer.window_set_position(target_pos)
+	
+	# Verify whether DisplayServer actually permitted resizing/moving.
+	# If the window is embedded in the editor, DisplayServer will reject window_set_size/position.
+	var actual_size = DisplayServer.window_get_size()
+	var actual_pos = DisplayServer.window_get_position()
+	if actual_size != target_size and actual_size.x > 0 and actual_size.y > 0:
+		print("[DebugTools] Window size could not be modified by DisplayServer (embedded window). Keeping actual size: ", actual_size)
+		is_embedded = true
+		if instance_index == 0:
+			host_is_embedded = true
+			host_window_rect = Rect2i(actual_pos, actual_size)
+			broadcast_host_rect()
+		return
+		
+	var win = get_window()
+	if win:
+		if actual_size.x > 0 and actual_size.y > 0:
+			win.size = actual_size
+		if actual_pos != Vector2i.ZERO:
+			win.position = actual_pos
 	
 	if bring_to_top:
 		# Bring window to foreground on launch without keeping it permanently locked ALWAYS_ON_TOP.

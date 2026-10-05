@@ -218,7 +218,7 @@ func _on_server_disconnected() -> void:
 	if get_tree() and get_tree().current_scene and get_tree().current_scene.scene_file_path != "res://ui/lobby.tscn":
 		get_tree().change_scene_to_file("res://ui/lobby.tscn")
 
-func _on_peer_connected(id: int) -> void:
+func _on_peer_connected(_id: int) -> void:
 	# Handled via registration RPC
 	pass
 
