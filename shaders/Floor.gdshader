@@ -42,10 +42,28 @@ uniform float water_pool_radius = 3.5;
 uniform vec4 bank_color : source_color = vec4(0.55, 0.62, 0.35, 1.0);
 uniform float bank_width = 0.45;
 
+group_uniforms grass_edge;
+uniform bool enable_grass_edge = true;
+uniform float grass_edge_frequency : hint_range(1.0, 30.0, 0.5) = 9.0;
+uniform float grass_edge_height : hint_range(0.0, 1.0, 0.01) = 0.35;
+
 void fragment() {
+	vec3 sample_world = vertex_world;
+	if (enable_grass_edge) {
+		float screen_x = dot(vertex_world, INV_VIEW_MATRIX[0].xyz);
+		float blade_coord = screen_x * grass_edge_frequency;
+		float blade_id = floor(blade_coord);
+		float u = fract(blade_coord);
+		float blade_profile = pow(1.0 - abs(u * 2.0 - 1.0), 1.6);
+		float r = fract(sin(blade_id * 127.1 + 31.7) * 43758.5453);
+		float blade_h = mix(0.7, 1.3, r);
+		float tooth = blade_profile * blade_h * grass_edge_height;
+		sample_world -= INV_VIEW_MATRIX[1].xyz * tooth;
+	}
+
 	// Texture noises for grass patches
-	float albedo2_noise_tex = texture(albedo2_noise, vertex_world.xz * (albedo2_scale)).r;
-	float albedo3_noise_tex = texture(albedo3_noise, vertex_world.xz * (albedo3_scale)).r;
+	float albedo2_noise_tex = texture(albedo2_noise, sample_world.xz * (albedo2_scale)).r;
+	float albedo3_noise_tex = texture(albedo3_noise, sample_world.xz * (albedo3_scale)).r;
 	// Set colours based on noise thresholds
 	ALBEDO = albedo1.rgb;
 	if (albedo2_noise_tex > albedo2_threshold) {
