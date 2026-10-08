@@ -202,10 +202,14 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 	var valid_transforms: Array[Transform3D] = []
 
 	# 1. Sample directly inside each room's bounding box and test against area polygon
+	print("[Foliage] Generating foliage across %d areas and %d paths (target density: %.1f, max: %d)" % [
+		current_graph.areas.size(), current_graph.paths.size(), biome_theme.foliage_density, biome_theme.max_foliage_instances
+	])
 	for area in current_graph.areas:
 		var half_sz: Vector2 = area.size * 0.5
 		var room_area: float = area.size.x * area.size.y
 		var room_count: int = int(room_area * biome_theme.foliage_density)
+		var area_start_count := valid_transforms.size()
 		for _i in range(room_count):
 			var test_pt := Vector2(
 				rng.randf_range(area.center.x - half_sz.x, area.center.x + half_sz.x),
@@ -219,8 +223,12 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 				valid_transforms.append(t)
 				if valid_transforms.size() >= biome_theme.max_foliage_instances:
 					break
+		print("[Foliage] Area %d (center: %s, size: %s): generated %d blades (total: %d)" % [
+			area.index, area.center, area.size, valid_transforms.size() - area_start_count, valid_transforms.size()
+		])
 		if valid_transforms.size() >= biome_theme.max_foliage_instances:
 			break
+
 
 	# 2. Sample along each bridge
 	if valid_transforms.size() < biome_theme.max_foliage_instances:
@@ -233,7 +241,8 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 				p_max.x = maxf(p_max.x, pt.x)
 				p_max.y = maxf(p_max.y, pt.y)
 			var bridge_area: float = (p_max.x - p_min.x) * (p_max.y - p_min.y)
-			var bridge_count: int = int(bridge_area * biome_theme.foliage_density)
+			var bridge_count: int = int(bridge_area * biome_theme.foliage_density * 0.5)
+			var path_start_count := valid_transforms.size()
 			for _i in range(bridge_count):
 				var test_pt := Vector2(
 					rng.randf_range(p_min.x, p_max.x),
@@ -247,8 +256,12 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 					valid_transforms.append(t)
 					if valid_transforms.size() >= biome_theme.max_foliage_instances:
 						break
+			print("[Foliage] Bridge %d->%d: generated %d blades (total: %d)" % [
+				path.from_idx, path.to_idx, valid_transforms.size() - path_start_count, valid_transforms.size()
+			])
 			if valid_transforms.size() >= biome_theme.max_foliage_instances:
 				break
+
 
 	mm.instance_count = valid_transforms.size()
 	for i in range(valid_transforms.size()):
