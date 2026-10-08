@@ -17,6 +17,7 @@ const PlainsGraphScript = preload("res://world/plains_graph.gd")
 
 # HUD elements
 @onready var info_label: Label = %InfoLabel
+@onready var debug_overlay: MarginContainer = %DebugOverlay
 @onready var stats_label: Label = %StatsLabel
 @onready var overview_button: Button = %OverviewButton
 @onready var regen_button: Button = %RegenButton
@@ -38,9 +39,18 @@ func _ready() -> void:
 	NetworkManager.player_disconnected.connect(_on_player_disconnected)
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
 
+	# Ensure buttons never capture keyboard focus so gameplay keys (e.g. Space for dash) are never hijacked
+	leave_button.focus_mode = Control.FOCUS_NONE
+	regen_button.focus_mode = Control.FOCUS_NONE
+	overview_button.focus_mode = Control.FOCUS_NONE
+
 	leave_button.pressed.connect(_on_leave_pressed)
 	regen_button.pressed.connect(_on_regen_pressed)
 	overview_button.pressed.connect(_on_overview_pressed)
+
+	# Debug overlay and map overview are strictly for debug only
+	if debug_overlay:
+		debug_overlay.visible = OS.is_debug_build()
 
 	generator.map_generated.connect(_on_map_generated)
 	generator.graph_ready.connect(_on_graph_ready)
@@ -56,12 +66,6 @@ func _ready() -> void:
 	_update_hud()
 	NetworkManager.mark_client_ready()
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_R:
-			_on_regen_pressed()
-		elif event.keycode == KEY_M or event.keycode == KEY_O or event.keycode == KEY_TAB:
-			_on_overview_pressed()
 
 func _physics_process(delta: float) -> void:
 	if is_overview_mode:
@@ -162,7 +166,7 @@ func _update_stats_label() -> void:
 	if generator.foliage_multimesh_instance and generator.foliage_multimesh_instance.multimesh:
 		grass_count = generator.foliage_multimesh_instance.multimesh.instance_count
 
-	stats_label.text = "Seed: %d | Rooms: %d | Bridges: %d (%d Loops) | Grass: %d\n[R] New Seed  |  [Tab/M] Toggle Overview" % [
+	stats_label.text = "[DEBUG] Seed: %d | Rooms: %d | Bridges: %d (%d Loops) | Grass: %d" % [
 		generator.current_seed,
 		g.areas.size(),
 		g.paths.size(),
@@ -173,7 +177,8 @@ func _update_stats_label() -> void:
 func _on_overview_pressed() -> void:
 	is_overview_mode = not is_overview_mode
 	if overview_button:
-		overview_button.text = "Player View" if is_overview_mode else "Map Overview"
+		overview_button.text = "Player View (Debug)" if is_overview_mode else "Map Overview (Debug)"
+
 
 func _on_regen_pressed() -> void:
 	generator.generate_map(0)

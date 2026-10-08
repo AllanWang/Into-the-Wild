@@ -192,53 +192,61 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 
 	foliage_multimesh_instance = MultiMeshInstance3D.new()
 	foliage_multimesh_instance.name = "Foliage"
+	foliage_multimesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(foliage_multimesh_instance)
 
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = biome_theme.foliage_mesh
 
-	# Compute bounding rect
-	var min_pt := Vector2(INF, INF)
-	var max_pt := Vector2(-INF, -INF)
-	for poly in current_graph.merged_polygons:
-		for pt in poly:
-			min_pt.x = minf(min_pt.x, pt.x)
-			min_pt.y = minf(min_pt.y, pt.y)
-			max_pt.x = maxf(max_pt.x, pt.x)
-			max_pt.y = maxf(max_pt.y, pt.y)
-
-	var width := max_pt.x - min_pt.x
-	var height := max_pt.y - min_pt.y
-	var bounding_area := width * height
-
-	var target_samples := mini(
-		biome_theme.max_foliage_instances,
-		int(bounding_area * biome_theme.foliage_density * 0.5)
-	)
 	var valid_transforms: Array[Transform3D] = []
 
-	for _i in range(target_samples):
-		var test_pt := Vector2(
-			rng.randf_range(min_pt.x, max_pt.x),
-			rng.randf_range(min_pt.y, max_pt.y)
-		)
+	# 1. Sample directly inside each room's bounding box and test against area polygon
+	for area in current_graph.areas:
+		var half_sz: Vector2 = area.size * 0.5
+		var room_area: float = area.size.x * area.size.y
+		var room_count: int = int(room_area * biome_theme.foliage_density)
+		for _i in range(room_count):
+			var test_pt := Vector2(
+				rng.randf_range(area.center.x - half_sz.x, area.center.x + half_sz.x),
+				rng.randf_range(area.center.y - half_sz.y, area.center.y + half_sz.y)
+			)
+			if Geometry2D.is_point_in_polygon(test_pt, area.polygon):
+				var yaw: float = rng.randf_range(0.0, TAU)
+				var t := Transform3D()
+				t = t.rotated(Vector3.UP, yaw)
+				t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
+				valid_transforms.append(t)
+				if valid_transforms.size() >= biome_theme.max_foliage_instances:
+					break
+		if valid_transforms.size() >= biome_theme.max_foliage_instances:
+			break
 
-		var is_on_land: bool = false
-		for poly in current_graph.merged_polygons:
-			if Geometry2D.is_point_in_polygon(test_pt, poly):
-				is_on_land = true
-				break
-
-		if is_on_land:
-			var yaw: float = rng.randf_range(0.0, TAU)
-			var scale_var: float = rng.randf_range(0.85, 1.25)
-			var t := Transform3D()
-			t = t.scaled(Vector3(scale_var, scale_var, scale_var))
-			t = t.rotated(Vector3.UP, yaw)
-			t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
-			valid_transforms.append(t)
-
+	# 2. Sample along each bridge
+	if valid_transforms.size() < biome_theme.max_foliage_instances:
+		for path in current_graph.paths:
+			var p_min := Vector2(INF, INF)
+			var p_max := Vector2(-INF, -INF)
+			for pt in path.polygon:
+				p_min.x = minf(p_min.x, pt.x)
+				p_min.y = minf(p_min.y, pt.y)
+				p_max.x = maxf(p_max.x, pt.x)
+				p_max.y = maxf(p_max.y, pt.y)
+			var bridge_area: float = (p_max.x - p_min.x) * (p_max.y - p_min.y)
+			var bridge_count: int = int(bridge_area * biome_theme.foliage_density)
+			for _i in range(bridge_count):
+				var test_pt := Vector2(
+					rng.randf_range(p_min.x, p_max.x),
+					rng.randf_range(p_min.y, p_max.y)
+				)
+				if Geometry2D.is_point_in_polygon(test_pt, path.polygon):
+					var yaw: float = rng.randf_range(0.0, TAU)
+					var t := Transform3D()
+					t = t.rotated(Vector3.UP, yaw)
+					t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
+					valid_transforms.append(t)
+					if valid_transforms.size() >= biome_theme.max_foliage_instances:
+						break
 			if valid_transforms.size() >= biome_theme.max_foliage_instances:
 				break
 
@@ -249,6 +257,7 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 	foliage_multimesh_instance.multimesh = mm
 	if biome_theme.foliage_material:
 		foliage_multimesh_instance.material_override = biome_theme.foliage_material
+
 
 ## Builds surrounding liquid/void plane
 func _build_boundary_plane() -> void:
@@ -281,4 +290,3 @@ func _build_boundary_plane() -> void:
 	boundary_liquid_instance.mesh = plane_mesh
 	boundary_liquid_instance.position = Vector3(center_2d.x, biome_theme.boundary_depth, center_2d.y)
 	boundary_liquid_instance.material_override = biome_theme.boundary_material
-
