@@ -201,14 +201,37 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 
 	var valid_transforms: Array[Transform3D] = []
 
-	# 1. Sample directly inside each room's bounding box and test against area polygon
-	print("[Foliage] Generating foliage across %d areas and %d paths (target density: %.1f, max: %d)" % [
-		current_graph.areas.size(), current_graph.paths.size(), biome_theme.foliage_density, biome_theme.max_foliage_instances
+	# Calculate total approximate area of all rooms and bridges
+	var total_rooms_area: float = 0.0
+	for area in current_graph.areas:
+		total_rooms_area += area.size.x * area.size.y
+
+	var total_bridges_area: float = 0.0
+	for path in current_graph.paths:
+		var p_min := Vector2(INF, INF)
+		var p_max := Vector2(-INF, -INF)
+		for pt in path.polygon:
+			p_min.x = minf(p_min.x, pt.x)
+			p_min.y = minf(p_min.y, pt.y)
+			p_max.x = maxf(p_max.x, pt.x)
+			p_max.y = maxf(p_max.y, pt.y)
+		total_bridges_area += (p_max.x - p_min.x) * (p_max.y - p_min.y)
+
+	var total_land_area: float = total_rooms_area + (total_bridges_area * 0.5)
+	var max_cap: int = biome_theme.max_foliage_instances
+	var effective_density: float = biome_theme.foliage_density
+	if total_land_area > 0.0 and (total_land_area * effective_density) > float(max_cap):
+		effective_density = float(max_cap) / total_land_area
+
+	print("[Foliage] Generating foliage across %d areas and %d paths (target density: %.1f, effective: %.1f, max: %d)" % [
+		current_graph.areas.size(), current_graph.paths.size(), biome_theme.foliage_density, effective_density, max_cap
 	])
+
+	# 1. Sample directly inside each room's bounding box and test against area polygon
 	for area in current_graph.areas:
 		var half_sz: Vector2 = area.size * 0.5
 		var room_area: float = area.size.x * area.size.y
-		var room_count: int = int(room_area * biome_theme.foliage_density)
+		var room_count: int = int(room_area * effective_density)
 		var area_start_count := valid_transforms.size()
 		for _i in range(room_count):
 			var test_pt := Vector2(
@@ -221,17 +244,16 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 				t = t.rotated(Vector3.UP, yaw)
 				t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
 				valid_transforms.append(t)
-				if valid_transforms.size() >= biome_theme.max_foliage_instances:
+				if valid_transforms.size() >= max_cap:
 					break
 		print("[Foliage] Area %d (center: %s, size: %s): generated %d blades (total: %d)" % [
 			area.index, area.center, area.size, valid_transforms.size() - area_start_count, valid_transforms.size()
 		])
-		if valid_transforms.size() >= biome_theme.max_foliage_instances:
+		if valid_transforms.size() >= max_cap:
 			break
 
-
 	# 2. Sample along each bridge
-	if valid_transforms.size() < biome_theme.max_foliage_instances:
+	if valid_transforms.size() < max_cap:
 		for path in current_graph.paths:
 			var p_min := Vector2(INF, INF)
 			var p_max := Vector2(-INF, -INF)
@@ -241,7 +263,7 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 				p_max.x = maxf(p_max.x, pt.x)
 				p_max.y = maxf(p_max.y, pt.y)
 			var bridge_area: float = (p_max.x - p_min.x) * (p_max.y - p_min.y)
-			var bridge_count: int = int(bridge_area * biome_theme.foliage_density * 0.5)
+			var bridge_count: int = int(bridge_area * effective_density * 0.5)
 			var path_start_count := valid_transforms.size()
 			for _i in range(bridge_count):
 				var test_pt := Vector2(
@@ -254,12 +276,12 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 					t = t.rotated(Vector3.UP, yaw)
 					t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
 					valid_transforms.append(t)
-					if valid_transforms.size() >= biome_theme.max_foliage_instances:
+					if valid_transforms.size() >= max_cap:
 						break
 			print("[Foliage] Bridge %d->%d: generated %d blades (total: %d)" % [
 				path.from_idx, path.to_idx, valid_transforms.size() - path_start_count, valid_transforms.size()
 			])
-			if valid_transforms.size() >= biome_theme.max_foliage_instances:
+			if valid_transforms.size() >= max_cap:
 				break
 
 
