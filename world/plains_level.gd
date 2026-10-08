@@ -77,9 +77,9 @@ func _physics_process(delta: float) -> void:
 func _on_map_generated(spawn_pos: Vector3, _goal_pos: Vector3) -> void:
 	current_spawn_pos = spawn_pos
 
-	# Connect CharacterManager to procedural grass for physical step displacement
-	if generator.grass_multimesh_instance:
-		character_manager.grass = generator.grass_multimesh_instance
+	# Connect CharacterManager to procedural foliage for physical step displacement
+	if generator.foliage_multimesh_instance:
+		character_manager.grass = generator.foliage_multimesh_instance
 
 	_spawn_or_reposition_players()
 	_update_stats_label()
@@ -147,8 +147,8 @@ func _update_stats_label() -> void:
 			loop_count += 1
 
 	var grass_count: int = 0
-	if generator.grass_multimesh_instance and generator.grass_multimesh_instance.multimesh:
-		grass_count = generator.grass_multimesh_instance.multimesh.instance_count
+	if generator.foliage_multimesh_instance and generator.foliage_multimesh_instance.multimesh:
+		grass_count = generator.foliage_multimesh_instance.multimesh.instance_count
 
 	stats_label.text = "Seed: %d | Clearings: %d | Corridors: %d (%d Loops) | Grass: %d\n[R] New Seed  |  [Tab/M] Toggle Overview" % [
 		generator.current_seed,

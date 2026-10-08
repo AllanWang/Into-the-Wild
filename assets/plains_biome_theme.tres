@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BiomeTheme" load_steps=5 format=3 uid="uid://plains_biome_theme_01"]
+
+[ext_resource type="Script" path="res://world/biome_theme.gd" id="1_theme_script"]
+[ext_resource type="Material" path="res://assets/plains_floor_material.tres" id="2_floor_mat"]
+[ext_resource type="Material" path="res://assets/plains_water_material.tres" id="3_water_mat"]
+[ext_resource type="Material" path="res://assets/plains_grass_material.tres" id="4_grass_mat"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_grass_blade"]
+size = Vector2(0.2, 0.3)
+
+[resource]
+script = ExtResource("1_theme_script")
+theme_name = "Toon Plains"
+ground_material = ExtResource("2_floor_mat")
+boundary_material = ExtResource("3_water_mat")
+boundary_depth = -0.15
+skirt_depth = 0.35
+enable_foliage = true
+foliage_mesh = SubResource("QuadMesh_grass_blade")
+foliage_material = ExtResource("4_grass_mat")
+foliage_density = 5.5
+max_foliage_instances = 25000
