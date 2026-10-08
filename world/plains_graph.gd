@@ -1,19 +1,19 @@
 class_name PlainsGraph
 extends RefCounted
 
-## Graph topology and geometry synthesizer for procedural maps.
-## Generates smooth, rounded clearings/arenas connected by clean bridges,
-## with a sequential progression spine, forks, and loops.
+## Grid-based room and cardinal bridge synthesizer (Cult of the Lamb style).
+## Generates large rectangular sections connected by Left/Right/Up/Down bridges,
+## with a primary progression spine, optional loops, and strictly 1-room-deep deadends.
 
 const AreaPresetScript = preload("res://world/area_preset.gd")
 
 class AreaData:
 	extends RefCounted
 	var index: int = 0
+	var grid_coord: Vector2i = Vector2i.ZERO
 	var center: Vector2 = Vector2.ZERO
-	var radius: float = 12.0
-	var size_category: int = 1 # AreaPreset.SizeCategory.MEDIUM
-	var shape_format: int = 0  # AreaPreset.ShapeFormat.CIRCLE
+	var size: Vector2 = Vector2(26.0, 20.0)
+	var role: int = 0 # AreaPreset.RoomRole
 	var polygon: PackedVector2Array = PackedVector2Array()
 
 class PathData:
@@ -29,155 +29,167 @@ var spawn_index: int = 0
 var goal_index: int = 0
 var merged_polygons: Array[PackedVector2Array] = []
 
-class DisjointSet:
-	var parent: Dictionary = {}
-	func _init(n: int) -> void:
-		for i in range(n):
-			parent[i] = i
-	func find(i: int) -> int:
-		var root: int = i
-		while parent[root] != root:
-			root = parent[root]
-		var curr: int = i
-		while curr != root:
-			var nxt: int = parent[curr]
-			parent[curr] = root
-			curr = nxt
-		return root
-	func union(i: int, j: int) -> bool:
-		var root_i := find(i)
-		var root_j := find(j)
-		if root_i != root_j:
-			parent[root_i] = root_j
-			return true
-		return false
+# Cardinal direction offsets: Right, Left, Down, Up
+const CARDINALS: Array[Vector2i] = [
+	Vector2i(1, 0),
+	Vector2i(-1, 0),
+	Vector2i(0, 1),
+	Vector2i(0, -1)
+]
 
-## Generates the complete procedural map graph and smooth rounded geometry
+## Generates Cult of the Lamb style rectangular layout with cardinal bridges
 static func generate(
 	rng: RandomNumberGenerator,
-	num_layers: int = 5,
-	bridge_width_min: float = 3.6,
-	bridge_width_max: float = 4.8,
-	loop_ratio: float = 0.25
+	spine_length: int = 6,
+	bridge_width: float = 4.8,
+	deadend_chance: float = 0.45,
+	loop_chance: float = 0.25
 ) -> PlainsGraph:
 	var graph := PlainsGraph.new()
 
-	# 1. Place rounded areas in sequential progression layers
-	var area_centers: PackedVector2Array = []
-	var layer_spacing: float = 28.0
-	var start_y: float = - float(num_layers - 1) * layer_spacing * 0.5
+	# Grid spacing between room centers
+	var step_x: float = 46.0
+	var step_y: float = 38.0
 
-	for layer in range(num_layers):
-		var y_pos: float = start_y + layer * layer_spacing
-		var nodes_in_layer: int = 1
-		if layer == 0 or layer == num_layers - 1:
-			nodes_in_layer = 1
-		else:
-			nodes_in_layer = rng.randi_range(1, 2)
+	# Map tracking: grid_coord -> area_index
+	var grid_map: Dictionary = {}
+	# Edges tracking: Vector2i(min_idx, max_idx) -> bool
+	var active_edges: Dictionary = {}
 
-		var x_spread: float = 24.0
-		for i in range(nodes_in_layer):
-			var x_pos: float = 0.0
-			if nodes_in_layer == 1:
-				x_pos = rng.randf_range(-6.0, 6.0)
-			else:
-				var sign_val: float = -1.0 if i == 0 else 1.0
-				x_pos = sign_val * rng.randf_range(13.0, x_spread) + rng.randf_range(-3.0, 3.0)
+	# 1. Generate Main Path (Spine)
+	var current_coord := Vector2i.ZERO
+	var main_spine_coords: Array[Vector2i] = [current_coord]
 
-			var pos := Vector2(x_pos, y_pos + rng.randf_range(-3.0, 3.0))
-			area_centers.append(pos)
+	var spawn_area := AreaData.new()
+	spawn_area.index = 0
+	spawn_area.grid_coord = current_coord
+	spawn_area.center = Vector2(current_coord.x * step_x, current_coord.y * step_y)
+	spawn_area.role = AreaPresetScript.RoomRole.SPAWN
+	spawn_area.size = AreaPresetScript.get_room_size(spawn_area.role, rng)
+	spawn_area.polygon = AreaPresetScript.build_rounded_rectangle(spawn_area.center, spawn_area.size)
+	graph.areas.append(spawn_area)
+	grid_map[current_coord] = spawn_area.index
 
-			var area := AreaData.new()
-			area.index = graph.areas.size()
-			area.center = pos
+	var prev_idx: int = 0
 
-			# Use size and format presets
-			var cat = AreaPresetScript.pick_size_category(layer, num_layers, rng)
-			area.size_category = cat
-			area.radius = AreaPresetScript.get_radius_for_category(cat, rng)
-			area.shape_format = AreaPresetScript.pick_format(rng)
+	# Directional walk with forward progression bias
+	var last_dir := Vector2i.ZERO
 
-			# Generate smooth rounded polygon
-			area.polygon = AreaPresetScript.build_smooth_area_polygon(
-				area.center,
-				area.radius,
-				area.shape_format,
-				rng,
-				48
-			)
-			graph.areas.append(area)
+	for step in range(1, spine_length):
+		var valid_dirs: Array[Vector2i] = []
+		for dir in CARDINALS:
+			var next_c: Vector2i = current_coord + dir
+			if not grid_map.has(next_c):
+				valid_dirs.append(dir)
+
+		if valid_dirs.is_empty():
+			break
+
+		# Bias against immediately reversing direction
+		var chosen_dir: Vector2i = valid_dirs[rng.randi_range(0, valid_dirs.size() - 1)]
+		if valid_dirs.size() > 1 and chosen_dir == -last_dir:
+			valid_dirs.erase(chosen_dir)
+			chosen_dir = valid_dirs[rng.randi_range(0, valid_dirs.size() - 1)]
+
+		last_dir = chosen_dir
+		current_coord += chosen_dir
+		main_spine_coords.append(current_coord)
+
+		var role = AreaPresetScript.RoomRole.BOSS if step == spine_length - 1 else (
+			AreaPresetScript.RoomRole.LARGE if rng.randf() < 0.3 else AreaPresetScript.RoomRole.COMBAT
+		)
+
+		var area := AreaData.new()
+		area.index = graph.areas.size()
+		area.grid_coord = current_coord
+		area.center = Vector2(current_coord.x * step_x, current_coord.y * step_y)
+		area.role = role
+		area.size = AreaPresetScript.get_room_size(role, rng)
+		area.polygon = AreaPresetScript.build_rounded_rectangle(area.center, area.size)
+		graph.areas.append(area)
+		grid_map[current_coord] = area.index
+
+		# Connect spine edge
+		active_edges[Vector2i(mini(prev_idx, area.index), maxi(prev_idx, area.index))] = false
+		prev_idx = area.index
 
 	graph.spawn_index = 0
-	graph.goal_index = graph.areas.size() - 1
+	graph.goal_index = prev_idx
 
-	# 2. Delaunay Triangulation to discover neighbor proximity
-	var tri_indices := Geometry2D.triangulate_delaunay(area_centers)
-	var edge_map: Dictionary = {}
-	for i in range(0, tri_indices.size(), 3):
-		var a: int = tri_indices[i]
-		var b: int = tri_indices[i + 1]
-		var c: int = tri_indices[i + 2]
-		edge_map[Vector2i(mini(a, b), maxi(a, b))] = true
-		edge_map[Vector2i(mini(b, c), maxi(b, c))] = true
-		edge_map[Vector2i(mini(c, a), maxi(c, a))] = true
+	# 2. Add Strictly 1-Room-Deep Dead-End Branches off the main spine
+	# Rooms on the main spine can sprout deadends, but deadends NEVER sprout extra rooms!
+	for spine_coord in main_spine_coords:
+		var parent_idx: int = grid_map[spine_coord]
+		if parent_idx == graph.spawn_index or parent_idx == graph.goal_index:
+			# Keep spawn and boss room entries clean
+			continue
 
-	var all_edges: Array = edge_map.keys()
-	all_edges.sort_custom(func(e1: Vector2i, e2: Vector2i) -> bool:
-		return area_centers[e1.x].distance_squared_to(area_centers[e1.y]) < area_centers[e2.x].distance_squared_to(area_centers[e2.y])
-	)
+		if rng.randf() <= deadend_chance:
+			# Find an available cardinal neighbor
+			var free_neighbors: Array[Vector2i] = []
+			for dir in CARDINALS:
+				var neighbor_coord: Vector2i = spine_coord + dir
+				if not grid_map.has(neighbor_coord):
+					free_neighbors.append(neighbor_coord)
 
-	# 3. Minimum Spanning Tree (MST) using Kruskal's algorithm
-	var dsu := DisjointSet.new(graph.areas.size())
-	var active_edges: Array[Vector2i] = []
-	var unused_edges: Array[Vector2i] = []
+			if not free_neighbors.is_empty():
+				var branch_coord: Vector2i = free_neighbors[rng.randi_range(0, free_neighbors.size() - 1)]
 
-	for edge_variant in all_edges:
-		var edge: Vector2i = edge_variant
-		if dsu.union(edge.x, edge.y):
-			active_edges.append(edge)
-		else:
-			unused_edges.append(edge)
+				var deadend_area := AreaData.new()
+				deadend_area.index = graph.areas.size()
+				deadend_area.grid_coord = branch_coord
+				deadend_area.center = Vector2(branch_coord.x * step_x, branch_coord.y * step_y)
+				deadend_area.role = AreaPresetScript.RoomRole.DEADEND
+				deadend_area.size = AreaPresetScript.get_room_size(deadend_area.role, rng)
+				deadend_area.polygon = AreaPresetScript.build_rounded_rectangle(deadend_area.center, deadend_area.size)
+				graph.areas.append(deadend_area)
+				grid_map[branch_coord] = deadend_area.index
 
-	# 4. Controlled loop edge injection (add back 20-25% of candidates within range)
-	var num_loops: int = maxi(1, int(unused_edges.size() * loop_ratio))
-	for i in range(unused_edges.size() - 1, 0, -1):
-		var j: int = rng.randi_range(0, i)
-		var tmp = unused_edges[i]
-		unused_edges[i] = unused_edges[j]
-		unused_edges[j] = tmp
+				# Connect 1-room branch to parent main-spine room
+				active_edges[Vector2i(mini(parent_idx, deadend_area.index), maxi(parent_idx, deadend_area.index))] = false
 
-	var loop_edges_added: Dictionary = {}
-	for i in range(mini(num_loops, unused_edges.size())):
-		var loop_edge: Vector2i = unused_edges[i]
-		var dist: float = area_centers[loop_edge.x].distance_to(area_centers[loop_edge.y])
-		if dist <= layer_spacing * 2.3:
-			active_edges.append(loop_edge)
-			loop_edges_added[loop_edge] = true
+	# 3. Optional Loops: check adjacent main-path rooms that are not connected
+	for i in range(main_spine_coords.size()):
+		var c1: Vector2i = main_spine_coords[i]
+		var idx1: int = grid_map[c1]
+		for dir in CARDINALS:
+			var c2: Vector2i = c1 + dir
+			if grid_map.has(c2):
+				var idx2: int = grid_map[c2]
+				var edge_pair := Vector2i(mini(idx1, idx2), maxi(idx1, idx2))
+				if not active_edges.has(edge_pair):
+					# If both are main path rooms and not deadends, allow a loop with loop_chance
+					var area2 := graph.areas[idx2]
+					if area2.role != AreaPresetScript.RoomRole.DEADEND:
+						if rng.randf() <= loop_chance:
+							active_edges[edge_pair] = true # marked as loop
 
-	# 5. Build clean bridge polygons attaching the rounded areas
+	# 4. Generate Cardinal Bridges
 	var all_polys_to_merge: Array[PackedVector2Array] = []
 	for area in graph.areas:
 		all_polys_to_merge.append(area.polygon)
 
-	for edge in active_edges:
+	for edge in active_edges.keys():
+		var is_loop: bool = active_edges[edge]
 		var from_area := graph.areas[edge.x]
 		var to_area := graph.areas[edge.y]
+
 		var path := PathData.new()
 		path.from_idx = edge.x
 		path.to_idx = edge.y
-		path.is_loop = loop_edges_added.has(edge)
+		path.is_loop = is_loop
 
-		var bridge_w: float = rng.randf_range(bridge_width_min, bridge_width_max)
-		path.polygon = AreaPresetScript.build_bridge_polygon(
+		path.polygon = AreaPresetScript.build_cardinal_bridge(
 			from_area.center,
+			from_area.size,
 			to_area.center,
-			bridge_w,
-			16
+			to_area.size,
+			bridge_width
 		)
 		graph.paths.append(path)
 		all_polys_to_merge.append(path.polygon)
 
-	# 6. Merge all smooth rounded areas and bridges into archipelago polygons
+	# 5. Merge all rectangular rooms and cardinal bridges into seamless archipelago landmasses
 	var merged: Array[PackedVector2Array] = []
 	for poly in all_polys_to_merge:
 		if merged.is_empty():

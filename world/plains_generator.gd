@@ -14,9 +14,9 @@ signal graph_ready(graph: RefCounted)
 
 @export_group("Layout & Topology")
 @export var map_seed: int = 0
-@export var num_layers: int = 5
-@export var bridge_width_min: float = 3.6
-@export var bridge_width_max: float = 4.8
+@export var spine_length: int = 6
+@export var bridge_width: float = 4.8
+@export var deadend_chance: float = 0.45
 @export var loop_ratio: float = 0.25
 @export var auto_generate_on_ready: bool = false
 
@@ -48,12 +48,12 @@ func generate_map(p_seed: int = 0) -> void:
 		rng.randomize()
 		current_seed = rng.seed
 
-	# 1. Generate smooth rounded graph & bridge geometry
+	# 1. Generate rectangular graph & cardinal bridge geometry
 	current_graph = PlainsGraphScript.generate(
 		rng,
-		num_layers,
-		bridge_width_min,
-		bridge_width_max,
+		spine_length,
+		bridge_width,
+		deadend_chance,
 		loop_ratio
 	)
 
@@ -259,18 +259,26 @@ func _build_boundary_plane() -> void:
 	boundary_liquid_instance.name = "BoundaryPlane"
 	add_child(boundary_liquid_instance)
 
-	var plane_mesh := PlaneMesh.new()
-	plane_mesh.size = Vector2(400.0, 400.0)
-	plane_mesh.subdivide_width = 64
-	plane_mesh.subdivide_depth = 64
-
-	boundary_liquid_instance.mesh = plane_mesh
-
-	var center_2d := Vector2.ZERO
+	var min_pt := Vector2(INF, INF)
+	var max_pt := Vector2(-INF, -INF)
 	if current_graph and not current_graph.areas.is_empty():
 		for area in current_graph.areas:
-			center_2d += area.center
-		center_2d /= float(current_graph.areas.size())
+			var half_sz: Vector2 = area.size * 0.5
+			min_pt.x = minf(min_pt.x, area.center.x - half_sz.x)
+			min_pt.y = minf(min_pt.y, area.center.y - half_sz.y)
+			max_pt.x = maxf(max_pt.x, area.center.x + half_sz.x)
+			max_pt.y = maxf(max_pt.y, area.center.y + half_sz.y)
 
+	var center_2d: Vector2 = (min_pt + max_pt) * 0.5 if not current_graph.areas.is_empty() else Vector2.ZERO
+	var span_2d: Vector2 = (max_pt - min_pt) if not current_graph.areas.is_empty() else Vector2(200.0, 200.0)
+	var water_size: float = maxf(2000.0, maxf(span_2d.x, span_2d.y) * 4.0)
+
+	var plane_mesh := PlaneMesh.new()
+	plane_mesh.size = Vector2(water_size, water_size)
+	plane_mesh.subdivide_width = 128
+	plane_mesh.subdivide_depth = 128
+
+	boundary_liquid_instance.mesh = plane_mesh
 	boundary_liquid_instance.position = Vector3(center_2d.x, biome_theme.boundary_depth, center_2d.y)
 	boundary_liquid_instance.material_override = biome_theme.boundary_material
+

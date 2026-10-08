@@ -23,7 +23,7 @@ const PlainsGraphScript = preload("res://world/plains_graph.gd")
 @onready var leave_button: Button = %LeaveButton
 
 # Camera states
-var camera_offset: Vector3 = Vector3(-10.0, 10.0, 10.0)
+var camera_offset: Vector3 = Vector3(-400.0, 400.0, 400.0)
 var is_overview_mode: bool = false
 var normal_cam_size: float = 6.085
 var overview_cam_size: float = 65.0
@@ -45,6 +45,10 @@ func _ready() -> void:
 	generator.map_generated.connect(_on_map_generated)
 	generator.graph_ready.connect(_on_graph_ready)
 
+	if camera:
+		camera.near = 1.0
+		camera.far = 4000.0
+
 	# If generator did not auto-run, trigger now
 	if not generator.current_graph:
 		generator.generate_map(generator.map_seed)
@@ -62,7 +66,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if is_overview_mode:
 		# Frame the whole map from the center
-		var target_pos := map_center + camera_offset * 3.5
+		var target_pos := map_center + camera_offset
 		camera.global_position = camera.global_position.lerp(target_pos, clampf(8.0 * delta, 0.0, 1.0))
 		camera.size = lerpf(camera.size, overview_cam_size, clampf(8.0 * delta, 0.0, 1.0))
 	else:
@@ -85,13 +89,21 @@ func _on_map_generated(spawn_pos: Vector3, _goal_pos: Vector3) -> void:
 	_update_stats_label()
 
 func _on_graph_ready(graph: RefCounted) -> void:
-	# Calculate center of all area centers for overview camera
-	var avg := Vector2.ZERO
+	if graph.areas.is_empty():
+		return
+	var min_pt := Vector2(INF, INF)
+	var max_pt := Vector2(-INF, -INF)
 	for area in graph.areas:
-		avg += area.center
-	if not graph.areas.is_empty():
-		avg /= float(graph.areas.size())
-	map_center = Vector3(avg.x, 0.0, avg.y)
+		var half_sz: Vector2 = area.size * 0.5
+		min_pt.x = minf(min_pt.x, area.center.x - half_sz.x)
+		min_pt.y = minf(min_pt.y, area.center.y - half_sz.y)
+		max_pt.x = maxf(max_pt.x, area.center.x + half_sz.x)
+		max_pt.y = maxf(max_pt.y, area.center.y + half_sz.y)
+	var center_2d: Vector2 = (min_pt + max_pt) * 0.5
+	var span_2d: Vector2 = max_pt - min_pt
+	var max_span: float = maxf(span_2d.x, span_2d.y)
+	map_center = Vector3(center_2d.x, 0.0, center_2d.y)
+	overview_cam_size = maxf(65.0, max_span * 0.95)
 
 func _spawn_or_reposition_players() -> void:
 	var player_dict := NetworkManager.players
@@ -150,7 +162,7 @@ func _update_stats_label() -> void:
 	if generator.foliage_multimesh_instance and generator.foliage_multimesh_instance.multimesh:
 		grass_count = generator.foliage_multimesh_instance.multimesh.instance_count
 
-	stats_label.text = "Seed: %d | Clearings: %d | Corridors: %d (%d Loops) | Grass: %d\n[R] New Seed  |  [Tab/M] Toggle Overview" % [
+	stats_label.text = "Seed: %d | Rooms: %d | Bridges: %d (%d Loops) | Grass: %d\n[R] New Seed  |  [Tab/M] Toggle Overview" % [
 		generator.current_seed,
 		g.areas.size(),
 		g.paths.size(),
