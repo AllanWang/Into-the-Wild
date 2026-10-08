@@ -227,25 +227,36 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 		current_graph.areas.size(), current_graph.paths.size(), biome_theme.foliage_density, effective_density, max_cap
 	])
 
-	# 1. Sample directly inside each room's bounding box and test against area polygon
+	# 1. Sample directly inside each room with fast rounded-rectangle test
 	for area in current_graph.areas:
 		var half_sz: Vector2 = area.size * 0.5
 		var room_area: float = area.size.x * area.size.y
 		var room_count: int = int(room_area * effective_density)
 		var area_start_count := valid_transforms.size()
+		var r: float = minf(3.0, minf(half_sz.x, half_sz.y) * 0.4)
+		var inner_w: float = maxf(0.0, half_sz.x - r)
+		var inner_h: float = maxf(0.0, half_sz.y - r)
+		var r_sq: float = r * r
+
 		for _i in range(room_count):
-			var test_pt := Vector2(
-				rng.randf_range(area.center.x - half_sz.x, area.center.x + half_sz.x),
-				rng.randf_range(area.center.y - half_sz.y, area.center.y + half_sz.y)
-			)
-			if Geometry2D.is_point_in_polygon(test_pt, area.polygon):
-				var yaw: float = rng.randf_range(0.0, TAU)
+			var rx: float = rng.randf_range(-half_sz.x, half_sz.x)
+			var ry: float = rng.randf_range(-half_sz.y, half_sz.y)
+			var ax: float = absf(rx)
+			var ay: float = absf(ry)
+			var inside := true
+			if ax > inner_w and ay > inner_h:
+				var cdx: float = ax - inner_w
+				var cdy: float = ay - inner_h
+				if (cdx * cdx + cdy * cdy) > r_sq:
+					inside = false
+
+			if inside:
 				var t := Transform3D()
-				t = t.rotated(Vector3.UP, yaw)
-				t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
+				t.origin = Vector3(area.center.x + rx, 0.0, area.center.y + ry)
 				valid_transforms.append(t)
 				if valid_transforms.size() >= max_cap:
 					break
+
 		print("[Foliage] Area %d (center: %s, size: %s): generated %d blades (total: %d)" % [
 			area.index, area.center, area.size, valid_transforms.size() - area_start_count, valid_transforms.size()
 		])
@@ -266,18 +277,13 @@ func _build_foliage(rng: RandomNumberGenerator) -> void:
 			var bridge_count: int = int(bridge_area * effective_density * 0.5)
 			var path_start_count := valid_transforms.size()
 			for _i in range(bridge_count):
-				var test_pt := Vector2(
-					rng.randf_range(p_min.x, p_max.x),
-					rng.randf_range(p_min.y, p_max.y)
-				)
-				if Geometry2D.is_point_in_polygon(test_pt, path.polygon):
-					var yaw: float = rng.randf_range(0.0, TAU)
-					var t := Transform3D()
-					t = t.rotated(Vector3.UP, yaw)
-					t.origin = Vector3(test_pt.x, 0.0, test_pt.y)
-					valid_transforms.append(t)
-					if valid_transforms.size() >= max_cap:
-						break
+				var px: float = rng.randf_range(p_min.x, p_max.x)
+				var py: float = rng.randf_range(p_min.y, p_max.y)
+				var t := Transform3D()
+				t.origin = Vector3(px, 0.0, py)
+				valid_transforms.append(t)
+				if valid_transforms.size() >= max_cap:
+					break
 			print("[Foliage] Bridge %d->%d: generated %d blades (total: %d)" % [
 				path.from_idx, path.to_idx, valid_transforms.size() - path_start_count, valid_transforms.size()
 			])
