@@ -35,6 +35,7 @@ uniform float ripple_speed : hint_range(0.1, 5.0, 0.05) = 1.2;
 uniform float ripple_ring_density : hint_range(1.0, 20.0, 0.5) = 7.0;
 
 group_uniforms pool_shape;
+uniform bool infinite_water = false;
 uniform float edge_distortion_strength : hint_range(0.0, 1.5, 0.05) = 0.65;
 uniform float edge_distortion_frequency : hint_range(0.1, 5.0, 0.1) = 1.2;
 
@@ -61,16 +62,17 @@ void fragment() {
 	float pond_radius = 2.3 + distort;
 	float dist_from_center = length(p);
 
-	// Discard outside organic shape
-	if (dist_from_center > pond_radius) {
-		discard;
+	// Discard outside organic shape if not in infinite water mode
+	if (!infinite_water) {
+		if (dist_from_center > pond_radius) {
+			discard;
+		}
 	}
-	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	ALPHA_SCISSOR_THRESHOLD = infinite_water ? 0.0 : 0.5;
 
-	// Smooth, gentle depth gradient from shore inward
-	// Clamped to avoid a conical apex artifact at (0,0)
-	float edge_dist = clamp(pond_radius - dist_from_center, 0.0, 1.8);
-	float depth_factor = smoothstep(0.0, depth_distance, edge_dist);
+	// Depth gradient
+	float edge_dist = infinite_water ? 1.0 : clamp(pond_radius - dist_from_center, 0.0, 1.8);
+	float depth_factor = infinite_water ? 0.65 : smoothstep(0.0, depth_distance, edge_dist);
 	// Step gently into toon bands for classic toon water depth
 	float depth_stepped = floor(depth_factor * 3.0) / 3.0 * 0.45;
 	vec4 water_color = mix(shallow_color, deep_color, depth_stepped);
@@ -122,7 +124,7 @@ void fragment() {
 	total_foam = clamp(total_foam + ripple_foam, 0.0, 1.0);
 
 	vec3 final_rgb = mix(water_color.rgb, foam_color.rgb, total_foam);
-	float final_alpha = mix(water_color.a, foam_color.a, total_foam);
+	float final_alpha = infinite_water ? 1.0 : mix(water_color.a, foam_color.a, total_foam);
 
 	ALBEDO = final_rgb;
 	ALPHA = final_alpha;

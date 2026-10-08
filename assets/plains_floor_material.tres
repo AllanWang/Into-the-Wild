@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" load_steps=4 format=3 uid="uid://plains_floor_material_01"]
+
+[ext_resource type="Shader" path="res://shaders/Floor.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://assets/Albedo2Noise.tres" id="2_albedo2"]
+[ext_resource type="Texture2D" path="res://assets/Albedo3Noise.tres" id="3_albedo3"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/albedo1 = Color(0.443137, 0.635294, 0, 1)
+shader_parameter/albedo2 = Color(0.556863, 0.678431, 0.211765, 1)
+shader_parameter/albedo2_scale = 0.11
+shader_parameter/albedo2_threshold = 0.537
+shader_parameter/albedo2_noise = ExtResource("2_albedo2")
+shader_parameter/albedo3 = Color(0.501961, 0.654902, 0.223529, 1)
+shader_parameter/albedo3_scale = 0.1
+shader_parameter/albedo3_threshold = 0.471
+shader_parameter/albedo3_noise = ExtResource("3_albedo3")
+shader_parameter/water_pool_radius = 0.0
+shader_parameter/cuts = 3
+shader_parameter/wrap = 0.0
+shader_parameter/steepness = 1.0

@@ -1,0 +1,105 @@
+[gd_scene format=3 uid="uid://c7m9n4pq8k2w1"]
+
+[ext_resource type="Script" path="res://world/plains_level.gd" id="1_level_script"]
+[ext_resource type="Script" path="res://scripts/ShaderGlobals.gd" id="2_shader_globals"]
+[ext_resource type="Script" path="res://scripts/LightDirection.gd" id="3_light_dir"]
+[ext_resource type="Script" path="res://world/plains_generator.gd" id="4_generator"]
+[ext_resource type="Script" path="res://scripts/CharacterManager.gd" id="5_char_mgr"]
+
+[sub_resource type="Environment" id="Environment_plains"]
+background_energy_multiplier = 2.0
+ambient_light_source = 2
+ambient_light_color = Color(0.65098, 0.74902, 0.85098, 1)
+ambient_light_energy = 0.8
+
+[node name="PlainsLevel" type="Node3D"]
+script = ExtResource("1_level_script")
+
+[node name="ShaderGlobals" type="Node" parent="."]
+script = ExtResource("2_shader_globals")
+cloud_contrast = 3.845
+cloud_direction = Vector2(0, -1)
+cloud_diverge_angle = 20.0
+cloud_scale = 40.0
+cloud_speed = -0.01
+cloud_threshold = 0.27
+cloud_shadow_min = 0.2
+cloud_world_y = 50.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_plains")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, 0.383022, -0.321394, 0, 0.642788, 0.766044, 0.5, -0.663414, 0.55667, 0, 5, 0)
+shadow_enabled = true
+script = ExtResource("3_light_dir")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.707107, 0.408248, -0.57735, 0, 0.816497, 0.57735, 0.707107, -0.408248, 0.57735, -10, 10, 10)
+projection = 1
+current = true
+size = 6.085
+near = 0.001
+far = 500.0
+
+[node name="PlainsGenerator" type="Node3D" parent="."]
+script = ExtResource("4_generator")
+
+[node name="CharacterManager" type="Node" parent="."]
+script = ExtResource("5_char_mgr")
+
+[node name="Players" type="Node3D" parent="."]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="TopRightMargin" type="MarginContainer" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -480.0
+offset_bottom = 55.0
+grow_horizontal = 0
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+
+[node name="HBoxContainer" type="HBoxContainer" parent="HUD/TopRightMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="InfoLabel" type="Label" parent="HUD/TopRightMargin/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Peer ID: 1 | Players: 1"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="OverviewButton" type="Button" parent="HUD/TopRightMargin/HBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 32)
+layout_mode = 2
+text = "Map Overview"
+
+[node name="RegenButton" type="Button" parent="HUD/TopRightMargin/HBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 32)
+layout_mode = 2
+text = "New Seed"
+
+[node name="LeaveButton" type="Button" parent="HUD/TopRightMargin/HBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 32)
+layout_mode = 2
+text = "Leave Game"
+
+[node name="TopLeftMargin" type="MarginContainer" parent="HUD"]
+anchors_preset = 0
+offset_right = 450.0
+offset_bottom = 65.0
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+
+[node name="StatsLabel" type="Label" parent="HUD/TopLeftMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Generating Procedural Plains..."
