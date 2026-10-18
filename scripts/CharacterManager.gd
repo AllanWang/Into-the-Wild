@@ -56,6 +56,12 @@ func _update_grass() -> void:
 		grass.material_override.set_shader_parameter("character_positions", character_positions)
 	elif grass and grass.material_override:
 		grass.material_override.set("shader_parameter/character_positions", character_positions)
+	else:
+		var grass_nodes = get_tree().get_nodes_in_group("grass")
+		for g in grass_nodes:
+			if g is GeometryInstance3D and g.material_override is ShaderMaterial:
+				g.material_override.set_shader_parameter("character_positions", character_positions)
+				break
 
 func _is_pos_in_pond(pos: Vector3) -> bool:
 	# Organic pond equation matching ToonWater.gdshader

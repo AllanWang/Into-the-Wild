@@ -21,6 +21,7 @@ uniform vec4 albedo3 : source_color = vec4(1.0f); // Colour for grass patch 3
 uniform float albedo3_scale : hint_range(0.0, 0.1, 0.001) = 0.003; // Scale for grass patch 3 noise
 uniform float albedo3_threshold : hint_range(0.0, 1.0, 0.001) = 0.661; // Threshold for grass patch 3 noise
 uniform sampler2D albedo3_noise; // Noise pattern for grass patch 3
+uniform vec2 noise_offset = vec2(0.0); // Offset for noise sampling (used by corridors/bridges)
 
 	group_uniforms colours_and_textures.accent1;
 uniform float accent_frequency1 : hint_range(0.0, 0.05, 0.0001) = 0.001; // Frequency of accent grass 1
@@ -309,8 +310,8 @@ void fragment() {
 
 	// Sample albedo texture based on above calculation
 	vec4 albedo_tex = texture(albedo_texture, uv);
-	float albedo2_noise_tex = texture(albedo2_noise, object_origin.xz * (albedo2_scale)).r;
-	float albedo3_noise_tex = texture(albedo3_noise, object_origin.xz * (albedo3_scale)).r;
+	float albedo2_noise_tex = texture(albedo2_noise, (object_origin.xz + noise_offset) * (albedo2_scale)).r;
+	float albedo3_noise_tex = texture(albedo3_noise, (object_origin.xz + noise_offset) * (albedo3_scale)).r;
 	ALBEDO = albedo1.rgb * albedo_tex.rgb;
 	if (albedo2_noise_tex > albedo2_threshold) {
 		ALBEDO = albedo2.rgb;

@@ -18,6 +18,7 @@ uniform vec4 albedo3 : source_color = vec4(1.0f);
 uniform sampler2D albedo3_noise;
 uniform float albedo3_scale : hint_range(0.0, 0.1, 0.001) = 0.003;
 uniform float albedo3_threshold : hint_range(0.0, 1.0, 0.001) = 0.661;
+uniform vec2 noise_offset = vec2(0.0);
 
 group_uniforms lighting;
 uniform int cuts : hint_range(1, 8) = 3;
@@ -44,8 +45,8 @@ uniform float bank_width = 0.45;
 
 void fragment() {
 	// Texture noises for grass patches
-	float albedo2_noise_tex = texture(albedo2_noise, vertex_world.xz * (albedo2_scale)).r;
-	float albedo3_noise_tex = texture(albedo3_noise, vertex_world.xz * (albedo3_scale)).r;
+	float albedo2_noise_tex = texture(albedo2_noise, (vertex_world.xz + noise_offset) * (albedo2_scale)).r;
+	float albedo3_noise_tex = texture(albedo3_noise, (vertex_world.xz + noise_offset) * (albedo3_scale)).r;
 	// Set colours based on noise thresholds
 	ALBEDO = albedo1.rgb;
 	if (albedo2_noise_tex > albedo2_threshold) {

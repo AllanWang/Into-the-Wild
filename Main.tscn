@@ -8,6 +8,7 @@
 [ext_resource type="MultiMesh" path="res://assets/grass_multimesh.tres" id="6_grass_mm"]
 [ext_resource type="Script" uid="uid://btjvsravs4a8x" path="res://scripts/CharacterManager.gd" id="7_char_mgr"]
 [ext_resource type="Material" path="res://assets/water_pond_material.tres" id="8_water_mat"]
+[ext_resource type="Script" path="res://world/procedural_world.gd" id="9_proc_world"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_energy_multiplier = 2.0
@@ -16,10 +17,10 @@ ambient_light_color = Color(0.65098, 0.74902, 0.85098, 1)
 ambient_light_energy = 0.8
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-size = Vector2(25, 25)
+size = Vector2(50, 50)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(25, 0.2, 25)
+size = Vector3(50, 0.2, 50)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_water"]
 size = Vector2(6, 6)
@@ -55,29 +56,11 @@ transform = Transform3D(0.866025, 0.383022, -0.321394, 0, 0.642788, 0.766044, 0.
 shadow_enabled = true
 script = ExtResource("3_light_dir")
 
-[node name="Floor" type="MeshInstance3D" parent="." unique_id=1121975429]
-material_override = ExtResource("4_floor_mat")
-mesh = SubResource("PlaneMesh_floor")
+[node name="ProceduralWorld" type="Node3D" parent="." unique_id=1121975429]
+script = ExtResource("9_proc_world")
 
-[node name="StaticBody3D" type="StaticBody3D" parent="Floor" unique_id=779411139]
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor/StaticBody3D" unique_id=844583116]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-shape = SubResource("BoxShape3D_ground")
-
-[node name="Grass" type="MultiMeshInstance3D" parent="Floor" unique_id=793519258]
-material_override = ExtResource("5_grass_mat")
-cast_shadow = 0
-multimesh = ExtResource("6_grass_mm")
-
-[node name="WaterPond" type="MeshInstance3D" parent="." unique_id=531464930]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
-material_override = ExtResource("8_water_mat")
-mesh = SubResource("PlaneMesh_water")
-
-[node name="CharacterManager" type="Node" parent="." unique_id=960864206 node_paths=PackedStringArray("grass")]
+[node name="CharacterManager" type="Node" parent="." unique_id=960864206]
 script = ExtResource("7_char_mgr")
-grass = NodePath("../Floor/Grass")
 
 [node name="Players" type="Node3D" parent="." unique_id=460202742]
 
@@ -87,7 +70,7 @@ grass = NodePath("../Floor/Grass")
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -320.0
+offset_left = -580.0
 offset_bottom = 55.0
 grow_horizontal = 0
 theme_override_constants/margin_top = 12
@@ -103,6 +86,16 @@ size_flags_horizontal = 3
 text = "Peer ID: 1 | Players: 1"
 horizontal_alignment = 2
 vertical_alignment = 1
+
+[node name="TeleportButton" type="Button" parent="HUD/MarginContainer/HBoxContainer" unique_id=1102524687]
+custom_minimum_size = Vector2(105, 32)
+layout_mode = 2
+text = "Go to Area 2"
+
+[node name="CamButton" type="Button" parent="HUD/MarginContainer/HBoxContainer" unique_id=1102524686]
+custom_minimum_size = Vector2(110, 32)
+layout_mode = 2
+text = "Overview Cam"
 
 [node name="LeaveButton" type="Button" parent="HUD/MarginContainer/HBoxContainer" unique_id=1102524685]
 custom_minimum_size = Vector2(90, 32)
