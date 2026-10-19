@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 DebugTools="*res://debug_tools.gd"
 NetworkManager="*res://network/network_manager.gd"
 _mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
+ProjectilePool="*res://scripts/projectile_pool.gd"
 
 [display]
 

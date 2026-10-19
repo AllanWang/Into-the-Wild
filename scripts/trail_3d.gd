@@ -41,9 +41,26 @@ func _ready() -> void:
 	material_override = mat
 
 func _exit_tree() -> void:
+	reset()
+
+## Clears all recorded points and dynamic mesh surfaces.
+func reset() -> void:
+	_points.clear()
 	if _imm_mesh:
 		_imm_mesh.clear_surfaces()
-	_points.clear()
+
+## Activates the trail when acquired from a pool.
+func activate() -> void:
+	reset()
+	global_transform = Transform3D.IDENTITY
+	visible = true
+	set_physics_process(true)
+
+## Deactivates the trail when released back into a pool.
+func deactivate() -> void:
+	reset()
+	set_physics_process(false)
+	visible = false
 
 func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint():

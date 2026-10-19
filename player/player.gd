@@ -179,9 +179,12 @@ func _execute_attack() -> void:
 
 @rpc("call_local", "reliable")
 func _spawn_projectile(p_shooter_id: int, p_pos: Vector3, p_dir: Vector3) -> void:
-	var proj = PROJECTILE_SCENE.instantiate()
-	get_parent().add_child(proj)
-	proj.setup(p_shooter_id, p_pos, p_dir)
+	if ProjectilePool:
+		ProjectilePool.spawn(p_shooter_id, p_pos, p_dir)
+	else:
+		var proj = PROJECTILE_SCENE.instantiate()
+		get_parent().add_child(proj)
+		proj.setup(p_shooter_id, p_pos, p_dir)
 
 @rpc("call_local", "reliable")
 func _play_dash_effects(p_dash_dir: Vector3) -> void:
