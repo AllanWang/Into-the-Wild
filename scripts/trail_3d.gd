@@ -15,6 +15,12 @@ func _get_configuration_warnings() -> PackedStringArray:
 	# ImmediateMesh is handled dynamically at runtime, so suppress the static MeshInstance3D warning
 	return PackedStringArray()
 
+func _init() -> void:
+	if Engine.is_editor_hint():
+		return
+	_imm_mesh = ImmediateMesh.new()
+	mesh = _imm_mesh
+
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
@@ -22,9 +28,7 @@ func _ready() -> void:
 	top_level = true
 	global_transform = Transform3D.IDENTITY
 	
-	if mesh is ImmediateMesh:
-		_imm_mesh = mesh as ImmediateMesh
-	else:
+	if not _imm_mesh:
 		_imm_mesh = ImmediateMesh.new()
 		mesh = _imm_mesh
 	
@@ -35,6 +39,11 @@ func _ready() -> void:
 	mat.vertex_color_use_as_albedo = true
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	material_override = mat
+
+func _exit_tree() -> void:
+	if _imm_mesh:
+		_imm_mesh.clear_surfaces()
+	_points.clear()
 
 func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint():
