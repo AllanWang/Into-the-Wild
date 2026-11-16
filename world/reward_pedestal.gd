@@ -111,9 +111,9 @@ func activate_pedestal(p_pos: Vector3, p_players_root: Node3D, p_seed_hint: int 
 	if crystal_mesh:
 		crystal_mesh.scale = Vector3.ONE
 	if prompt_label:
-		prompt_label.text = "[F]"
-		prompt_label.modulate = Color(0.56, 0.96, 1.0, 1.0)
-		prompt_label.visible = false
+		prompt_label.text = "◆ Upgrade Pedestal"
+		prompt_label.modulate = Color(0.94, 0.91, 0.85, 0.78)
+		prompt_label.visible = true
 
 	if is_inside_tree():
 		global_position = Vector3(p_pos.x, 0.0, p_pos.z)
@@ -234,10 +234,13 @@ func _process(delta: float) -> void:
 	if now_in_range != _player_in_range:
 		_player_in_range = now_in_range
 		if prompt_label:
-			prompt_label.visible = _player_in_range
+			prompt_label.visible = true
 			if _player_in_range:
-				prompt_label.text = "[F]"
+				prompt_label.text = "[F] Choose Upgrade"
 				prompt_label.modulate = Color(0.56, 0.96, 1.0, 1.0)
+			else:
+				prompt_label.text = "◆ Upgrade Pedestal"
+				prompt_label.modulate = Color(0.94, 0.91, 0.85, 0.78)
 
 	if _player_in_range and near_player != null:
 		var blocked: bool = bool(near_player.get("ui_input_blocked")) if ("ui_input_blocked" in near_player) else false

@@ -92,6 +92,7 @@ func _ready() -> void:
 		encounter_manager.encounter_cleared.connect(_on_encounter_cleared)
 		encounter_manager.encounters_reset.connect(_on_encounters_reset)
 		encounter_manager.reward_pedestal_interacted.connect(_on_reward_pedestal_interacted)
+		encounter_manager.stage_portal_entered.connect(_on_stage_portal_entered)
 
 	if procedural_world:
 		procedural_world.world_generated.connect(_on_world_generated)
@@ -212,12 +213,37 @@ func _on_encounter_progress_changed(_area_idx: int, wave_idx: int, total_waves: 
 		]
 
 
-func _on_encounter_cleared(_area_idx: int, area_name: String) -> void:
+func _on_encounter_cleared(area_idx: int, area_name: String) -> void:
+	var is_final_stage: bool = false
+	if procedural_world and procedural_world.current_graph:
+		var g: PlainsGraph = procedural_world.current_graph
+		if area_idx == g.goal_index:
+			is_final_stage = true
+		elif area_idx >= 0 and area_idx < g.areas.size() and g.areas[area_idx].role == PlainsGraph.AreaPresetScript.RoomRole.BOSS:
+			is_final_stage = true
 	if encounter_banner:
-		encounter_banner.add_theme_color_override("font_color", Color(0.55, 1.0, 0.52, 1.0))
-		encounter_banner.text = "%s Cleared — Upgrade Pedestal Unlocked!" % area_name
+		if is_final_stage:
+			encounter_banner.add_theme_color_override("font_color", Color(0.66, 0.96, 1.0, 1.0))
+			encounter_banner.text = "%s Conquered — 3 Upgrade Pedestals & Rift Portal Unlocked!" % area_name
+			encounter_banner.visible = true
+			_banner_fade_timer = 5.5
+		else:
+			encounter_banner.add_theme_color_override("font_color", Color(0.55, 1.0, 0.52, 1.0))
+			encounter_banner.text = "%s Cleared — Upgrade Pedestal Unlocked!" % area_name
+			encounter_banner.visible = true
+			_banner_fade_timer = 3.0
+
+
+func _on_stage_portal_entered(_player_node: Node) -> void:
+	_on_regen_pressed()
+	if camera and _local_player and is_instance_valid(_local_player) and not is_overview:
+		camera.global_position = _local_player.global_position + camera_offset
+		camera.reset_physics_interpolation()
+	if encounter_banner and procedural_world:
+		encounter_banner.add_theme_color_override("font_color", Color(0.76, 0.88, 1.0, 1.0))
+		encounter_banner.text = "Rift Traversed — Entered New Map (Seed %d)" % procedural_world.current_seed
 		encounter_banner.visible = true
-		_banner_fade_timer = 3.0
+		_banner_fade_timer = 3.8
 
 
 func _on_encounters_reset() -> void:
@@ -282,7 +308,9 @@ func _on_regen_pressed() -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var new_seed: int = int(rng.seed & 0x7FFFFFFF)
+	var new_seed: int = maxi(1, int(rng.randi() & 0x7FFFFFFF))
+	if procedural_world and new_seed == procedural_world.current_seed:
+		new_seed = maxi(1, int((new_seed + 7919) & 0x7FFFFFFF))
 	var cur_mode: int = int(procedural_world.preset_mode)
 	NetworkManager.active_map_seed = new_seed
 	if multiplayer.has_multiplayer_peer():
@@ -320,6 +348,7 @@ func _reposition_existing_players(base_pos: Vector3) -> void:
 			var angle: float = float(i) * (TAU / float(count))
 			offset = Vector3(cos(angle) * 1.8, 0.0, sin(angle) * 1.8)
 		p_node.global_position = base_pos + offset
+		p_node.reset_physics_interpolation()
 
 
 func _wire_player_signals_and_hud(p_node: Node) -> void:

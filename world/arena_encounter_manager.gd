@@ -17,6 +17,7 @@ const TELEGRAPH_SCENE: PackedScene = preload("res://world/spawn_telegraph.tscn")
 const BARRIER_SCENE: PackedScene = preload("res://world/vine_barrier.tscn")
 const PEDESTAL_SCENE: PackedScene = preload("res://world/reward_pedestal.tscn")
 const HEALING_WELL_SCENE: PackedScene = preload("res://world/healing_well.tscn")
+const StagePortalScript = preload("res://world/stage_portal.gd")
 
 enum RoomState {
 	UNVISITED,
@@ -31,6 +32,7 @@ signal encounter_progress_changed(area_idx: int, wave_idx: int, total_waves: int
 signal encounter_cleared(area_idx: int, area_name: String)
 signal encounters_reset()
 signal reward_pedestal_interacted(pedestal: Node3D, player_node: Node)
+signal stage_portal_entered(player_node: Node)
 
 @export var players_container: Node3D
 @export var entry_inset_margin: float = 3.6
@@ -42,6 +44,7 @@ var _telegraph_pool: NodePool = null
 var _barrier_pool: NodePool = null
 var _pedestal_pool: NodePool = null
 var _well_pool: NodePool = null
+var _stage_portal: Node3D = null
 
 var _graph: PlainsGraph = null
 var _room_states: Dictionary = {}          # area_idx -> RoomState
@@ -112,6 +115,16 @@ func _setup_pools() -> void:
 	_well_pool.can_grow = true
 	add_child(_well_pool)
 
+	_stage_portal = StagePortalScript.new()
+	_stage_portal.name = "StagePortal"
+	add_child(_stage_portal)
+	if _stage_portal.has_signal("portal_activated") and not _stage_portal.is_connected("portal_activated", _on_stage_portal_activated):
+		_stage_portal.connect("portal_activated", _on_stage_portal_activated)
+
+
+func _on_stage_portal_activated(player_node: Node) -> void:
+	stage_portal_entered.emit(player_node)
+
 
 func _spawn_reward_pedestal_at(world_pos: Vector3, seed_hint: int = 0) -> void:
 	if _pedestal_pool == null:
@@ -137,6 +150,8 @@ func setup_for_graph(graph: PlainsGraph, map_seed: int = 0) -> void:
 		_pedestal_pool.release_all()
 	if _well_pool:
 		_well_pool.release_all()
+	if _stage_portal and _stage_portal.has_method("deactivate"):
+		_stage_portal.call("deactivate")
 
 	_graph = graph
 	_arenas_cleared_count = 0
@@ -600,7 +615,16 @@ func _rpc_clear_encounter(area_idx: int) -> void:
 
 	if _graph and area_idx >= 0 and area_idx < _graph.areas.size():
 		var c_area: PlainsGraph.AreaData = _graph.areas[area_idx]
-		_spawn_reward_pedestal_at(Vector3(c_area.center.x, 0.0, c_area.center.y), area_idx * 7919)
+		var is_final_stage: bool = (area_idx == _graph.goal_index) or (c_area.role == AreaPresetScript.RoomRole.BOSS)
+		if is_final_stage:
+			# Final Stage (Boss Citadel): drop 3 Upgrade Pedestals in an arc + unlock the Rift Portal to the next map
+			_spawn_reward_pedestal_at(Vector3(c_area.center.x - 4.2, 0.0, c_area.center.y + 2.4), area_idx * 7919 + 11)
+			_spawn_reward_pedestal_at(Vector3(c_area.center.x, 0.0, c_area.center.y + 3.8), area_idx * 7919 + 29)
+			_spawn_reward_pedestal_at(Vector3(c_area.center.x + 4.2, 0.0, c_area.center.y + 2.4), area_idx * 7919 + 47)
+			if _stage_portal and _stage_portal.has_method("activate_portal"):
+				_stage_portal.call("activate_portal", Vector3(c_area.center.x, 0.0, c_area.center.y - 3.2), players_container)
+		else:
+			_spawn_reward_pedestal_at(Vector3(c_area.center.x, 0.0, c_area.center.y), area_idx * 7919)
 
 	var label: String = _role_title(_graph.areas[area_idx].role) if (_graph and area_idx < _graph.areas.size()) else "Arena"
 	encounter_cleared.emit(area_idx, label)

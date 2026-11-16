@@ -129,6 +129,7 @@ var _hit_flash_timer: float = 0.0
 var _base_color: Color = Color(0.25, 0.6, 1.0)
 var _body_mat: StandardMaterial3D = null
 var is_dashing: bool = false
+var dash_grants_invulnerability: bool = false
 
 static var _shared_visor_mat: StandardMaterial3D = null
 static var _shared_hp_quad: QuadMesh = null
@@ -644,7 +645,9 @@ func restore_full_health() -> void:
 func try_apply_contact_damage(amount: float, hit_dir: Vector3 = Vector3.ZERO) -> bool:
 	if amount <= 0.0:
 		return false
-	if is_dashing or _dash_grace_timer > 0.0 or _invuln_timer > 0.0:
+	if _invuln_timer > 0.0:
+		return false
+	if dash_grants_invulnerability and (is_dashing or _dash_grace_timer > 0.0):
 		return false
 	if health_comp == null or health_comp.is_dead:
 		return false
@@ -691,10 +694,10 @@ func _process(delta: float) -> void:
 		return
 	if _hit_flash_timer > 0.0:
 		_hit_flash_timer = maxf(0.0, _hit_flash_timer - delta)
-		if _hit_flash_timer <= 0.0 and _body_mat and not is_dashing:
-			_body_mat.albedo_color = _base_color
+		if _hit_flash_timer <= 0.0 and _body_mat:
+			_body_mat.albedo_color = _base_color.lightened(0.38) if (is_dashing and dash_grants_invulnerability) else _base_color
 	elif _body_mat:
-		if is_dashing:
+		if is_dashing and dash_grants_invulnerability:
 			_body_mat.albedo_color = _base_color.lightened(0.38)
 		else:
 			_body_mat.albedo_color = _base_color
@@ -788,8 +791,12 @@ func _physics_process(delta: float) -> void:
 		_artifact_buffer = maxf(0.0, _artifact_buffer - delta)
 
 	var focused: bool = DisplayServer.window_is_focused() or (DebugTools == null or DebugTools.active_instance_count <= 1)
+	var alt_held_now: bool = _alt_inspect_active or Input.is_action_pressed("inspect_loadout") or Input.is_key_pressed(KEY_ALT) or Input.is_physical_key_pressed(KEY_ALT)
+	if alt_held_now:
+		_weapon_buffers[0] = 0.0
+		_weapon_buffers[1] = 0.0
 	var allow_keys: bool = (not ui_input_blocked) and focused
-	var allow_mouse_weapons: bool = allow_keys and (not _alt_inspect_active) and (_ui_unblock_grace <= 0.0)
+	var allow_mouse_weapons: bool = allow_keys and (not alt_held_now) and (_ui_unblock_grace <= 0.0)
 
 	if allow_keys:
 		if Input.is_action_just_pressed("swap_weapons"):
@@ -798,7 +805,7 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("dash"):
 			_dash_buffer_timer = DASH_BUFFER_WINDOW
 
-		if not _alt_inspect_active:
+		if not alt_held_now:
 			if Input.is_action_just_pressed("ability_q"):
 				_ability_buffers[0] = INPUT_BUFFER_WINDOW
 

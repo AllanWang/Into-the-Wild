@@ -103,15 +103,16 @@ func _build_shell() -> void:
 func _build_stationary_preview_card() -> void:
 	_preview_card = PanelContainer.new()
 	_preview_card.name = "StationaryPreviewCard"
-	# Anchored bottom-left right above the 1.86x zoomed Loadout Cluster (x = 73, top y = 530 in 1280x720)
+	# Bottom-anchored above the 1.86x zoomed Loadout Cluster (diamond tops at y = 530 in 1280x720; grows upward)
 	_preview_card.anchor_left = 0.0
 	_preview_card.anchor_right = 0.0
 	_preview_card.anchor_top = 1.0
 	_preview_card.anchor_bottom = 1.0
+	_preview_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_preview_card.offset_left = 73.0
-	_preview_card.offset_right = 419.0
-	_preview_card.offset_top = -340.0
-	_preview_card.offset_bottom = -204.0
+	_preview_card.offset_right = 435.0
+	_preview_card.offset_top = -342.0
+	_preview_card.offset_bottom = -214.0
 	_preview_card.mouse_filter = Control.MOUSE_FILTER_STOP
 	_preview_card.visible = false
 

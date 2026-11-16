@@ -397,7 +397,7 @@ func _input(event: InputEvent) -> void:
 					get_viewport().set_input_as_handled()
 		return
 
-	# 4. Hold [Alt] Hover-Inspect Mode (zoom + hover tooltip only, zero click/drag!)
+	# 4. Hold [Alt] Hover-Inspect Mode (zoom + hover tooltip only, block LMB/RMB shooting!)
 	if _alt_held and not _tab_toggled_open:
 		if event is InputEventMouseMotion:
 			_cluster_mouse_local = _canvas_to_cluster_local(_last_canvas_mouse)
@@ -407,6 +407,10 @@ func _input(event: InputEvent) -> void:
 				_update_inspect_card()
 				if _cluster_canvas:
 					_cluster_canvas.queue_redraw()
+		elif event is InputEventMouseButton:
+			var alt_mb: InputEventMouseButton = event as InputEventMouseButton
+			if alt_mb.button_index == MOUSE_BUTTON_LEFT or alt_mb.button_index == MOUSE_BUTTON_RIGHT:
+				get_viewport().set_input_as_handled()
 		return
 
 	# 5. [Tab] Toggle Reorder Mode (drag-and-drop & click-swap + hover inspect!)
@@ -507,8 +511,10 @@ func _sync_mode_transitions() -> void:
 			_dragging = false
 			_drag_from_idx = -1
 			_selected_socket_idx = -1
-		if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_alt_inspect_active"):
-			_bound_player.call("set_alt_inspect_active", now_reorder)
+
+	var block_weapons: bool = (now_reorder or _alt_held) and not _placement_active
+	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_alt_inspect_active"):
+		_bound_player.call("set_alt_inspect_active", block_weapons)
 
 	if zoomed and not _placement_active:
 		_cluster_mouse_local = _canvas_to_cluster_local(_last_canvas_mouse)
@@ -518,6 +524,7 @@ func _sync_mode_transitions() -> void:
 
 	_last_inspected_key = ""
 	_update_inspect_card()
+	_layout_floating_cards()
 	set_process(true)
 	_request_full_redraw()
 
@@ -742,8 +749,8 @@ func _build_labels_if_needed() -> void:
 	# [Tab] Attributes & Loadout Card (1.0x crisp unscaled child of PlayerHealthBar)
 	_stats_panel = PanelContainer.new()
 	_stats_panel.name = "StatsSheetPanel"
-	_stats_panel.position = Vector2(0.0, -242.0)
-	_stats_panel.custom_minimum_size = Vector2(284.0, 170.0)
+	_stats_panel.position = Vector2(0.0, -252.0)
+	_stats_panel.custom_minimum_size = Vector2(316.0, 150.0)
 	_stats_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stats_panel.visible = false
 
@@ -947,12 +954,27 @@ func _update_inspect_card() -> void:
 			_inspect_live_lbl.text = "%s   ·   Live CD: %.1fs" % [_format_live_artifact_scaling(item_id, ad_v, ap_v), art_cd]
 			_inspect_live_lbl.visible = true
 
-	# Place side-by-side next to StatsSheetPanel in [Tab] mode, or directly above the Loadout Cluster in [Alt] mode!
-	if _tab_toggled_open and _stats_panel != null and _stats_panel.visible:
-		_inspect_card.position = Vector2(292.0, -242.0)
-	else:
-		_inspect_card.position = Vector2(CLUSTER_X, -222.0)
 	_inspect_card.visible = true
+	_layout_floating_cards()
+
+
+func _layout_floating_cards() -> void:
+	# Bottom-anchor floating cards at y = -76.0 (zoomed diamond tops sit at y = -53..-56),
+	# guaranteeing a 20px+ clear gap above the zoomed Loadout Cluster regardless of text wrap!
+	var card_bottom_y: float = -76.0
+	if _stats_panel != null and _stats_panel.visible:
+		_stats_panel.reset_size()
+		var sh: float = maxf(_stats_panel.get_combined_minimum_size().y, _stats_panel.size.y)
+		_stats_panel.position = Vector2(0.0, card_bottom_y - sh)
+
+	if _inspect_card != null and _inspect_card.visible:
+		_inspect_card.reset_size()
+		var ih: float = maxf(_inspect_card.get_combined_minimum_size().y, _inspect_card.size.y)
+		var ix: float = CLUSTER_X
+		if _tab_toggled_open and _stats_panel != null and _stats_panel.visible:
+			var sw: float = maxf(_stats_panel.get_combined_minimum_size().x, _stats_panel.size.x)
+			ix = sw + 12.0
+		_inspect_card.position = Vector2(ix, card_bottom_y - ih)
 
 
 func _format_live_shard_scaling(sid: int, ad_v: float, ap_v: float) -> String:
@@ -1299,6 +1321,7 @@ func _process(delta: float) -> void:
 			if hov_now != _hovered_socket_idx:
 				_hovered_socket_idx = hov_now
 				_update_inspect_card()
+		_layout_floating_cards()
 
 	if _hit_flash_timer > 0.0:
 		_hit_flash_timer = maxf(0.0, _hit_flash_timer - delta)
