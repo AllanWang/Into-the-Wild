@@ -5,6 +5,8 @@
 [ext_resource type="Script" path="res://scripts/LightDirection.gd" id="3_light_dir"]
 [ext_resource type="Script" path="res://world/plains_generator.gd" id="4_generator"]
 [ext_resource type="Script" path="res://scripts/CharacterManager.gd" id="5_char_mgr"]
+[ext_resource type="Script" path="res://world/arena_encounter_manager.gd" id="6_encounter_mgr"]
+[ext_resource type="Script" path="res://ui/player_health_bar.gd" id="7_player_hp_bar"]
 
 [sub_resource type="Environment" id="Environment_plains"]
 background_energy_multiplier = 2.0
@@ -35,12 +37,12 @@ shadow_enabled = true
 script = ExtResource("3_light_dir")
 
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(0.707107, 0.408248, -0.57735, 0, 0.816497, 0.57735, 0.707107, -0.408248, 0.57735, -10, 10, 10)
+transform = Transform3D(0.707107, 0.408248, -0.57735, 0, 0.816497, 0.57735, 0.707107, -0.408248, 0.57735, -18, 18, 18)
 projection = 1
 current = true
-size = 6.085
-near = 0.001
-far = 500.0
+size = 11.0
+near = 0.05
+far = 2500.0
 
 [node name="PlainsGenerator" type="Node3D" parent="."]
 script = ExtResource("4_generator")
@@ -48,9 +50,31 @@ script = ExtResource("4_generator")
 [node name="CharacterManager" type="Node" parent="."]
 script = ExtResource("5_char_mgr")
 
+[node name="ArenaEncounterManager" type="Node3D" parent="."]
+script = ExtResource("6_encounter_mgr")
+
 [node name="Players" type="Node3D" parent="."]
 
 [node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="EncounterBanner" type="Label" parent="HUD"]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -220.0
+offset_top = 56.0
+offset_right = 220.0
+offset_bottom = 90.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(1, 0.88, 0.45, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.06, 0.1, 0.95)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 18
+text = "Combat Arena — Enemies: 6 / 6"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="TopRightMargin" type="MarginContainer" parent="HUD"]
 anchors_preset = 1
@@ -84,7 +108,7 @@ text = "Leave Game"
 [node name="DebugOverlay" type="MarginContainer" parent="HUD"]
 unique_name_in_owner = true
 anchors_preset = 0
-offset_right = 550.0
+offset_right = 680.0
 offset_bottom = 85.0
 theme_override_constants/margin_left = 14
 theme_override_constants/margin_top = 12
@@ -96,23 +120,50 @@ theme_override_constants/separation = 6
 [node name="StatsLabel" type="Label" parent="HUD/DebugOverlay/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "[DEBUG] Generating Procedural Plains..."
+text = "[Standard Web] Generating Procedural Plains..."
 
 [node name="DebugButtons" type="HBoxContainer" parent="HUD/DebugOverlay/VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
-[node name="OverviewButton" type="Button" parent="HUD/DebugOverlay/VBoxContainer/DebugButtons"]
+[node name="PresetButton" type="Button" parent="HUD/DebugOverlay/VBoxContainer/DebugButtons"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(140, 30)
+custom_minimum_size = Vector2(180, 30)
 layout_mode = 2
 focus_mode = 0
-text = "Map Overview (Debug)"
+text = "Mode: Standard Web"
 
 [node name="RegenButton" type="Button" parent="HUD/DebugOverlay/VBoxContainer/DebugButtons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(105, 30)
+layout_mode = 2
+focus_mode = 0
+text = "New Seed"
+
+[node name="TeleportButton" type="Button" parent="HUD/DebugOverlay/VBoxContainer/DebugButtons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(130, 30)
+layout_mode = 2
+focus_mode = 0
+text = "Go: Arena #2"
+
+[node name="OverviewButton" type="Button" parent="HUD/DebugOverlay/VBoxContainer/DebugButtons"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(120, 30)
 layout_mode = 2
 focus_mode = 0
-text = "New Seed (Debug)"
+text = "Overview Cam"
 
+[node name="PlayerHealthBar" type="Control" parent="HUD"]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 22.0
+offset_top = -134.0
+offset_right = 330.0
+offset_bottom = -18.0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("7_player_hp_bar")
