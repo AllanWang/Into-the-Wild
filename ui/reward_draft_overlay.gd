@@ -103,15 +103,15 @@ func _build_shell() -> void:
 func _build_stationary_preview_card() -> void:
 	_preview_card = PanelContainer.new()
 	_preview_card.name = "StationaryPreviewCard"
-	# Anchored bottom-left right above the 1.92x zoomed HUD (which occupies y = 479..702 in 1280x720)
+	# Anchored bottom-left right above the 1.86x zoomed Loadout Cluster (x = 73, top y = 530 in 1280x720)
 	_preview_card.anchor_left = 0.0
 	_preview_card.anchor_right = 0.0
 	_preview_card.anchor_top = 1.0
 	_preview_card.anchor_bottom = 1.0
-	_preview_card.offset_left = 22.0
-	_preview_card.offset_right = 368.0
-	_preview_card.offset_top = -396.0
-	_preview_card.offset_bottom = -262.0
+	_preview_card.offset_left = 73.0
+	_preview_card.offset_right = 419.0
+	_preview_card.offset_top = -340.0
+	_preview_card.offset_bottom = -204.0
 	_preview_card.mouse_filter = Control.MOUSE_FILTER_STOP
 	_preview_card.visible = false
 

@@ -136,9 +136,9 @@ func _build_ui() -> void:
 	cols.add_child(_make_section(
 		"LOADOUT & SHARDS",
 		COL_ACCENT_GOLD,
-		"Press [Tab] — Toggle Edit + Attributes mode (drag Shards, Weapons, and Q & E freely without holding a key).\n\n"
-		+ "Hold [Alt] — Quick-zoom the HUD while held.\n\n"
-		+ "Picking up a Shard, Weapon, or Ability zooms the HUD so you click a glowing slot directly."
+		"Press [Tab] — Toggle Reorder & Attributes mode (drag Shards, Weapons, and Q & E freely).\n\n"
+		+ "Hold [Alt] — Zoom Loadout slots & hover any Weapon, Shard, or Ability to inspect its live stats.\n\n"
+		+ "Picking up a Shard, Weapon, or Ability zooms the slots so you click a glowing target directly."
 	))
 
 	cols.add_child(_make_section(
