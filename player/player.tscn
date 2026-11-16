@@ -1,6 +1,8 @@
-[gd_scene load_steps=6 format=3 uid="uid://d4e4v31fyvpwo"]
+[gd_scene load_steps=8 format=3 uid="uid://d4e4v31fyvpwo"]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_oul6g"]
+[ext_resource type="Script" path="res://scripts/components/health_component.gd" id="2_health_comp"]
+[ext_resource type="Script" path="res://scripts/components/stats_component.gd" id="3_stats_comp"]
 
 [sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_player"]
 properties/0/path = NodePath(".:position")
@@ -42,8 +44,24 @@ mesh = SubResource("BoxMesh_visor")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
 shape = SubResource("CapsuleShape3D_player")
 
+[node name="HealthComponent" type="Node" parent="."]
+script = ExtResource("2_health_comp")
+max_health = 100.0
+
+[node name="StatsComponent" type="Node" parent="."]
+script = ExtResource("3_stats_comp")
+
+[node name="HPBarRoot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.82, 0)
+
+[node name="HPBg" type="MeshInstance3D" parent="HPBarRoot"]
+cast_shadow = 0
+
+[node name="HPFill" type="MeshInstance3D" parent="HPBarRoot"]
+cast_shadow = 0
+
 [node name="NameTag" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.02, 0)
 billboard = 1
 no_depth_test = true
 text = "Player"
@@ -54,4 +72,3 @@ texture_filter = 3
 
 [node name="MultiplayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
 replication_config = SubResource("SceneReplicationConfig_player")
-

@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://world/combat_zone_effect.gd" id="1_zone"]
+
+[node name="CombatZoneEffect" type="Node3D"]
+script = ExtResource("1_zone")
+
+[node name="RingMesh" type="MeshInstance3D" parent="."]
+
+[node name="DiscMesh" type="MeshInstance3D" parent="."]
+
+[node name="PillarMesh" type="MeshInstance3D" parent="."]
+visible = false

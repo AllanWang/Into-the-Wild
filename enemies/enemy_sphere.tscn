@@ -1,0 +1,47 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://enemies/enemy_sphere.gd" id="1_enemy_script"]
+[ext_resource type="Script" path="res://scripts/components/health_component.gd" id="2_health_comp"]
+[ext_resource type="Script" path="res://scripts/components/hurtbox_component.gd" id="3_hurtbox_comp"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_body"]
+radius = 0.38
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_hurt"]
+radius = 0.44
+
+[node name="EnemySphere" type="CharacterBody3D"]
+collision_layer = 4
+collision_mask = 5
+script = ExtResource("1_enemy_script")
+
+[node name="VisualRoot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.44, 0)
+
+[node name="SphereMesh" type="MeshInstance3D" parent="VisualRoot"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38, 0)
+shape = SubResource("SphereShape3D_body")
+
+[node name="HealthComponent" type="Node" parent="."]
+script = ExtResource("2_health_comp")
+
+[node name="HurtboxComponent" type="Area3D" parent="."]
+collision_layer = 4
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_hurtbox_comp")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HurtboxComponent"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.38, 0)
+shape = SubResource("SphereShape3D_hurt")
+
+[node name="HPBarRoot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.18, 0)
+visible = false
+
+[node name="HPBg" type="MeshInstance3D" parent="HPBarRoot"]
+
+[node name="HPFill" type="MeshInstance3D" parent="HPBarRoot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.01)
