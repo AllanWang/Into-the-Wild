@@ -3,11 +3,11 @@ extends Control
 
 ## Ethereal Lattice Bottom-Left Player HUD inspired by Breath of the Wild × Shape of Dreams.
 ## - Normal Mode (1.0x): [Dash ◆ (◆ ◆ ◆)] | [LMB ◆ (◆ ◆ ◆)] [RMB ◆ (◆ ◆ ◆)] | [Q ◆] [E ◆] | [R ◆]
-## - Hold [Alt]: Scales the HUD up in-place (1.92x) to drag-and-drop (or click-to-move) Shards,
-##   Weapons (LMB ↔ RMB), and Abilities (Q ↔ E).
-## - Pickup Placement Mode: When picking up a Shard, Weapon, or Ability from a Pedestal, scales
-##   the HUD up automatically and attaches the item to your cursor so you click directly onto
-##   the target HUD slot (Shape of Dreams style — no separate Left/Right dialog box).
+## - Press [Tab] (Toggle): Toggles zoomed Edit + Attributes mode (1.92x) — drag Shards, Weapons,
+##   and Abilities freely with normal Left-Click (no key held down), press Tab or Esc to close.
+## - Hold [Alt]: Quick-zooms the HUD (1.92x) while held for fast Shard/Weapon/Ability dragging.
+## - Pickup Placement Mode: Scales the HUD up with glowing target sockets while a stationary
+##   Preview Card sits above the HUD (normal pointer — nothing stuck to your cursor).
 
 const CatalogScript = preload("res://scripts/data/combat_catalog.gd")
 
@@ -40,8 +40,10 @@ var _slot_equipped: Array[bool] = [true, true, false, false, false]
 var _slot_progress: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0]
 var _weapon_shard_ids: Array = [[0, 0, 0], [0, 0, 0]]
 
-# Hold [Alt] & Pickup Placement in-place zoom state
+# Edit Mode ([Tab] toggle + [Alt] hold) & Pickup Placement zoom state
+var _tab_toggled_open: bool = false
 var _alt_held: bool = false
+var _was_edit_mode: bool = false
 var _alt_zoom_t: float = 0.0
 var _pulse_phase: float = 0.0
 var _sockets: Array[Dictionary] = []
@@ -49,11 +51,15 @@ var _hovered_socket_idx: int = -1
 var _dragging: bool = false
 var _drag_from_idx: int = -1
 var _selected_socket_idx: int = -1
-var _mouse_local: Vector2 = Vector2.ZERO
-var _prev_polled_lmb: bool = false
-var _last_polled_vp_mouse: Vector2 = Vector2(-99999.0, -99999.0)
 
-# Pickup Placement Mode state (Shape of Dreams direct-to-HUD slotting)
+# Event-driven canvas mouse position (avoids Godot Embedded Game View's toolbar offset
+# in get_viewport().get_mouse_position() / get_local_mouse_position()!)
+var _last_canvas_mouse: Vector2 = Vector2(140.0, 620.0)
+var _mouse_local: Vector2 = Vector2.ZERO
+var _drag_attempted_this_press: bool = false
+var _prev_polled_lmb: bool = false
+
+# Pickup Placement Mode state
 var _placement_active: bool = false
 var _placement_spec: Dictionary = {}
 var _placement_on_placed: Callable = Callable()
@@ -66,7 +72,6 @@ var _shield_label: Label = null
 var _stats_panel: PanelContainer = null
 var _stats_body_label: Label = null
 var _slot_key_labels: Array[Label] = []
-var _placement_back_btn: Button = null
 
 var _scratch_quad := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 var _scratch_closed := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
@@ -142,11 +147,14 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		pivot_offset = Vector2(0.0, size.y)
 	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		# Only clear Alt when the entire OS application loses focus (e.g. Alt+Tab),
-		# NOT on NOTIFICATION_WM_WINDOW_FOCUS_OUT which flickers on Windows Alt menu focus!
 		Input.action_release("inspect_loadout")
 		if _alt_held:
-			_set_alt_mode(false)
+			_alt_held = false
+			_sync_edit_mode_transition()
+
+
+func _canvas_to_local(canvas_pt: Vector2) -> Vector2:
+	return get_global_transform_with_canvas().affine_inverse() * canvas_pt
 
 
 func _is_alt_pressed() -> bool:
@@ -162,18 +170,31 @@ func _is_alt_pressed() -> bool:
 	)
 
 
+func _is_edit_mode() -> bool:
+	return (_tab_toggled_open or _alt_held) and not _placement_active
+
+
 func _is_interactive_zoom() -> bool:
-	return _alt_held or _placement_active
+	return _tab_toggled_open or _alt_held or _placement_active
 
 
 func is_pickup_placement_active() -> bool:
 	return _placement_active
 
 
-## Enters Shape of Dreams HUD-zoom placement mode for a picked-up Shard, Weapon, or Q/E Ability.
+func close_tab_edit_mode() -> void:
+	if _tab_toggled_open:
+		_tab_toggled_open = false
+		_sync_edit_mode_transition()
+
+
+## Enters Pickup Placement Mode: zooms the HUD up and pulses valid target sockets
+## (while RewardDraftOverlay shows a stationary Preview Card above — no gem stuck to cursor).
 func begin_pickup_placement(spec: Dictionary, on_placed_cb: Callable, on_cancel_cb: Callable) -> void:
-	if _alt_held:
-		_set_alt_mode(false)
+	_tab_toggled_open = false
+	_alt_held = false
+	_sync_edit_mode_transition()
+
 	_placement_active = true
 	_placement_spec = spec.duplicate(true)
 	_placement_on_placed = on_placed_cb
@@ -183,13 +204,10 @@ func begin_pickup_placement(spec: Dictionary, on_placed_cb: Callable, on_cancel_
 	_drag_from_idx = -1
 	_selected_socket_idx = -1
 	pivot_offset = Vector2(0.0, size.y if size.y > 1.0 else 116.0)
-	_mouse_local = get_local_mouse_position()
-	_last_polled_vp_mouse = get_viewport().get_mouse_position() if get_viewport() else Vector2.ZERO
+	_mouse_local = _canvas_to_local(_last_canvas_mouse)
 	_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
 	if _stats_panel:
 		_stats_panel.visible = false
-	if _placement_back_btn:
-		_placement_back_btn.visible = true
 	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
 		_bound_player.call("set_ui_input_blocked", true)
 	set_process(true)
@@ -205,8 +223,6 @@ func cancel_pickup_placement(notify_cancel: bool = true) -> void:
 	_placement_on_placed = Callable()
 	_placement_on_cancel = Callable()
 	_hovered_socket_idx = -1
-	if _placement_back_btn:
-		_placement_back_btn.visible = false
 	if not notify_cancel:
 		if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
 			_bound_player.call("set_ui_input_blocked", false)
@@ -232,8 +248,6 @@ func _commit_pickup_placement_socket(sock_idx: int) -> void:
 	_placement_on_placed = Callable()
 	_placement_on_cancel = Callable()
 	_hovered_socket_idx = -1
-	if _placement_back_btn:
-		_placement_back_btn.visible = false
 	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
 		_bound_player.call("set_ui_input_blocked", false)
 
@@ -270,32 +284,50 @@ func _init_socket_table() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# Consume raw Alt key events so Windows / Editor menu bar doesn't steal the next LMB click!
-	if event is InputEventKey:
-		var ke_alt: InputEventKey = event as InputEventKey
-		if ke_alt.keycode == KEY_ALT or ke_alt.physical_keycode == KEY_ALT:
-			var alt_now: bool = _is_alt_pressed() or ke_alt.pressed
-			if not ke_alt.pressed:
-				alt_now = false
-			if _placement_active:
-				alt_now = false
-			if alt_now != _alt_held:
-				_set_alt_mode(alt_now)
+	# Always record accurate viewport-canvas mouse coords from InputEventMouse!
+	if event is InputEventMouse:
+		_last_canvas_mouse = (event as InputEventMouse).position
+
+	# If another modal (Pedestal Draft / Tutorial / Game Over) is blocking UI input, close Tab edit
+	var player_ui_blocked: bool = false
+	if _bound_player != null and is_instance_valid(_bound_player) and ("ui_input_blocked" in _bound_player):
+		player_ui_blocked = bool(_bound_player.get("ui_input_blocked"))
+	if player_ui_blocked and not _placement_active and _tab_toggled_open:
+		_tab_toggled_open = false
+		_sync_edit_mode_transition()
+
+	# Toggle [Tab] Edit + Attributes Mode on press!
+	if event is InputEventKey and event.pressed and not event.echo:
+		var ke_top: InputEventKey = event as InputEventKey
+		if ke_top.is_action("show_stats") or ke_top.keycode == KEY_TAB:
+			if not _placement_active and not player_ui_blocked:
+				_tab_toggled_open = not _tab_toggled_open
+				_sync_edit_mode_transition()
+				get_viewport().set_input_as_handled()
+				return
+		elif ke_top.keycode == KEY_ESCAPE and _tab_toggled_open and not _placement_active:
+			_tab_toggled_open = false
+			_sync_edit_mode_transition()
 			get_viewport().set_input_as_handled()
 			return
 
-	var now_alt: bool = _is_alt_pressed()
-	if now_alt != _alt_held:
-		_set_alt_mode(now_alt)
+	# Consume raw Alt key events so Windows / Editor menu bar doesn't steal focus!
+	if event is InputEventKey:
+		var ke_alt: InputEventKey = event as InputEventKey
+		if ke_alt.keycode == KEY_ALT or ke_alt.physical_keycode == KEY_ALT:
+			var alt_now: bool = (_is_alt_pressed() or ke_alt.pressed) and ke_alt.pressed and not _placement_active and not player_ui_blocked
+			if alt_now != _alt_held:
+				_alt_held = alt_now
+				_sync_edit_mode_transition()
+			get_viewport().set_input_as_handled()
+			return
 
-	if event.is_action("show_stats") and _stats_panel != null:
-		var want_show: bool = Input.is_action_pressed("show_stats") and not _is_interactive_zoom()
-		if _stats_panel.visible != want_show:
-			if want_show:
-				_refresh_stats_sheet_text()
-			_stats_panel.visible = want_show
+	var live_alt_check: bool = _is_alt_pressed()
+	if live_alt_check != _alt_held:
+		_alt_held = live_alt_check
+		_sync_edit_mode_transition()
 
-	# 1. Pickup Placement Mode input (direct click onto zoomed HUD!)
+	# 1. Pickup Placement Mode input (click glowing slot on zoomed HUD!)
 	if _placement_active:
 		if event is InputEventKey and event.pressed and not event.echo:
 			var pke: InputEventKey = event as InputEventKey
@@ -316,7 +348,7 @@ func _input(event: InputEvent) -> void:
 
 		if event is InputEventMouseMotion:
 			var pmm: InputEventMouseMotion = make_input_local(event) as InputEventMouseMotion
-			_mouse_local = pmm.position if pmm != null else get_local_mouse_position()
+			_mouse_local = pmm.position if pmm != null else _canvas_to_local(_last_canvas_mouse)
 			_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
 			queue_redraw()
 		elif event is InputEventMouseButton and _placement_arm_frames <= 0:
@@ -326,48 +358,51 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 			if pmb.pressed and pmb.button_index == MOUSE_BUTTON_LEFT:
-				# Let the Back button handle clicks on itself if hovered
-				if _placement_back_btn and _placement_back_btn.visible:
-					var back_rect := Rect2(_placement_back_btn.position, _placement_back_btn.size)
-					var lmb_loc: InputEventMouseButton = make_input_local(event) as InputEventMouseButton
-					var pt_check: Vector2 = lmb_loc.position if lmb_loc != null else get_local_mouse_position()
-					if back_rect.has_point(pt_check):
-						return
 				var lmb_ev: InputEventMouseButton = make_input_local(event) as InputEventMouseButton
-				_mouse_local = lmb_ev.position if lmb_ev != null else get_local_mouse_position()
+				_mouse_local = lmb_ev.position if lmb_ev != null else _canvas_to_local(_last_canvas_mouse)
 				var target_sock: int = _resolve_placement_socket(_mouse_local)
 				if target_sock >= 0 and _is_valid_placement_socket(target_sock):
 					_commit_pickup_placement_socket(target_sock)
 					get_viewport().set_input_as_handled()
 		return
 
-	# 2. Hold [Alt] Drag & Drop mode
-	if not _alt_held:
+	# 2. Edit Mode ([Tab] toggle OR [Alt] hold) Drag & Drop
+	if not _is_edit_mode():
 		return
 
 	if event is InputEventMouseMotion:
+		var mm_raw: InputEventMouseMotion = event as InputEventMouseMotion
 		var local_mm: InputEventMouseMotion = make_input_local(event) as InputEventMouseMotion
-		_mouse_local = local_mm.position if local_mm != null else get_local_mouse_position()
+		_mouse_local = local_mm.position if local_mm != null else _canvas_to_local(_last_canvas_mouse)
+
+		# Fallback if Windows swallowed the initial WM_LBUTTONDOWN on Alt press:
+		# the very first motion event with Left Button held starts the drag cleanly!
+		if (mm_raw.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0 and not _dragging and not _drag_attempted_this_press:
+			_drag_attempted_this_press = true
+			_prev_polled_lmb = true
+			_handle_edit_press(_mouse_local)
+
 		_hovered_socket_idx = _resolve_hover_or_drop_preview(_mouse_local)
 		queue_redraw()
 
 	elif event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
-		# Accept LEFT or MIDDLE (in case OS/Editor 3-button mouse emulation converts Alt+LMB to MMB!)
 		if mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_MIDDLE:
 			var local_mb: InputEventMouseButton = make_input_local(event) as InputEventMouseButton
-			_mouse_local = local_mb.position if local_mb != null else get_local_mouse_position()
+			_mouse_local = local_mb.position if local_mb != null else _canvas_to_local(_last_canvas_mouse)
 			if mb.pressed:
+				_drag_attempted_this_press = true
 				_prev_polled_lmb = true
-				if _handle_alt_press(_mouse_local):
+				if _handle_edit_press(_mouse_local):
 					get_viewport().set_input_as_handled()
 			else:
+				_drag_attempted_this_press = false
 				_prev_polled_lmb = false
-				if _handle_alt_release(_mouse_local):
+				if _handle_edit_release(_mouse_local):
 					get_viewport().set_input_as_handled()
 
 
-func _handle_alt_press(pt: Vector2) -> bool:
+func _handle_edit_press(pt: Vector2) -> bool:
 	var inside_hud_zone: bool = Rect2(-18.0, -32.0, 344.0, 162.0).has_point(pt)
 	if not inside_hud_zone:
 		_selected_socket_idx = -1
@@ -395,7 +430,7 @@ func _handle_alt_press(pt: Vector2) -> bool:
 	return true
 
 
-func _handle_alt_release(pt: Vector2) -> bool:
+func _handle_edit_release(pt: Vector2) -> bool:
 	if not _dragging:
 		return false
 	var from_idx: int = _drag_from_idx
@@ -418,29 +453,41 @@ func _handle_alt_release(pt: Vector2) -> bool:
 	return true
 
 
-func _set_alt_mode(active: bool) -> void:
-	if not active and _dragging:
-		# Release-order forgiveness: if the user releases [Alt] right before releasing LMB,
-		# complete the drop at the cursor rather than discarding their drag!
-		_handle_alt_release(_mouse_local)
-
-	_alt_held = active
-	_prev_polled_lmb = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+func _sync_edit_mode_transition() -> void:
+	var now_edit: bool = _is_edit_mode()
 	pivot_offset = Vector2(0.0, size.y if size.y > 1.0 else 116.0)
-	if not active:
+
+	if _stats_panel != null:
+		var show_stats_card: bool = _tab_toggled_open and not _placement_active
+		if show_stats_card and not _stats_panel.visible:
+			_refresh_stats_sheet_text()
+		_stats_panel.visible = show_stats_card
+
+	if now_edit == _was_edit_mode:
+		set_process(true)
+		queue_redraw()
+		return
+
+	if not now_edit and _dragging:
+		# Release-order forgiveness: releasing Alt right before releasing LMB still drops cleanly!
+		_mouse_local = _canvas_to_local(_last_canvas_mouse)
+		_handle_edit_release(_mouse_local)
+
+	_was_edit_mode = now_edit
+	_prev_polled_lmb = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	_drag_attempted_this_press = _prev_polled_lmb
+
+	if not now_edit:
 		_dragging = false
 		_drag_from_idx = -1
 		_selected_socket_idx = -1
 		_hovered_socket_idx = -1
 	else:
-		_mouse_local = get_local_mouse_position()
-		_last_polled_vp_mouse = get_viewport().get_mouse_position() if get_viewport() else Vector2.ZERO
+		_mouse_local = _canvas_to_local(_last_canvas_mouse)
 		_hovered_socket_idx = _hit_test_socket(_mouse_local)
-		if _stats_panel:
-			_stats_panel.visible = false
 
 	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_alt_inspect_active"):
-		_bound_player.call("set_alt_inspect_active", active)
+		_bound_player.call("set_alt_inspect_active", now_edit)
 
 	set_process(true)
 	queue_redraw()
@@ -469,14 +516,13 @@ func _hit_test_socket(pt: Vector2) -> int:
 	return -1
 
 
-## Forgiving start-drag resolver: if the player clicks anywhere in a weapon's shard row
-## near an equipped shard (even slightly off-center or on an adjacent empty pip), grab that shard!
+## Forgiving start-drag resolver: clicking anywhere in a weapon's shard row near an
+## equipped shard (even slightly off-center or on an adjacent empty pip) grabs that shard!
 func _resolve_drag_start_socket(pt: Vector2) -> int:
 	var direct: int = _hit_test_socket(pt)
 	if direct >= 0 and _can_start_drag(direct):
 		return direct
 
-	# If clicking in the Shard band beneath LMB or RMB, find the nearest equipped shard on that weapon
 	if pt.y >= 38.0 and pt.y <= 76.0:
 		var grp: int = -1
 		if pt.x >= 46.0 and pt.x <= 99.5:
@@ -485,7 +531,7 @@ func _resolve_drag_start_socket(pt: Vector2) -> int:
 			grp = 1
 		if grp >= 0:
 			var best_idx: int = -1
-			var best_dist: float = 24.0
+			var best_dist: float = 26.0
 			for s_i in range(3):
 				var sock_i: int = grp * 3 + s_i
 				if _can_start_drag(sock_i):
@@ -508,7 +554,7 @@ func _resolve_drop_target_socket(from_idx: int, pt: Vector2) -> int:
 		return direct
 
 	var k_from: String = str(_sockets[from_idx]["kind"])
-	if pt.y >= -18.0 and pt.y <= 86.0:
+	if pt.y >= -18.0 and pt.y <= 88.0:
 		if k_from == "shard" or k_from == "weapon":
 			if pt.x >= 44.0 and pt.x <= 99.5:
 				return 6 # LMB Weapon column
@@ -657,46 +703,17 @@ func _build_labels_if_needed() -> void:
 	_shield_label.visible = false
 	num_row.add_child(_shield_label)
 
-	_placement_back_btn = Button.new()
-	_placement_back_btn.name = "PlacementBackButton"
-	_placement_back_btn.text = "← Back [Esc]"
-	_placement_back_btn.position = Vector2(218.0, -24.0)
-	_placement_back_btn.custom_minimum_size = Vector2(74.0, 18.0)
-	_placement_back_btn.focus_mode = Control.FOCUS_NONE
-	_placement_back_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_placement_back_btn.add_theme_font_size_override("font_size", 8)
-	_placement_back_btn.add_theme_color_override("font_color", COL_IVORY_TEXT)
-	var b_sb := StyleBoxFlat.new()
-	b_sb.bg_color = Color(0.055, 0.080, 0.125, 0.90)
-	b_sb.border_width_left = 1
-	b_sb.border_width_top = 1
-	b_sb.border_width_right = 1
-	b_sb.border_width_bottom = 1
-	b_sb.border_color = COL_IVORY_LINE
-	b_sb.corner_radius_top_left = 2
-	b_sb.corner_radius_top_right = 2
-	b_sb.corner_radius_bottom_left = 2
-	b_sb.corner_radius_bottom_right = 2
-	var b_hov := b_sb.duplicate() as StyleBoxFlat
-	b_hov.bg_color = Color(0.11, 0.16, 0.24, 0.96)
-	_placement_back_btn.add_theme_stylebox_override("normal", b_sb)
-	_placement_back_btn.add_theme_stylebox_override("hover", b_hov)
-	_placement_back_btn.add_theme_stylebox_override("pressed", b_hov)
-	_placement_back_btn.visible = false
-	_placement_back_btn.pressed.connect(func() -> void: cancel_pickup_placement(true))
-	add_child(_placement_back_btn)
-
 	_stats_panel = PanelContainer.new()
 	_stats_panel.name = "StatsSheetPanel"
-	_stats_panel.position = Vector2(6.0, -206.0)
-	_stats_panel.custom_minimum_size = Vector2(292.0, 194.0)
+	_stats_panel.position = Vector2(4.0, -118.0)
+	_stats_panel.custom_minimum_size = Vector2(310.0, 178.0)
 	_stats_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stats_panel.visible = false
 
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.038, 0.056, 0.090, 0.88)
+	sb.bg_color = Color(0.038, 0.056, 0.090, 0.90)
 	sb.border_width_left = 1
-	sb.border_width_top = 1
+	sb.border_width_top = 2
 	sb.border_width_right = 1
 	sb.border_width_bottom = 1
 	sb.border_color = COL_IVORY_CAP
@@ -708,8 +725,8 @@ func _build_labels_if_needed() -> void:
 
 	var margin := MarginContainer.new()
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_right", 14)
 	margin.add_theme_constant_override("margin_top", 10)
 	margin.add_theme_constant_override("margin_bottom", 10)
 	_stats_panel.add_child(margin)
@@ -981,7 +998,8 @@ func _process(delta: float) -> void:
 
 	var live_alt: bool = _is_alt_pressed()
 	if live_alt != _alt_held:
-		_set_alt_mode(live_alt)
+		_alt_held = live_alt
+		_sync_edit_mode_transition()
 
 	var want_zoom: bool = _is_interactive_zoom()
 	var target_zoom: float = 1.0 if want_zoom else 0.0
@@ -996,28 +1014,29 @@ func _process(delta: float) -> void:
 	var cur_scale: float = lerpf(1.0, ALT_ZOOM_SCALE, eased_z)
 	scale = Vector2(cur_scale, cur_scale)
 
-	# Continuous OS cursor + mouse-button fallback polling so Windows Alt menu-bar focus
-	# can never swallow the user's LMB press/drag!
-	if want_zoom and get_viewport() != null:
-		var vp_m: Vector2 = get_viewport().get_mouse_position()
-		if vp_m.distance_squared_to(_last_polled_vp_mouse) > 0.02:
-			_last_polled_vp_mouse = vp_m
-			_mouse_local = get_local_mouse_position()
-			if _placement_active:
-				_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
-			elif _alt_held:
-				_hovered_socket_idx = _resolve_hover_or_drop_preview(_mouse_local)
+	# Counter-scale the Tab Attributes panel so its typography stays crisp at 1.0x above the zoomed HUD!
+	if _stats_panel != null and _stats_panel.visible:
+		var inv_s: float = 1.0 / maxf(0.01, cur_scale)
+		_stats_panel.scale = Vector2(inv_s, inv_s)
+		_stats_panel.position = Vector2(0.0, -194.0 * inv_s - 18.0)
 
-		if _alt_held:
+	# Update local cursor exclusively from event-captured _last_canvas_mouse (zero Embedded toolbar offset!)
+	if want_zoom:
+		_mouse_local = _canvas_to_local(_last_canvas_mouse)
+		if _placement_active:
+			_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
+		elif _is_edit_mode():
+			_hovered_socket_idx = _resolve_hover_or_drop_preview(_mouse_local)
 			var lmb_now: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE)
-			if lmb_now and not _prev_polled_lmb:
+			if lmb_now and not _prev_polled_lmb and not _drag_attempted_this_press:
 				_prev_polled_lmb = true
-				_mouse_local = get_local_mouse_position()
-				_handle_alt_press(_mouse_local)
+				_drag_attempted_this_press = true
+				_handle_edit_press(_mouse_local)
 			elif not lmb_now and _prev_polled_lmb:
 				_prev_polled_lmb = false
+				_drag_attempted_this_press = false
 				if _dragging:
-					_handle_alt_release(_mouse_local)
+					_handle_edit_release(_mouse_local)
 
 	if _hit_flash_timer > 0.0:
 		_hit_flash_timer = maxf(0.0, _hit_flash_timer - delta)
@@ -1081,7 +1100,7 @@ func _draw() -> void:
 	_draw_diamond_socket_row()
 	_draw_vitality_and_shield_bar()
 	if _alt_zoom_t > 0.12:
-		_draw_zoom_floating_caption_and_cursor_gem()
+		_draw_zoom_caption_and_active_drag_ghost()
 
 
 func _draw_diamond_socket_row() -> void:
@@ -1118,6 +1137,7 @@ func _draw_diamond_socket_row() -> void:
 			true
 		)
 
+	var in_edit: bool = _is_edit_mode()
 	var active_src: int = _drag_from_idx if _dragging else _selected_socket_idx
 	var pulse_a: float = 0.65 + 0.35 * sin(_pulse_phase)
 
@@ -1133,11 +1153,11 @@ func _draw_diamond_socket_row() -> void:
 		var is_ready: bool = equipped and prog >= 0.999
 
 		var is_hov: bool = _is_interactive_zoom() and (_hovered_socket_idx == sock_idx)
-		var is_sel: bool = _alt_held and (active_src == sock_idx)
+		var is_sel: bool = in_edit and (active_src == sock_idx)
 		var is_valid_target: bool = false
 		if _placement_active:
 			is_valid_target = _is_valid_placement_socket(sock_idx)
-		elif _alt_held and active_src >= 0 and active_src != sock_idx:
+		elif in_edit and active_src >= 0 and active_src != sock_idx:
 			is_valid_target = _can_drop_onto(active_src, sock_idx)
 
 		var fill_c: Color = COL_GLASS_DARK if equipped else COL_GLASS_EMPTY
@@ -1151,7 +1171,7 @@ func _draw_diamond_socket_row() -> void:
 				rim_c = COL_IVORY_LINE
 				rim_w = 1.1
 
-		if is_sel or (is_hov and (is_valid_target or _alt_held)):
+		if is_sel or (is_hov and (is_valid_target or in_edit)):
 			rim_c = COL_GOLD_HIGHLIGHT
 			rim_w = 2.1
 		elif is_valid_target:
@@ -1178,11 +1198,11 @@ func _draw_diamond_socket_row() -> void:
 		var scenter: Vector2 = sh_sock["pos"] as Vector2
 		var sid: int = _get_cached_shard(int(sh_sock["group"]), int(sh_sock["idx"]))
 		var s_hov: bool = _is_interactive_zoom() and (_hovered_socket_idx == sh_sock_i)
-		var s_sel: bool = _alt_held and (active_src == sh_sock_i)
+		var s_sel: bool = in_edit and (active_src == sh_sock_i)
 		var s_target: bool = false
 		if _placement_active:
 			s_target = _is_valid_placement_socket(sh_sock_i)
-		elif _alt_held and active_src >= 0 and active_src != sh_sock_i:
+		elif in_edit and active_src >= 0 and active_src != sh_sock_i:
 			s_target = _can_drop_onto(active_src, sh_sock_i)
 
 		var p_diag: float = SHARD_PIP_HALF_DIAG if _alt_zoom_t > 0.05 else 3.4
@@ -1208,7 +1228,12 @@ func _draw_diamond_socket_row() -> void:
 		_draw_diamond(scenter, p_diag, s_fill, s_rim, s_rw)
 
 
-func _draw_zoom_floating_caption_and_cursor_gem() -> void:
+func _draw_zoom_caption_and_active_drag_ghost() -> void:
+	# During Pickup Placement Mode, the stationary Preview Card sits cleanly above the HUD
+	# and the cursor stays a normal pointer (nothing stuck to the cursor!).
+	if _placement_active:
+		return
+
 	var a: float = clampf(_alt_zoom_t, 0.0, 1.0)
 	var font: Font = ThemeDB.fallback_font
 	var caption: String = _get_live_caption()
@@ -1219,7 +1244,7 @@ func _draw_zoom_floating_caption_and_cursor_gem() -> void:
 			Vector2(8.5, -5.5),
 			caption,
 			HORIZONTAL_ALIGNMENT_LEFT,
-			210.0,
+			280.0,
 			9,
 			Color(0.02, 0.03, 0.05, 0.88 * a)
 		)
@@ -1228,32 +1253,12 @@ func _draw_zoom_floating_caption_and_cursor_gem() -> void:
 			Vector2(8.0, -6.0),
 			caption,
 			HORIZONTAL_ALIGNMENT_LEFT,
-			210.0,
+			280.0,
 			9,
 			Color(COL_IVORY_TEXT.r, COL_IVORY_TEXT.g, COL_IVORY_TEXT.b, a)
 		)
 
-	# Cursor-attached item gem during Pickup Placement Mode
-	if _placement_active:
-		var pcat: String = str(_placement_spec.get("category", "shard"))
-		var pid: int = int(_placement_spec.get("id", 1))
-		if pcat == "shard":
-			var psh: Dictionary = CatalogScript.get_shard(pid)
-			var pcol: Color = psh.get("color", COL_GOLD_HIGHLIGHT) as Color
-			_draw_diamond(_mouse_local, 7.2, Color(pcol.r, pcol.g, pcol.b, 0.94), COL_IVORY_TEXT, 1.6)
-		elif pcat == "weapon":
-			var pw: Dictionary = CatalogScript.get_weapon(pid)
-			var pwcol: Color = pw.get("color", COL_GOLD_HIGHLIGHT) as Color
-			_draw_diamond(_mouse_local, 13.0, COL_GLASS_DARK, pwcol, 1.7)
-			_draw_slot_glyph(_mouse_local, int(pw.get("glyph", 1)), pwcol.lightened(0.3), 0.88)
-		elif pcat == "ability":
-			var pab: Dictionary = CatalogScript.get_ability(pid)
-			var pacol: Color = pab.get("color", COL_SHIELD_CYAN) as Color
-			_draw_diamond(_mouse_local, 13.0, COL_GLASS_DARK, pacol, 1.7)
-			_draw_slot_glyph(_mouse_local, int(pab.get("glyph", 7)), pacol.lightened(0.3), 0.88)
-		return
-
-	# Cursor-attached gem while Alt-dragging
+	# Only draw a drag ghost while the mouse button is actively held down in a drag!
 	if _dragging and _drag_from_idx >= 0:
 		var ds: Dictionary = _sockets[_drag_from_idx]
 		var dk: String = str(ds["kind"])
@@ -1269,17 +1274,6 @@ func _draw_zoom_floating_caption_and_cursor_gem() -> void:
 
 
 func _get_live_caption() -> String:
-	if _placement_active:
-		var pcat: String = str(_placement_spec.get("category", "shard"))
-		var pid: int = int(_placement_spec.get("id", 1))
-		if pcat == "shard":
-			return str(CatalogScript.get_shard(pid).get("name", "Shard"))
-		if pcat == "weapon":
-			return str(CatalogScript.get_weapon(pid).get("name", "Weapon"))
-		if pcat == "ability":
-			return str(CatalogScript.get_ability(pid).get("name", "Ability"))
-		return ""
-
 	var idx: int = _hovered_socket_idx
 	if _dragging and _drag_from_idx >= 0:
 		idx = _drag_from_idx

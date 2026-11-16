@@ -2,25 +2,35 @@ class_name RewardDraftOverlay
 extends Control
 
 ## Upgrade Pedestal Pickup UI (Breath of the Wild × Shape of Dreams).
-## - Shows 3 uncluttered cards (Ability/Artifact, Weapon Shard/Weapon, Stat Trait).
-## - Stat Traits & [R] Artifacts apply immediately in 1 click.
-## - Weapon Shards, Weapons, and Q/E Abilities dismiss the modal and zoom the actual
-##   bottom-left HUD up so you click directly onto the target HUD socket to place it!
+## - Step 1: 3 uncluttered cards (Ability/Artifact, Weapon Shard/Weapon, Stat Trait).
+## - Stat Traits & [R] Artifacts claim immediately in 1 click.
+## - Shards, Weapons, and Q/E Abilities zoom the bottom-left HUD up and display a crisp,
+##   stationary Preview Card right above it while valid HUD slots pulse (normal cursor).
 
 const CatalogScript = preload("res://scripts/data/combat_catalog.gd")
 
 const COL_BACKDROP := Color(0.024, 0.036, 0.062, 0.72)
-const COL_CARD_BG := Color(0.043, 0.063, 0.098, 0.90)
+const COL_CARD_BG := Color(0.043, 0.063, 0.098, 0.92)
 const COL_CARD_HOVER := Color(0.082, 0.118, 0.178, 0.96)
 const COL_IVORY_LINE := Color(0.918, 0.894, 0.843, 0.34)
 const COL_IVORY_TEXT := Color(0.961, 0.945, 0.910, 1.0)
 const COL_IVORY_MUTED := Color(0.918, 0.894, 0.843, 0.68)
-const COL_BTN_BG := Color(0.075, 0.106, 0.161, 0.88)
-const COL_BTN_HOVER := Color(0.135, 0.192, 0.275, 0.96)
+const COL_BTN_BG := Color(0.075, 0.106, 0.161, 0.90)
+const COL_BTN_HOVER := Color(0.135, 0.192, 0.275, 0.98)
 
+var _backdrop: ColorRect = null
+var _center_container: CenterContainer = null
 var _title_lbl: Label = null
 var _cards_hbox: HBoxContainer = null
 var _footer_btn: Button = null
+
+# Stationary Preview Card shown above the zoomed bottom-left HUD during slot placement
+var _preview_card: PanelContainer = null
+var _preview_style: StyleBoxFlat = null
+var _preview_cat_lbl: Label = null
+var _preview_name_lbl: Label = null
+var _preview_desc_lbl: Label = null
+var _preview_back_btn: Button = null
 
 var _hud_bar: Control = null
 var _active_pedestal: Node3D = null
@@ -32,7 +42,6 @@ var _is_open: bool = false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_shell()
 	close_draft()
 
@@ -45,24 +54,24 @@ func _build_shell() -> void:
 	if _cards_hbox != null:
 		return
 
-	var backdrop := ColorRect.new()
-	backdrop.name = "Backdrop"
-	backdrop.color = COL_BACKDROP
-	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(backdrop)
+	_backdrop = ColorRect.new()
+	_backdrop.name = "Backdrop"
+	_backdrop.color = COL_BACKDROP
+	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_backdrop)
 
-	var center := CenterContainer.new()
-	center.name = "CenterContainer"
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_PASS
-	add_child(center)
+	_center_container = CenterContainer.new()
+	_center_container.name = "CenterContainer"
+	_center_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_center_container.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(_center_container)
 
 	var root_vbox := VBoxContainer.new()
 	root_vbox.name = "DraftVBox"
 	root_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	root_vbox.add_theme_constant_override("separation", 16)
-	center.add_child(root_vbox)
+	_center_container.add_child(root_vbox)
 
 	_title_lbl = Label.new()
 	_title_lbl.name = "HeaderTitle"
@@ -87,6 +96,88 @@ func _build_shell() -> void:
 	_footer_btn.custom_minimum_size = Vector2(168.0, 34.0)
 	_footer_btn.pressed.connect(close_draft)
 	footer_center.add_child(_footer_btn)
+
+	_build_stationary_preview_card()
+
+
+func _build_stationary_preview_card() -> void:
+	_preview_card = PanelContainer.new()
+	_preview_card.name = "StationaryPreviewCard"
+	# Anchored bottom-left right above the 1.92x zoomed HUD (which occupies y = 479..702 in 1280x720)
+	_preview_card.anchor_left = 0.0
+	_preview_card.anchor_right = 0.0
+	_preview_card.anchor_top = 1.0
+	_preview_card.anchor_bottom = 1.0
+	_preview_card.offset_left = 22.0
+	_preview_card.offset_right = 368.0
+	_preview_card.offset_top = -396.0
+	_preview_card.offset_bottom = -262.0
+	_preview_card.mouse_filter = Control.MOUSE_FILTER_STOP
+	_preview_card.visible = false
+
+	_preview_style = StyleBoxFlat.new()
+	_preview_style.bg_color = COL_CARD_BG
+	_preview_style.border_width_left = 1
+	_preview_style.border_width_right = 1
+	_preview_style.border_width_bottom = 1
+	_preview_style.border_width_top = 3
+	_preview_style.border_color = Color(0.56, 0.92, 1.0, 0.90)
+	_preview_style.corner_radius_top_left = 2
+	_preview_style.corner_radius_top_right = 2
+	_preview_style.corner_radius_bottom_left = 2
+	_preview_style.corner_radius_bottom_right = 2
+	_preview_card.add_theme_stylebox_override("panel", _preview_style)
+
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 16)
+	m.add_theme_constant_override("margin_right", 14)
+	m.add_theme_constant_override("margin_top", 12)
+	m.add_theme_constant_override("margin_bottom", 12)
+	_preview_card.add_child(m)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	m.add_child(vb)
+
+	var top_row := HBoxContainer.new()
+	top_row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	vb.add_child(top_row)
+
+	_preview_cat_lbl = Label.new()
+	_preview_cat_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_preview_cat_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_preview_cat_lbl.add_theme_font_size_override("font_size", 11)
+	top_row.add_child(_preview_cat_lbl)
+
+	_preview_back_btn = _make_small_button("PreviewBackButton", "← Back  [Esc]")
+	_preview_back_btn.custom_minimum_size = Vector2(104.0, 24.0)
+	_preview_back_btn.add_theme_font_size_override("font_size", 11)
+	_preview_back_btn.pressed.connect(func() -> void:
+		if _hud_bar != null and is_instance_valid(_hud_bar) and _hud_bar.has_method("cancel_pickup_placement"):
+			_hud_bar.call("cancel_pickup_placement", true)
+		else:
+			_on_hud_placement_cancelled()
+	)
+	top_row.add_child(_preview_back_btn)
+
+	_preview_name_lbl = Label.new()
+	_preview_name_lbl.add_theme_font_size_override("font_size", 18)
+	_preview_name_lbl.add_theme_color_override("font_color", COL_IVORY_TEXT)
+	vb.add_child(_preview_name_lbl)
+
+	var sep := ColorRect.new()
+	sep.custom_minimum_size = Vector2(0.0, 1.0)
+	sep.color = COL_IVORY_LINE
+	vb.add_child(sep)
+
+	_preview_desc_lbl = Label.new()
+	_preview_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_preview_desc_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_preview_desc_lbl.add_theme_font_size_override("font_size", 12)
+	_preview_desc_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
+	vb.add_child(_preview_desc_lbl)
+
+	add_child(_preview_card)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -117,12 +208,17 @@ func open_for_pedestal(pedestal: Node3D, player_node: Node) -> void:
 	if pedestal.has_method("get_or_roll_cards"):
 		_current_cards = pedestal.call("get_or_roll_cards", player_node) as Array
 
-	_render_cards()
-	visible = true
+	_show_draft_cards_view()
 
 
-func _render_cards() -> void:
+func _show_draft_cards_view() -> void:
 	_pending_spec = {}
+	_is_open = true
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	_backdrop.visible = true
+	_center_container.visible = true
+	_preview_card.visible = false
+
 	_title_lbl.text = "CHOOSE AN UPGRADE"
 	_footer_btn.text = "Leave  [Esc]"
 
@@ -132,6 +228,28 @@ func _render_cards() -> void:
 	for i in range(_current_cards.size()):
 		var spec: Dictionary = _current_cards[i] as Dictionary
 		_cards_hbox.add_child(_build_card(i, spec))
+
+	visible = true
+
+
+func _show_stationary_preview_for(spec: Dictionary) -> void:
+	var cat: String = str(spec.get("category", "shard"))
+	var item_id: int = int(spec.get("id", 1))
+	var info: Dictionary = _lookup_info(cat, item_id)
+	var accent: Color = info.get("color", Color(0.56, 0.92, 1.0, 1.0)) as Color
+
+	_preview_style.border_color = Color(accent.r, accent.g, accent.b, 0.92)
+	_preview_cat_lbl.text = str(info.get("subtitle", "Upgrade")).to_upper()
+	_preview_cat_lbl.add_theme_color_override("font_color", accent.lightened(0.18))
+	_preview_name_lbl.text = str(info.get("name", "Upgrade"))
+	_preview_desc_lbl.text = str(info.get("desc", ""))
+
+	_is_open = false
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_backdrop.visible = false
+	_center_container.visible = false
+	_preview_card.visible = true
+	visible = true
 
 
 func _on_card_clicked(spec: Dictionary) -> void:
@@ -153,12 +271,11 @@ func _on_card_clicked(spec: Dictionary) -> void:
 		)
 		return
 
-	# Shards, Weapons, and Q/E Abilities zoom the bottom-left HUD up so you click
-	# directly on the HUD slot to place it (Shape of Dreams style)!
+	# Shards, Weapons, and Q/E Abilities show the stationary Preview Card right above the
+	# zoomed HUD while target slots pulse below (normal cursor)!
 	_pending_spec = spec.duplicate(true)
 	if _hud_bar != null and is_instance_valid(_hud_bar) and _hud_bar.has_method("begin_pickup_placement"):
-		_is_open = false
-		visible = false
+		_show_stationary_preview_for(_pending_spec)
 		_hud_bar.call(
 			"begin_pickup_placement",
 			_pending_spec,
@@ -166,7 +283,6 @@ func _on_card_clicked(spec: Dictionary) -> void:
 			Callable(self, "_on_hud_placement_cancelled")
 		)
 	else:
-		# Fallback if HUD bar isn't bound
 		_on_hud_placement_committed(0, -1)
 
 
@@ -190,11 +306,9 @@ func _on_hud_placement_cancelled() -> void:
 	if _active_pedestal == null or not is_instance_valid(_active_pedestal) or _active_player == null or not is_instance_valid(_active_player):
 		close_draft()
 		return
-	_is_open = true
 	if _active_player.has_method("set_ui_input_blocked"):
 		_active_player.call("set_ui_input_blocked", true)
-	_render_cards()
-	visible = true
+	_show_draft_cards_view()
 
 
 func close_draft() -> void:
@@ -202,6 +316,8 @@ func close_draft() -> void:
 		_hud_bar.call("cancel_pickup_placement", false)
 	_is_open = false
 	_pending_spec = {}
+	if _preview_card:
+		_preview_card.visible = false
 	visible = false
 	if _active_player != null and is_instance_valid(_active_player) and _active_player.has_method("set_ui_input_blocked"):
 		_active_player.call("set_ui_input_blocked", false)
