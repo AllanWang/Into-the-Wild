@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://world/vine_barrier.gd" id="1_vine"]
+
+[node name="VineBarrier" type="StaticBody3D"]
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_vine")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+
+[node name="VisualsRoot" type="Node3D" parent="."]

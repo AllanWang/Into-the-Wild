@@ -1,0 +1,27 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://world/healing_well.gd" id="1_well_script"]
+
+[node name="HealingWell" type="Node3D"]
+script = ExtResource("1_well_script")
+
+[node name="BasinMesh" type="MeshInstance3D" parent="."]
+
+[node name="RimMesh" type="MeshInstance3D" parent="."]
+
+[node name="WaterMesh" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+
+[node name="OrbA" type="MeshInstance3D" parent="."]
+
+[node name="OrbB" type="MeshInstance3D" parent="."]
+
+[node name="PromptLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.48, 0)
+billboard = 1
+no_depth_test = true
+text = "◆ Healing Well [2/2]"
+font_size = 26
+outline_size = 5
+pixel_size = 0.005
+texture_filter = 3

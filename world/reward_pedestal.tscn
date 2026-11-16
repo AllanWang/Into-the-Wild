@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://world/reward_pedestal.gd" id="1_pedestal_script"]
+
+[node name="RewardPedestal" type="Node3D"]
+script = ExtResource("1_pedestal_script")
+
+[node name="PlinthMesh" type="MeshInstance3D" parent="."]
+
+[node name="RingMesh" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+
+[node name="CrystalMesh" type="MeshInstance3D" parent="."]
+
+[node name="PromptLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.72, 0)
+billboard = 1
+no_depth_test = true
+text = "◆ Upgrade Pedestal"
+font_size = 28
+outline_size = 5
+pixel_size = 0.005
+texture_filter = 3

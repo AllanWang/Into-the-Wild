@@ -34,6 +34,8 @@ var clients_ready: Dictionary = {}
 var is_match_ready: bool = false
 var is_game_running: bool = false
 var active_port: int = 0
+var active_map_seed: int = 0
+var active_map_preset: int = 0
 var _is_hosting: bool = false
 
 func _ready() -> void:
@@ -144,6 +146,7 @@ func leave_game() -> void:
 		_remove_host_port_file()
 		_is_hosting = false
 	active_port = 0
+	active_map_seed = 0
 	if peer:
 		peer.close()
 		peer = null
@@ -161,10 +164,17 @@ func start_game() -> void:
 	is_game_running = true
 	clients_ready.clear()
 	is_match_ready = false
-	_load_game_scene.rpc()
+	if active_map_seed <= 0:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		active_map_seed = int(rng.seed & 0x7FFFFFFF)
+	_load_game_scene.rpc(active_map_seed, active_map_preset)
 
 @rpc("call_local", "reliable")
-func _load_game_scene() -> void:
+func _load_game_scene(p_seed: int = 0, p_preset: int = 0) -> void:
+	if p_seed > 0:
+		active_map_seed = p_seed
+	active_map_preset = p_preset
 	game_started.emit()
 	get_tree().change_scene_to_file("res://Main.tscn")
 
@@ -244,7 +254,7 @@ func _register_player_to_server(id: int, info: Dictionary) -> void:
 	player_connected.emit(id, info)
 	
 	if is_game_running:
-		_load_game_scene.rpc_id(id)
+		_load_game_scene.rpc_id(id, active_map_seed, active_map_preset)
 
 @rpc("call_local", "reliable")
 func _sync_all_players(updated_players: Dictionary) -> void:
