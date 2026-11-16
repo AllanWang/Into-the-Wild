@@ -407,6 +407,27 @@ func _set_shard_at(group: int, idx: int, shard_id: int) -> void:
 			reserve_shards[idx] = shard_id
 
 
+func equip_shard_at_socket(shard_id: int, weapon_slot: int, socket_idx: int) -> void:
+	var w_slot: int = clampi(weapon_slot, 0, 1)
+	var arr: Array = weapon_shards[w_slot] as Array
+	var s_idx: int = clampi(socket_idx, 0, arr.size() - 1)
+	if int(arr[s_idx]) == CatalogScript.ShardId.NONE:
+		arr[s_idx] = shard_id
+		_rebuild_hit_contexts()
+		loadout_changed.emit()
+		return
+	for i in range(arr.size()):
+		if int(arr[i]) == CatalogScript.ShardId.NONE:
+			arr[i] = int(arr[s_idx])
+			arr[s_idx] = shard_id
+			_rebuild_hit_contexts()
+			loadout_changed.emit()
+			return
+	arr[s_idx] = shard_id
+	_rebuild_hit_contexts()
+	loadout_changed.emit()
+
+
 func equip_shard(shard_id: int, preferred_weapon_slot: int = 0) -> void:
 	var pref: int = clampi(preferred_weapon_slot, 0, 1)
 	var other: int = 1 - pref

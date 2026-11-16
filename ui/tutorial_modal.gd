@@ -136,9 +136,8 @@ func _build_ui() -> void:
 	cols.add_child(_make_section(
 		"LOADOUT & SHARDS",
 		COL_ACCENT_GOLD,
-		"Hold [Alt] — Zoom Loadout Bar\n\n"
-		+ "While holding [Alt], drag Shards between LMB and RMB, swap Weapons, or reorder Q & E.\n\n"
-		+ "Hover any icon in [Alt] mode to inspect it.\n\n"
+		"Picking up a Shard, Weapon, or Ability zooms your HUD so you click a slot directly.\n\n"
+		+ "Hold [Alt] anytime to zoom the HUD and drag or click-swap Shards, Weapons, and Q & E.\n\n"
 		+ "Hold [Tab] — View Attributes"
 	))
 

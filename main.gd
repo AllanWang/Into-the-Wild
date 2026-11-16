@@ -352,6 +352,8 @@ func _setup_reward_draft_overlay() -> void:
 	_reward_draft_overlay = RewardDraftOverlayScript.new() as Control
 	_reward_draft_overlay.name = "RewardDraftOverlay"
 	draft_layer.add_child(_reward_draft_overlay)
+	if player_health_bar and _reward_draft_overlay.has_method("bind_hud_bar"):
+		_reward_draft_overlay.call("bind_hud_bar", player_health_bar)
 
 
 func _on_reward_pedestal_interacted(pedestal: Node3D, player_node: Node) -> void:
@@ -388,6 +390,8 @@ func _on_tutorial_pressed() -> void:
 	if _tutorial_modal == null:
 		return
 	if _reward_draft_overlay and bool(_reward_draft_overlay.get("_is_open")):
+		return
+	if player_health_bar and player_health_bar.has_method("is_pickup_placement_active") and bool(player_health_bar.call("is_pickup_placement_active")):
 		return
 	if _tutorial_modal.has_method("toggle_for_player"):
 		_tutorial_modal.call("toggle_for_player", _local_player)

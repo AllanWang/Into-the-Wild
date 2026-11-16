@@ -2,11 +2,12 @@ class_name PlayerHealthBar
 extends Control
 
 ## Ethereal Lattice Bottom-Left Player HUD inspired by Breath of the Wild × Shape of Dreams.
-## - Normal Mode: [Dash ◆ (◆ ◆ ◆)] | [LMB ◆ (◆ ◆ ◆)] [RMB ◆ (◆ ◆ ◆)] | [Q ◆] [E ◆] | [R ◆]
-##   with clockwise perimeter recharge bars, slotted Weapon Shard pips, and Health + Shield bar.
-## - Hold [Alt]: Smoothly scales the HUD itself up in-place (anchored at bottom-left) so you can
-##   drag-and-drop (or click-to-swap) Weapon Shards, Weapons (LMB ↔ RMB), and Abilities (Q ↔ E).
-## - Hold [Tab]: Displays the live Attributes & Loadout summary card.
+## - Normal Mode (1.0x): [Dash ◆ (◆ ◆ ◆)] | [LMB ◆ (◆ ◆ ◆)] [RMB ◆ (◆ ◆ ◆)] | [Q ◆] [E ◆] | [R ◆]
+## - Hold [Alt]: Scales the HUD up in-place (1.92x) to drag-and-drop (or click-to-move) Shards,
+##   Weapons (LMB ↔ RMB), and Abilities (Q ↔ E).
+## - Pickup Placement Mode: When picking up a Shard, Weapon, or Ability from a Pedestal, scales
+##   the HUD up automatically and attaches the item to your cursor so you click directly onto
+##   the target HUD slot (Shape of Dreams style — no separate Left/Right dialog box).
 
 const CatalogScript = preload("res://scripts/data/combat_catalog.gd")
 
@@ -39,15 +40,25 @@ var _slot_equipped: Array[bool] = [true, true, false, false, false]
 var _slot_progress: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0]
 var _weapon_shard_ids: Array = [[0, 0, 0], [0, 0, 0]]
 
-# Hold [Alt] in-place scale-up & drag-and-drop state
+# Hold [Alt] & Pickup Placement in-place zoom state
 var _alt_held: bool = false
 var _alt_zoom_t: float = 0.0
+var _pulse_phase: float = 0.0
 var _sockets: Array[Dictionary] = []
 var _hovered_socket_idx: int = -1
 var _dragging: bool = false
 var _drag_from_idx: int = -1
 var _selected_socket_idx: int = -1
 var _mouse_local: Vector2 = Vector2.ZERO
+var _prev_polled_lmb: bool = false
+var _last_polled_vp_mouse: Vector2 = Vector2(-99999.0, -99999.0)
+
+# Pickup Placement Mode state (Shape of Dreams direct-to-HUD slotting)
+var _placement_active: bool = false
+var _placement_spec: Dictionary = {}
+var _placement_on_placed: Callable = Callable()
+var _placement_on_cancel: Callable = Callable()
+var _placement_arm_frames: int = 0
 
 var _hp_num_label: Label = null
 var _hp_max_label: Label = null
@@ -55,6 +66,7 @@ var _shield_label: Label = null
 var _stats_panel: PanelContainer = null
 var _stats_body_label: Label = null
 var _slot_key_labels: Array[Label] = []
+var _placement_back_btn: Button = null
 
 var _scratch_quad := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 var _scratch_closed := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
@@ -79,9 +91,9 @@ const CHARGE_PIP_Y_OFFSET: float = 7.5
 const CHARGE_PIP_SPACING: float = 9.2
 const CHARGE_PIP_HALF_DIAG: float = 3.1
 
-const SHARD_PIP_Y: float = 54.5
-const SHARD_PIP_SPACING: float = 11.2
-const SHARD_PIP_HALF_DIAG: float = 4.4
+const SHARD_PIP_Y: float = 55.5
+const SHARD_PIP_SPACING: float = 12.6
+const SHARD_PIP_HALF_DIAG: float = 5.4
 
 const ALT_ZOOM_SCALE: float = 1.92
 
@@ -129,22 +141,111 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		pivot_offset = Vector2(0.0, size.y)
-	elif what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		# Only clear Alt when the entire OS application loses focus (e.g. Alt+Tab),
+		# NOT on NOTIFICATION_WM_WINDOW_FOCUS_OUT which flickers on Windows Alt menu focus!
 		Input.action_release("inspect_loadout")
 		if _alt_held:
 			_set_alt_mode(false)
 
 
 func _is_alt_pressed() -> bool:
+	if _placement_active:
+		return false
 	if _bound_player != null and is_instance_valid(_bound_player) and ("ui_input_blocked" in _bound_player):
 		if bool(_bound_player.get("ui_input_blocked")):
 			return false
-	return Input.is_action_pressed("inspect_loadout") or Input.is_key_pressed(KEY_ALT)
+	return (
+		Input.is_action_pressed("inspect_loadout")
+		or Input.is_key_pressed(KEY_ALT)
+		or Input.is_physical_key_pressed(KEY_ALT)
+	)
+
+
+func _is_interactive_zoom() -> bool:
+	return _alt_held or _placement_active
+
+
+func is_pickup_placement_active() -> bool:
+	return _placement_active
+
+
+## Enters Shape of Dreams HUD-zoom placement mode for a picked-up Shard, Weapon, or Q/E Ability.
+func begin_pickup_placement(spec: Dictionary, on_placed_cb: Callable, on_cancel_cb: Callable) -> void:
+	if _alt_held:
+		_set_alt_mode(false)
+	_placement_active = true
+	_placement_spec = spec.duplicate(true)
+	_placement_on_placed = on_placed_cb
+	_placement_on_cancel = on_cancel_cb
+	_placement_arm_frames = 2
+	_dragging = false
+	_drag_from_idx = -1
+	_selected_socket_idx = -1
+	pivot_offset = Vector2(0.0, size.y if size.y > 1.0 else 116.0)
+	_mouse_local = get_local_mouse_position()
+	_last_polled_vp_mouse = get_viewport().get_mouse_position() if get_viewport() else Vector2.ZERO
+	_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
+	if _stats_panel:
+		_stats_panel.visible = false
+	if _placement_back_btn:
+		_placement_back_btn.visible = true
+	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
+		_bound_player.call("set_ui_input_blocked", true)
+	set_process(true)
+	queue_redraw()
+
+
+func cancel_pickup_placement(notify_cancel: bool = true) -> void:
+	if not _placement_active:
+		return
+	var cb: Callable = _placement_on_cancel
+	_placement_active = false
+	_placement_spec.clear()
+	_placement_on_placed = Callable()
+	_placement_on_cancel = Callable()
+	_hovered_socket_idx = -1
+	if _placement_back_btn:
+		_placement_back_btn.visible = false
+	if not notify_cancel:
+		if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
+			_bound_player.call("set_ui_input_blocked", false)
+	set_process(true)
+	queue_redraw()
+	if notify_cancel and cb.is_valid():
+		cb.call()
+
+
+func _commit_pickup_placement_socket(sock_idx: int) -> void:
+	if not _placement_active or sock_idx < 0 or sock_idx >= _sockets.size():
+		return
+	if not _is_valid_placement_socket(sock_idx):
+		return
+	var sock: Dictionary = _sockets[sock_idx]
+	var kind: String = str(sock["kind"])
+	var target_slot: int = int(sock["group"])
+	var sub_socket: int = int(sock["idx"]) if kind == "shard" else -1
+	var cb: Callable = _placement_on_placed
+
+	_placement_active = false
+	_placement_spec.clear()
+	_placement_on_placed = Callable()
+	_placement_on_cancel = Callable()
+	_hovered_socket_idx = -1
+	if _placement_back_btn:
+		_placement_back_btn.visible = false
+	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
+		_bound_player.call("set_ui_input_blocked", false)
+
+	set_process(true)
+	queue_redraw()
+	if cb.is_valid():
+		cb.call(target_slot, sub_socket)
 
 
 func _init_socket_table() -> void:
 	_sockets.clear()
-	# Indices 0..5: The 6 Shard sockets right beneath LMB & RMB (checked first for crisp priority!)
+	# Indices 0..5: The 6 Shard sockets beneath LMB & RMB (checked first for crisp priority!)
 	for w_grp in range(2):
 		var base_cx: float = SLOT_CENTERS_X[w_grp]
 		var tag_prefix: String = "LMB" if w_grp == 0 else "RMB"
@@ -155,85 +256,176 @@ func _init_socket_table() -> void:
 				"group": w_grp,
 				"idx": s_i,
 				"pos": Vector2(sx, SHARD_PIP_Y),
-				"hit_diag": 7.6,
+				"hit_diag": 11.5,
 				"draw_diag": SHARD_PIP_HALF_DIAG,
 				"tag": "%s Shard" % tag_prefix
 			})
 
 	# Indices 6..10: Main Diamonds (LMB=6, RMB=7, Q=8, E=9, R=10)
-	_sockets.append({"kind": "weapon", "slot_idx": 0, "group": 0, "idx": 0, "pos": Vector2(SLOT_CENTERS_X[0], ROW_Y), "hit_diag": 20.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "LMB"})
-	_sockets.append({"kind": "weapon", "slot_idx": 1, "group": 1, "idx": 1, "pos": Vector2(SLOT_CENTERS_X[1], ROW_Y), "hit_diag": 20.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "RMB"})
-	_sockets.append({"kind": "ability", "slot_idx": 2, "group": 0, "idx": 0, "pos": Vector2(SLOT_CENTERS_X[2], ROW_Y), "hit_diag": 20.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "Q"})
-	_sockets.append({"kind": "ability", "slot_idx": 3, "group": 1, "idx": 1, "pos": Vector2(SLOT_CENTERS_X[3], ROW_Y), "hit_diag": 20.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "E"})
-	_sockets.append({"kind": "artifact", "slot_idx": 4, "group": 0, "idx": 0, "pos": Vector2(SLOT_CENTERS_X[4], ROW_Y), "hit_diag": 21.5, "draw_diag": ARTIFACT_HALF_DIAG, "tag": "R"})
+	_sockets.append({"kind": "weapon", "slot_idx": 0, "group": 0, "idx": 0, "pos": Vector2(SLOT_CENTERS_X[0], ROW_Y), "hit_diag": 21.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "LMB"})
+	_sockets.append({"kind": "weapon", "slot_idx": 1, "group": 1, "idx": 1, "pos": Vector2(SLOT_CENTERS_X[1], ROW_Y), "hit_diag": 21.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "RMB"})
+	_sockets.append({"kind": "ability", "slot_idx": 2, "group": 0, "idx": 0, "pos": Vector2(SLOT_CENTERS_X[2], ROW_Y), "hit_diag": 21.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "Q"})
+	_sockets.append({"kind": "ability", "slot_idx": 3, "group": 1, "idx": 1, "pos": Vector2(SLOT_CENTERS_X[3], ROW_Y), "hit_diag": 21.5, "draw_diag": DIAMOND_HALF_DIAG, "tag": "E"})
+	_sockets.append({"kind": "artifact", "slot_idx": 4, "group": 0, "idx": 0, "pos": Vector2(SLOT_CENTERS_X[4], ROW_Y), "hit_diag": 22.0, "draw_diag": ARTIFACT_HALF_DIAG, "tag": "R"})
 
 
 func _input(event: InputEvent) -> void:
+	# Consume raw Alt key events so Windows / Editor menu bar doesn't steal the next LMB click!
+	if event is InputEventKey:
+		var ke_alt: InputEventKey = event as InputEventKey
+		if ke_alt.keycode == KEY_ALT or ke_alt.physical_keycode == KEY_ALT:
+			var alt_now: bool = _is_alt_pressed() or ke_alt.pressed
+			if not ke_alt.pressed:
+				alt_now = false
+			if _placement_active:
+				alt_now = false
+			if alt_now != _alt_held:
+				_set_alt_mode(alt_now)
+			get_viewport().set_input_as_handled()
+			return
+
 	var now_alt: bool = _is_alt_pressed()
 	if now_alt != _alt_held:
 		_set_alt_mode(now_alt)
 
 	if event.is_action("show_stats") and _stats_panel != null:
-		var want_show: bool = Input.is_action_pressed("show_stats") and not _alt_held
+		var want_show: bool = Input.is_action_pressed("show_stats") and not _is_interactive_zoom()
 		if _stats_panel.visible != want_show:
 			if want_show:
 				_refresh_stats_sheet_text()
 			_stats_panel.visible = want_show
 
+	# 1. Pickup Placement Mode input (direct click onto zoomed HUD!)
+	if _placement_active:
+		if event is InputEventKey and event.pressed and not event.echo:
+			var pke: InputEventKey = event as InputEventKey
+			if pke.keycode == KEY_ESCAPE or pke.keycode == KEY_BACKSPACE:
+				cancel_pickup_placement(true)
+				get_viewport().set_input_as_handled()
+				return
+			var pcat: String = str(_placement_spec.get("category", ""))
+			if pcat == "ability":
+				if pke.keycode == KEY_Q:
+					_commit_pickup_placement_socket(8)
+					get_viewport().set_input_as_handled()
+					return
+				elif pke.keycode == KEY_E:
+					_commit_pickup_placement_socket(9)
+					get_viewport().set_input_as_handled()
+					return
+
+		if event is InputEventMouseMotion:
+			var pmm: InputEventMouseMotion = make_input_local(event) as InputEventMouseMotion
+			_mouse_local = pmm.position if pmm != null else get_local_mouse_position()
+			_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
+			queue_redraw()
+		elif event is InputEventMouseButton and _placement_arm_frames <= 0:
+			var pmb: InputEventMouseButton = event as InputEventMouseButton
+			if pmb.pressed and pmb.button_index == MOUSE_BUTTON_RIGHT:
+				cancel_pickup_placement(true)
+				get_viewport().set_input_as_handled()
+				return
+			if pmb.pressed and pmb.button_index == MOUSE_BUTTON_LEFT:
+				# Let the Back button handle clicks on itself if hovered
+				if _placement_back_btn and _placement_back_btn.visible:
+					var back_rect := Rect2(_placement_back_btn.position, _placement_back_btn.size)
+					var lmb_loc: InputEventMouseButton = make_input_local(event) as InputEventMouseButton
+					var pt_check: Vector2 = lmb_loc.position if lmb_loc != null else get_local_mouse_position()
+					if back_rect.has_point(pt_check):
+						return
+				var lmb_ev: InputEventMouseButton = make_input_local(event) as InputEventMouseButton
+				_mouse_local = lmb_ev.position if lmb_ev != null else get_local_mouse_position()
+				var target_sock: int = _resolve_placement_socket(_mouse_local)
+				if target_sock >= 0 and _is_valid_placement_socket(target_sock):
+					_commit_pickup_placement_socket(target_sock)
+					get_viewport().set_input_as_handled()
+		return
+
+	# 2. Hold [Alt] Drag & Drop mode
 	if not _alt_held:
 		return
 
 	if event is InputEventMouseMotion:
 		var local_mm: InputEventMouseMotion = make_input_local(event) as InputEventMouseMotion
 		_mouse_local = local_mm.position if local_mm != null else get_local_mouse_position()
-		_hovered_socket_idx = _hit_test_socket(_mouse_local)
+		_hovered_socket_idx = _resolve_hover_or_drop_preview(_mouse_local)
 		queue_redraw()
 
 	elif event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
+		# Accept LEFT or MIDDLE (in case OS/Editor 3-button mouse emulation converts Alt+LMB to MMB!)
+		if mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_MIDDLE:
 			var local_mb: InputEventMouseButton = make_input_local(event) as InputEventMouseButton
 			_mouse_local = local_mb.position if local_mb != null else get_local_mouse_position()
-			var hit_idx: int = _hit_test_socket(_mouse_local)
-			var inside_hud_zone: bool = Rect2(-10.0, -24.0, 326.0, 146.0).has_point(_mouse_local)
-
 			if mb.pressed:
-				if inside_hud_zone:
-					if hit_idx >= 0 and _can_start_drag(hit_idx):
-						_dragging = true
-						_drag_from_idx = hit_idx
-					elif hit_idx >= 0 and _selected_socket_idx >= 0 and _can_drop_onto(_selected_socket_idx, hit_idx):
-						_perform_drop(_selected_socket_idx, hit_idx)
-						_selected_socket_idx = -1
-					else:
-						_selected_socket_idx = -1
-					queue_redraw()
+				_prev_polled_lmb = true
+				if _handle_alt_press(_mouse_local):
 					get_viewport().set_input_as_handled()
 			else:
-				if _dragging:
-					var from_idx: int = _drag_from_idx
-					_dragging = false
-					_drag_from_idx = -1
-
-					# Forgiving column fallback when releasing a dragged Shard near LMB or RMB!
-					if hit_idx < 0 and str(_sockets[from_idx]["kind"]) == "shard":
-						hit_idx = _fallback_weapon_column_for_point(_mouse_local)
-
-					if hit_idx >= 0 and hit_idx != from_idx and _can_drop_onto(from_idx, hit_idx):
-						_perform_drop(from_idx, hit_idx)
-						_selected_socket_idx = -1
-					elif hit_idx == from_idx:
-						if _selected_socket_idx >= 0 and _selected_socket_idx != hit_idx and _can_drop_onto(_selected_socket_idx, hit_idx):
-							_perform_drop(_selected_socket_idx, hit_idx)
-							_selected_socket_idx = -1
-						else:
-							_selected_socket_idx = hit_idx if _selected_socket_idx != hit_idx else -1
-					queue_redraw()
+				_prev_polled_lmb = false
+				if _handle_alt_release(_mouse_local):
 					get_viewport().set_input_as_handled()
+
+
+func _handle_alt_press(pt: Vector2) -> bool:
+	var inside_hud_zone: bool = Rect2(-18.0, -32.0, 344.0, 162.0).has_point(pt)
+	if not inside_hud_zone:
+		_selected_socket_idx = -1
+		queue_redraw()
+		return false
+
+	# If a socket was already click-selected, clicking a valid target drops immediately!
+	var drop_candidate: int = _resolve_drop_target_socket(_selected_socket_idx, pt) if _selected_socket_idx >= 0 else -1
+	if _selected_socket_idx >= 0 and drop_candidate >= 0 and drop_candidate != _selected_socket_idx and _can_drop_onto(_selected_socket_idx, drop_candidate):
+		_perform_drop(_selected_socket_idx, drop_candidate)
+		_selected_socket_idx = -1
+		queue_redraw()
+		return true
+
+	var start_idx: int = _resolve_drag_start_socket(pt)
+	if start_idx >= 0 and _can_start_drag(start_idx):
+		_dragging = true
+		_drag_from_idx = start_idx
+		_hovered_socket_idx = start_idx
+		queue_redraw()
+		return true
+
+	_selected_socket_idx = -1
+	queue_redraw()
+	return true
+
+
+func _handle_alt_release(pt: Vector2) -> bool:
+	if not _dragging:
+		return false
+	var from_idx: int = _drag_from_idx
+	_dragging = false
+	_drag_from_idx = -1
+
+	var target_idx: int = _resolve_drop_target_socket(from_idx, pt)
+	if target_idx >= 0 and target_idx != from_idx and _can_drop_onto(from_idx, target_idx):
+		_perform_drop(from_idx, target_idx)
+		_selected_socket_idx = -1
+	elif target_idx == from_idx:
+		if _selected_socket_idx >= 0 and _selected_socket_idx != target_idx and _can_drop_onto(_selected_socket_idx, target_idx):
+			_perform_drop(_selected_socket_idx, target_idx)
+			_selected_socket_idx = -1
+		else:
+			_selected_socket_idx = target_idx if _selected_socket_idx != target_idx else -1
+
+	_hovered_socket_idx = _hit_test_socket(pt)
+	queue_redraw()
+	return true
 
 
 func _set_alt_mode(active: bool) -> void:
+	if not active and _dragging:
+		# Release-order forgiveness: if the user releases [Alt] right before releasing LMB,
+		# complete the drop at the cursor rather than discarding their drag!
+		_handle_alt_release(_mouse_local)
+
 	_alt_held = active
+	_prev_polled_lmb = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	pivot_offset = Vector2(0.0, size.y if size.y > 1.0 else 116.0)
 	if not active:
 		_dragging = false
@@ -242,6 +434,7 @@ func _set_alt_mode(active: bool) -> void:
 		_hovered_socket_idx = -1
 	else:
 		_mouse_local = get_local_mouse_position()
+		_last_polled_vp_mouse = get_viewport().get_mouse_position() if get_viewport() else Vector2.ZERO
 		_hovered_socket_idx = _hit_test_socket(_mouse_local)
 		if _stats_panel:
 			_stats_panel.visible = false
@@ -276,14 +469,97 @@ func _hit_test_socket(pt: Vector2) -> int:
 	return -1
 
 
-func _fallback_weapon_column_for_point(pt: Vector2) -> int:
-	if pt.y < -8.0 or pt.y > 76.0:
+## Forgiving start-drag resolver: if the player clicks anywhere in a weapon's shard row
+## near an equipped shard (even slightly off-center or on an adjacent empty pip), grab that shard!
+func _resolve_drag_start_socket(pt: Vector2) -> int:
+	var direct: int = _hit_test_socket(pt)
+	if direct >= 0 and _can_start_drag(direct):
+		return direct
+
+	# If clicking in the Shard band beneath LMB or RMB, find the nearest equipped shard on that weapon
+	if pt.y >= 38.0 and pt.y <= 76.0:
+		var grp: int = -1
+		if pt.x >= 46.0 and pt.x <= 99.5:
+			grp = 0
+		elif pt.x > 99.5 and pt.x <= 154.0:
+			grp = 1
+		if grp >= 0:
+			var best_idx: int = -1
+			var best_dist: float = 24.0
+			for s_i in range(3):
+				var sock_i: int = grp * 3 + s_i
+				if _can_start_drag(sock_i):
+					var spos: Vector2 = _sockets[sock_i]["pos"] as Vector2
+					var d: float = pt.distance_to(spos)
+					if d < best_dist:
+						best_dist = d
+						best_idx = sock_i
+			if best_idx >= 0:
+				return best_idx
+
+	return direct
+
+
+func _resolve_drop_target_socket(from_idx: int, pt: Vector2) -> int:
+	if from_idx < 0 or from_idx >= _sockets.size():
 		return -1
-	if pt.x >= 52.0 and pt.x <= 99.5:
-		return 6 # LMB Weapon socket
-	if pt.x > 99.5 and pt.x <= 148.0:
-		return 7 # RMB Weapon socket
+	var direct: int = _hit_test_socket(pt)
+	if direct >= 0 and direct != from_idx and _can_drop_onto(from_idx, direct):
+		return direct
+
+	var k_from: String = str(_sockets[from_idx]["kind"])
+	if pt.y >= -18.0 and pt.y <= 86.0:
+		if k_from == "shard" or k_from == "weapon":
+			if pt.x >= 44.0 and pt.x <= 99.5:
+				return 6 # LMB Weapon column
+			if pt.x > 99.5 and pt.x <= 156.0:
+				return 7 # RMB Weapon column
+		elif k_from == "ability":
+			if pt.x >= 151.0 and pt.x <= 196.5:
+				return 8 # Q Ability column
+			if pt.x > 196.5 and pt.x <= 244.0:
+				return 9 # E Ability column
+	return direct
+
+
+func _resolve_hover_or_drop_preview(pt: Vector2) -> int:
+	if _dragging and _drag_from_idx >= 0:
+		return _resolve_drop_target_socket(_drag_from_idx, pt)
+	return _hit_test_socket(pt)
+
+
+func _resolve_placement_socket(pt: Vector2) -> int:
+	var direct: int = _hit_test_socket(pt)
+	if direct >= 0 and _is_valid_placement_socket(direct):
+		return direct
+
+	var cat: String = str(_placement_spec.get("category", ""))
+	if pt.y >= -18.0 and pt.y <= 88.0:
+		if cat == "shard" or cat == "weapon":
+			if pt.x >= 44.0 and pt.x <= 99.5:
+				return 6 # LMB
+			if pt.x > 99.5 and pt.x <= 156.0:
+				return 7 # RMB
+		elif cat == "ability":
+			if pt.x >= 151.0 and pt.x <= 196.5:
+				return 8 # Q
+			if pt.x > 196.5 and pt.x <= 244.0:
+				return 9 # E
 	return -1
+
+
+func _is_valid_placement_socket(sock_idx: int) -> bool:
+	if not _placement_active or sock_idx < 0 or sock_idx >= _sockets.size():
+		return false
+	var cat: String = str(_placement_spec.get("category", ""))
+	var kind: String = str(_sockets[sock_idx]["kind"])
+	if cat == "shard":
+		return kind == "shard" or kind == "weapon"
+	if cat == "weapon":
+		return kind == "weapon"
+	if cat == "ability":
+		return kind == "ability"
+	return false
 
 
 func _can_start_drag(sock_idx: int) -> bool:
@@ -306,7 +582,6 @@ func _can_drop_onto(from_idx: int, to_idx: int) -> bool:
 	var k_from: String = str(_sockets[from_idx]["kind"])
 	var k_to: String = str(_sockets[to_idx]["kind"])
 	if k_from == "shard":
-		# A Shard can drop onto ANY Shard socket OR directly onto the LMB / RMB Weapon Diamond!
 		return k_to == "shard" or k_to == "weapon"
 	if k_from == "weapon":
 		return k_to == "weapon"
@@ -381,6 +656,35 @@ func _build_labels_if_needed() -> void:
 	_shield_label.size_flags_vertical = Control.SIZE_SHRINK_END
 	_shield_label.visible = false
 	num_row.add_child(_shield_label)
+
+	_placement_back_btn = Button.new()
+	_placement_back_btn.name = "PlacementBackButton"
+	_placement_back_btn.text = "← Back [Esc]"
+	_placement_back_btn.position = Vector2(218.0, -24.0)
+	_placement_back_btn.custom_minimum_size = Vector2(74.0, 18.0)
+	_placement_back_btn.focus_mode = Control.FOCUS_NONE
+	_placement_back_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_placement_back_btn.add_theme_font_size_override("font_size", 8)
+	_placement_back_btn.add_theme_color_override("font_color", COL_IVORY_TEXT)
+	var b_sb := StyleBoxFlat.new()
+	b_sb.bg_color = Color(0.055, 0.080, 0.125, 0.90)
+	b_sb.border_width_left = 1
+	b_sb.border_width_top = 1
+	b_sb.border_width_right = 1
+	b_sb.border_width_bottom = 1
+	b_sb.border_color = COL_IVORY_LINE
+	b_sb.corner_radius_top_left = 2
+	b_sb.corner_radius_top_right = 2
+	b_sb.corner_radius_bottom_left = 2
+	b_sb.corner_radius_bottom_right = 2
+	var b_hov := b_sb.duplicate() as StyleBoxFlat
+	b_hov.bg_color = Color(0.11, 0.16, 0.24, 0.96)
+	_placement_back_btn.add_theme_stylebox_override("normal", b_sb)
+	_placement_back_btn.add_theme_stylebox_override("hover", b_hov)
+	_placement_back_btn.add_theme_stylebox_override("pressed", b_hov)
+	_placement_back_btn.visible = false
+	_placement_back_btn.pressed.connect(func() -> void: cancel_pickup_placement(true))
+	add_child(_placement_back_btn)
 
 	_stats_panel = PanelContainer.new()
 	_stats_panel.name = "StatsSheetPanel"
@@ -669,14 +973,20 @@ func _on_dash_state_changed(
 
 func _process(delta: float) -> void:
 	var active_anim: bool = false
+	_pulse_phase += delta * 5.0
+
+	if _placement_active and _placement_arm_frames > 0:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_placement_arm_frames -= 1
 
 	var live_alt: bool = _is_alt_pressed()
 	if live_alt != _alt_held:
 		_set_alt_mode(live_alt)
 
-	var target_zoom: float = 1.0 if _alt_held else 0.0
+	var want_zoom: bool = _is_interactive_zoom()
+	var target_zoom: float = 1.0 if want_zoom else 0.0
 	if absf(_alt_zoom_t - target_zoom) > 0.004:
-		_alt_zoom_t = move_toward(_alt_zoom_t, target_zoom, 10.5 * delta)
+		_alt_zoom_t = move_toward(_alt_zoom_t, target_zoom, 11.5 * delta)
 		active_anim = true
 	else:
 		_alt_zoom_t = target_zoom
@@ -685,6 +995,29 @@ func _process(delta: float) -> void:
 	var eased_z: float = 1.0 - (1.0 - _alt_zoom_t) * (1.0 - _alt_zoom_t)
 	var cur_scale: float = lerpf(1.0, ALT_ZOOM_SCALE, eased_z)
 	scale = Vector2(cur_scale, cur_scale)
+
+	# Continuous OS cursor + mouse-button fallback polling so Windows Alt menu-bar focus
+	# can never swallow the user's LMB press/drag!
+	if want_zoom and get_viewport() != null:
+		var vp_m: Vector2 = get_viewport().get_mouse_position()
+		if vp_m.distance_squared_to(_last_polled_vp_mouse) > 0.02:
+			_last_polled_vp_mouse = vp_m
+			_mouse_local = get_local_mouse_position()
+			if _placement_active:
+				_hovered_socket_idx = _resolve_placement_socket(_mouse_local)
+			elif _alt_held:
+				_hovered_socket_idx = _resolve_hover_or_drop_preview(_mouse_local)
+
+		if _alt_held:
+			var lmb_now: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE)
+			if lmb_now and not _prev_polled_lmb:
+				_prev_polled_lmb = true
+				_mouse_local = get_local_mouse_position()
+				_handle_alt_press(_mouse_local)
+			elif not lmb_now and _prev_polled_lmb:
+				_prev_polled_lmb = false
+				if _dragging:
+					_handle_alt_release(_mouse_local)
 
 	if _hit_flash_timer > 0.0:
 		_hit_flash_timer = maxf(0.0, _hit_flash_timer - delta)
@@ -722,7 +1055,7 @@ func _process(delta: float) -> void:
 	if _poll_slot_progress():
 		active_anim = true
 
-	if _alt_held:
+	if want_zoom:
 		active_anim = true
 
 	queue_redraw()
@@ -748,7 +1081,7 @@ func _draw() -> void:
 	_draw_diamond_socket_row()
 	_draw_vitality_and_shield_bar()
 	if _alt_zoom_t > 0.12:
-		_draw_alt_floating_caption_and_drag_ghost()
+		_draw_zoom_floating_caption_and_cursor_gem()
 
 
 func _draw_diamond_socket_row() -> void:
@@ -786,6 +1119,7 @@ func _draw_diamond_socket_row() -> void:
 		)
 
 	var active_src: int = _drag_from_idx if _dragging else _selected_socket_idx
+	var pulse_a: float = 0.65 + 0.35 * sin(_pulse_phase)
 
 	# Draw Main Loadout Diamonds (indices 6..10 in _sockets correspond to slot 0..4)
 	for idx in range(SLOT_CENTERS_X.size()):
@@ -798,9 +1132,13 @@ func _draw_diamond_socket_row() -> void:
 		var prog: float = _slot_progress[idx]
 		var is_ready: bool = equipped and prog >= 0.999
 
-		var is_hov: bool = _alt_held and (_hovered_socket_idx == sock_idx)
+		var is_hov: bool = _is_interactive_zoom() and (_hovered_socket_idx == sock_idx)
 		var is_sel: bool = _alt_held and (active_src == sock_idx)
-		var is_valid_target: bool = _alt_held and active_src >= 0 and active_src != sock_idx and _can_drop_onto(active_src, sock_idx)
+		var is_valid_target: bool = false
+		if _placement_active:
+			is_valid_target = _is_valid_placement_socket(sock_idx)
+		elif _alt_held and active_src >= 0 and active_src != sock_idx:
+			is_valid_target = _can_drop_onto(active_src, sock_idx)
 
 		var fill_c: Color = COL_GLASS_DARK if equipped else COL_GLASS_EMPTY
 		var rim_c: Color = COL_IVORY_DIM
@@ -813,12 +1151,12 @@ func _draw_diamond_socket_row() -> void:
 				rim_c = COL_IVORY_LINE
 				rim_w = 1.1
 
-		if is_sel or is_hov:
+		if is_sel or (is_hov and (is_valid_target or _alt_held)):
 			rim_c = COL_GOLD_HIGHLIGHT
-			rim_w = 2.0
+			rim_w = 2.1
 		elif is_valid_target:
-			rim_c = Color(0.56, 0.95, 1.0, 0.88)
-			rim_w = 1.7
+			rim_c = Color(0.52, 0.96, 1.0, pulse_a)
+			rim_w = 1.85
 
 		_draw_diamond(center, h_diag, fill_c, rim_c, rim_w)
 
@@ -839,13 +1177,17 @@ func _draw_diamond_socket_row() -> void:
 		var sh_sock: Dictionary = _sockets[sh_sock_i]
 		var scenter: Vector2 = sh_sock["pos"] as Vector2
 		var sid: int = _get_cached_shard(int(sh_sock["group"]), int(sh_sock["idx"]))
-		var s_hov: bool = _alt_held and (_hovered_socket_idx == sh_sock_i)
+		var s_hov: bool = _is_interactive_zoom() and (_hovered_socket_idx == sh_sock_i)
 		var s_sel: bool = _alt_held and (active_src == sh_sock_i)
-		var s_target: bool = _alt_held and active_src >= 0 and active_src != sh_sock_i and _can_drop_onto(active_src, sh_sock_i)
+		var s_target: bool = false
+		if _placement_active:
+			s_target = _is_valid_placement_socket(sh_sock_i)
+		elif _alt_held and active_src >= 0 and active_src != sh_sock_i:
+			s_target = _can_drop_onto(active_src, sh_sock_i)
 
 		var p_diag: float = SHARD_PIP_HALF_DIAG if _alt_zoom_t > 0.05 else 3.4
 		var s_fill: Color = COL_DASH_PIP_EMPTY
-		var s_rim: Color = COL_IVORY_LINE if _alt_held else COL_IVORY_DIM
+		var s_rim: Color = COL_IVORY_LINE if _is_interactive_zoom() else COL_IVORY_DIM
 		var s_rw: float = 1.0
 
 		if sid != 0:
@@ -856,17 +1198,17 @@ func _draw_diamond_socket_row() -> void:
 			s_rim = COL_IVORY_CAP
 			s_rw = 1.15
 
-		if s_sel or s_hov:
+		if s_sel or (s_hov and (sid != 0 or s_target)):
 			s_rim = COL_GOLD_HIGHLIGHT
-			s_rw = 1.65
+			s_rw = 1.75
 		elif s_target:
-			s_rim = Color(0.56, 0.95, 1.0, 0.85)
-			s_rw = 1.35
+			s_rim = Color(0.52, 0.96, 1.0, pulse_a)
+			s_rw = 1.45
 
 		_draw_diamond(scenter, p_diag, s_fill, s_rim, s_rw)
 
 
-func _draw_alt_floating_caption_and_drag_ghost() -> void:
+func _draw_zoom_floating_caption_and_cursor_gem() -> void:
 	var a: float = clampf(_alt_zoom_t, 0.0, 1.0)
 	var font: Font = ThemeDB.fallback_font
 	var caption: String = _get_live_caption()
@@ -877,7 +1219,7 @@ func _draw_alt_floating_caption_and_drag_ghost() -> void:
 			Vector2(8.5, -5.5),
 			caption,
 			HORIZONTAL_ALIGNMENT_LEFT,
-			300.0,
+			210.0,
 			9,
 			Color(0.02, 0.03, 0.05, 0.88 * a)
 		)
@@ -886,18 +1228,39 @@ func _draw_alt_floating_caption_and_drag_ghost() -> void:
 			Vector2(8.0, -6.0),
 			caption,
 			HORIZONTAL_ALIGNMENT_LEFT,
-			300.0,
+			210.0,
 			9,
 			Color(COL_IVORY_TEXT.r, COL_IVORY_TEXT.g, COL_IVORY_TEXT.b, a)
 		)
 
+	# Cursor-attached item gem during Pickup Placement Mode
+	if _placement_active:
+		var pcat: String = str(_placement_spec.get("category", "shard"))
+		var pid: int = int(_placement_spec.get("id", 1))
+		if pcat == "shard":
+			var psh: Dictionary = CatalogScript.get_shard(pid)
+			var pcol: Color = psh.get("color", COL_GOLD_HIGHLIGHT) as Color
+			_draw_diamond(_mouse_local, 7.2, Color(pcol.r, pcol.g, pcol.b, 0.94), COL_IVORY_TEXT, 1.6)
+		elif pcat == "weapon":
+			var pw: Dictionary = CatalogScript.get_weapon(pid)
+			var pwcol: Color = pw.get("color", COL_GOLD_HIGHLIGHT) as Color
+			_draw_diamond(_mouse_local, 13.0, COL_GLASS_DARK, pwcol, 1.7)
+			_draw_slot_glyph(_mouse_local, int(pw.get("glyph", 1)), pwcol.lightened(0.3), 0.88)
+		elif pcat == "ability":
+			var pab: Dictionary = CatalogScript.get_ability(pid)
+			var pacol: Color = pab.get("color", COL_SHIELD_CYAN) as Color
+			_draw_diamond(_mouse_local, 13.0, COL_GLASS_DARK, pacol, 1.7)
+			_draw_slot_glyph(_mouse_local, int(pab.get("glyph", 7)), pacol.lightened(0.3), 0.88)
+		return
+
+	# Cursor-attached gem while Alt-dragging
 	if _dragging and _drag_from_idx >= 0:
 		var ds: Dictionary = _sockets[_drag_from_idx]
 		var dk: String = str(ds["kind"])
 		if dk == "shard":
 			var d_sid: int = _get_cached_shard(int(ds["group"]), int(ds["idx"]))
 			var d_col: Color = CatalogScript.get_shard(d_sid).get("color", COL_GOLD_HIGHLIGHT) as Color
-			_draw_diamond(_mouse_local, 6.2, Color(d_col.r, d_col.g, d_col.b, 0.92), COL_IVORY_TEXT, 1.5)
+			_draw_diamond(_mouse_local, 6.8, Color(d_col.r, d_col.g, d_col.b, 0.94), COL_IVORY_TEXT, 1.6)
 		else:
 			var sl_i: int = int(ds["slot_idx"])
 			var m_col: Color = _slot_colors[sl_i]
@@ -906,9 +1269,22 @@ func _draw_alt_floating_caption_and_drag_ghost() -> void:
 
 
 func _get_live_caption() -> String:
+	if _placement_active:
+		var pcat: String = str(_placement_spec.get("category", "shard"))
+		var pid: int = int(_placement_spec.get("id", 1))
+		if pcat == "shard":
+			return str(CatalogScript.get_shard(pid).get("name", "Shard"))
+		if pcat == "weapon":
+			return str(CatalogScript.get_weapon(pid).get("name", "Weapon"))
+		if pcat == "ability":
+			return str(CatalogScript.get_ability(pid).get("name", "Ability"))
+		return ""
+
 	var idx: int = _hovered_socket_idx
-	if idx < 0:
-		idx = _drag_from_idx if _dragging else _selected_socket_idx
+	if _dragging and _drag_from_idx >= 0:
+		idx = _drag_from_idx
+	elif idx < 0:
+		idx = _selected_socket_idx
 	if idx < 0 or idx >= _sockets.size():
 		return ""
 

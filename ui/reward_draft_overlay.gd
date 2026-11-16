@@ -1,11 +1,11 @@
 class_name RewardDraftOverlay
 extends Control
 
-## Streamlined 2-Step Upgrade Pickup UI (Breath of the Wild × Shape of Dreams).
-## - Step 1: 3 clean whole-card choices (Ability/Artifact, Weapon Shard/Weapon, Stat Buff).
-##   Clicking a Stat Buff or [R] Artifact applies immediately in 1 click!
-## - Step 2 (only for Weapons, Shards, or Q/E Abilities): Shows your live LMB vs RMB
-##   or Q vs E side-by-side so you slot with full context (plus Q/E hotkeys & [← Back]).
+## Upgrade Pedestal Pickup UI (Breath of the Wild × Shape of Dreams).
+## - Shows 3 uncluttered cards (Ability/Artifact, Weapon Shard/Weapon, Stat Trait).
+## - Stat Traits & [R] Artifacts apply immediately in 1 click.
+## - Weapon Shards, Weapons, and Q/E Abilities dismiss the modal and zoom the actual
+##   bottom-left HUD up so you click directly onto the target HUD socket to place it!
 
 const CatalogScript = preload("res://scripts/data/combat_catalog.gd")
 
@@ -19,15 +19,14 @@ const COL_BTN_BG := Color(0.075, 0.106, 0.161, 0.88)
 const COL_BTN_HOVER := Color(0.135, 0.192, 0.275, 0.96)
 
 var _title_lbl: Label = null
-var _sub_lbl: Label = null
 var _cards_hbox: HBoxContainer = null
 var _footer_btn: Button = null
 
+var _hud_bar: Control = null
 var _active_pedestal: Node3D = null
 var _active_player: Node = null
 var _current_cards: Array = []
 var _pending_spec: Dictionary = {}
-var _step: int = 1
 var _is_open: bool = false
 
 
@@ -36,6 +35,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_shell()
 	close_draft()
+
+
+func bind_hud_bar(hud: Control) -> void:
+	_hud_bar = hud
 
 
 func _build_shell() -> void:
@@ -61,11 +64,6 @@ func _build_shell() -> void:
 	root_vbox.add_theme_constant_override("separation", 16)
 	center.add_child(root_vbox)
 
-	var header_box := VBoxContainer.new()
-	header_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	header_box.add_theme_constant_override("separation", 4)
-	root_vbox.add_child(header_box)
-
 	_title_lbl = Label.new()
 	_title_lbl.name = "HeaderTitle"
 	_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -73,14 +71,7 @@ func _build_shell() -> void:
 	_title_lbl.add_theme_color_override("font_color", COL_IVORY_TEXT)
 	_title_lbl.add_theme_color_override("font_shadow_color", Color(0.02, 0.03, 0.06, 0.85))
 	_title_lbl.add_theme_constant_override("shadow_offset_y", 2)
-	header_box.add_child(_title_lbl)
-
-	_sub_lbl = Label.new()
-	_sub_lbl.name = "HeaderSubtitle"
-	_sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_sub_lbl.add_theme_font_size_override("font_size", 13)
-	_sub_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
-	header_box.add_child(_sub_lbl)
+	root_vbox.add_child(_title_lbl)
 
 	_cards_hbox = HBoxContainer.new()
 	_cards_hbox.name = "CardsRow"
@@ -92,17 +83,10 @@ func _build_shell() -> void:
 	footer_center.alignment = BoxContainer.ALIGNMENT_CENTER
 	root_vbox.add_child(footer_center)
 
-	_footer_btn = _make_small_button("FooterButton", "Decide Later  [Esc]")
-	_footer_btn.custom_minimum_size = Vector2(196.0, 34.0)
-	_footer_btn.pressed.connect(_on_footer_pressed)
+	_footer_btn = _make_small_button("FooterButton", "Leave  [Esc]")
+	_footer_btn.custom_minimum_size = Vector2(168.0, 34.0)
+	_footer_btn.pressed.connect(close_draft)
 	footer_center.add_child(_footer_btn)
-
-
-func _on_footer_pressed() -> void:
-	if _step == 2:
-		_render_step_1()
-	else:
-		close_draft()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -111,25 +95,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var ke: InputEventKey = event as InputEventKey
 		if ke.keycode == KEY_ESCAPE or ke.keycode == KEY_BACKSPACE:
-			if _step == 2:
-				_render_step_1()
-			else:
-				close_draft()
+			close_draft()
 			get_viewport().set_input_as_handled()
-		elif _step == 2:
-			var cat: String = str(_pending_spec.get("category", ""))
-			if cat == "ability":
-				if ke.keycode == KEY_Q:
-					_commit_slot_choice(0)
-					get_viewport().set_input_as_handled()
-				elif ke.keycode == KEY_E:
-					_commit_slot_choice(1)
-					get_viewport().set_input_as_handled()
 
 
 func open_for_pedestal(pedestal: Node3D, player_node: Node) -> void:
 	if pedestal == null or player_node == null:
 		return
+	if _hud_bar != null and _hud_bar.has_method("cancel_pickup_placement"):
+		_hud_bar.call("cancel_pickup_placement", false)
+
 	_build_shell()
 	_active_pedestal = pedestal
 	_active_player = player_node
@@ -142,16 +117,13 @@ func open_for_pedestal(pedestal: Node3D, player_node: Node) -> void:
 	if pedestal.has_method("get_or_roll_cards"):
 		_current_cards = pedestal.call("get_or_roll_cards", player_node) as Array
 
-	_render_step_1()
+	_render_cards()
 	visible = true
 
 
-func _render_step_1() -> void:
-	_step = 1
+func _render_cards() -> void:
 	_pending_spec = {}
 	_title_lbl.text = "CHOOSE AN UPGRADE"
-	_sub_lbl.text = ""
-	_sub_lbl.visible = false
 	_footer_btn.text = "Leave  [Esc]"
 
 	for ch in _cards_hbox.get_children():
@@ -159,14 +131,14 @@ func _render_step_1() -> void:
 
 	for i in range(_current_cards.size()):
 		var spec: Dictionary = _current_cards[i] as Dictionary
-		_cards_hbox.add_child(_build_step1_card(i, spec))
+		_cards_hbox.add_child(_build_card(i, spec))
 
 
-func _on_step1_card_clicked(spec: Dictionary) -> void:
+func _on_card_clicked(spec: Dictionary) -> void:
 	var category: String = str(spec.get("category", "trait"))
 	var item_id: int = int(spec.get("id", 1))
 
-	# Stat Buffs & [R] Artifacts apply immediately in 1 click!
+	# Stat Traits & [R] Artifacts apply immediately in 1 click!
 	if category == "trait":
 		_claim_and_close(func(p: Node) -> void:
 			if p.has_method("apply_trait_upgrade"):
@@ -181,87 +153,54 @@ func _on_step1_card_clicked(spec: Dictionary) -> void:
 		)
 		return
 
-	# Weapons, Weapon Shards, and Q/E Abilities open the clean 2-slot comparison prompt!
-	_pending_spec = spec
-	_render_step_2()
-
-
-func _render_step_2() -> void:
-	_step = 2
-	var category: String = str(_pending_spec.get("category", "shard"))
-	var item_id: int = int(_pending_spec.get("id", 1))
-	var info: Dictionary = _lookup_info(category, item_id)
-	var item_name: String = str(info.get("name", "Upgrade"))
-	var accent: Color = info.get("color", Color(0.56, 0.92, 1.0)) as Color
-
-	_title_lbl.text = item_name.to_upper()
-	_sub_lbl.text = ""
-	_sub_lbl.visible = false
-	_footer_btn.text = "← Back  [Esc]"
-
-	for ch in _cards_hbox.get_children():
-		ch.queue_free()
-
-	if category == "ability":
-		_cards_hbox.add_child(_build_slot_target_card(0, "Q", _describe_current_ability(0), accent))
-		_cards_hbox.add_child(_build_slot_target_card(1, "E", _describe_current_ability(1), accent))
-	elif category == "shard":
-		_cards_hbox.add_child(_build_slot_target_card(0, "LMB", _describe_current_weapon(0, true), accent))
-		_cards_hbox.add_child(_build_slot_target_card(1, "RMB", _describe_current_weapon(1, true), accent))
+	# Shards, Weapons, and Q/E Abilities zoom the bottom-left HUD up so you click
+	# directly on the HUD slot to place it (Shape of Dreams style)!
+	_pending_spec = spec.duplicate(true)
+	if _hud_bar != null and is_instance_valid(_hud_bar) and _hud_bar.has_method("begin_pickup_placement"):
+		_is_open = false
+		visible = false
+		_hud_bar.call(
+			"begin_pickup_placement",
+			_pending_spec,
+			Callable(self, "_on_hud_placement_committed"),
+			Callable(self, "_on_hud_placement_cancelled")
+		)
 	else:
-		_cards_hbox.add_child(_build_slot_target_card(0, "LMB", _describe_current_weapon(0, false), accent))
-		_cards_hbox.add_child(_build_slot_target_card(1, "RMB", _describe_current_weapon(1, false), accent))
+		# Fallback if HUD bar isn't bound
+		_on_hud_placement_committed(0, -1)
 
 
-func _commit_slot_choice(slot_idx: int) -> void:
+func _on_hud_placement_committed(target_slot: int, sub_socket: int) -> void:
 	var category: String = str(_pending_spec.get("category", "shard"))
 	var item_id: int = int(_pending_spec.get("id", 1))
 	_claim_and_close(func(p: Node) -> void:
-		if category == "ability" and p.has_method("equip_ability"):
-			p.call("equip_ability", slot_idx, item_id)
-		elif category == "shard" and p.has_method("equip_shard"):
-			p.call("equip_shard", item_id, slot_idx)
+		if category == "shard":
+			if sub_socket >= 0 and p.has_method("equip_shard_at_socket"):
+				p.call("equip_shard_at_socket", item_id, target_slot, sub_socket)
+			elif p.has_method("equip_shard"):
+				p.call("equip_shard", item_id, target_slot)
 		elif category == "weapon" and p.has_method("equip_weapon"):
-			p.call("equip_weapon", slot_idx, item_id)
+			p.call("equip_weapon", target_slot, item_id)
+		elif category == "ability" and p.has_method("equip_ability"):
+			p.call("equip_ability", target_slot, item_id)
 	)
 
 
-func _describe_current_weapon(slot_idx: int, include_shards: bool) -> Array[String]:
-	if _active_player == null or not is_instance_valid(_active_player):
-		return ["Empty", ""]
-	var w_slots: Array = _active_player.get("weapon_slots") as Array
-	var wid: int = int(w_slots[slot_idx]) if slot_idx < w_slots.size() else 0
-	var w: Dictionary = CatalogScript.get_weapon(wid)
-	var wname: String = str(w.get("name", "Empty"))
-	if not include_shards:
-		return [wname, str(w.get("desc", ""))]
-
-	var ws: Array = _active_player.get("weapon_shards") as Array
-	var sh_arr: Array = ws[slot_idx] as Array if slot_idx < ws.size() else []
-	var labels: Array[String] = []
-	for sv in sh_arr:
-		var sid: int = int(sv)
-		if sid == 0:
-			labels.append("◇")
-		else:
-			labels.append("◆ %s" % str(CatalogScript.get_shard(sid).get("name", "Shard")).replace(" Shard", ""))
-	return [wname, "   ".join(labels)]
-
-
-func _describe_current_ability(slot_idx: int) -> Array[String]:
-	if _active_player == null or not is_instance_valid(_active_player):
-		return ["Empty", ""]
-	var ab_slots: Array = _active_player.get("ability_slots") as Array
-	var abid: int = int(ab_slots[slot_idx]) if slot_idx < ab_slots.size() else 0
-	var ab: Dictionary = CatalogScript.get_ability(abid)
-	if ab.is_empty():
-		return ["Empty", ""]
-	return [str(ab.get("name", "Ability")), str(ab.get("desc", ""))]
+func _on_hud_placement_cancelled() -> void:
+	if _active_pedestal == null or not is_instance_valid(_active_pedestal) or _active_player == null or not is_instance_valid(_active_player):
+		close_draft()
+		return
+	_is_open = true
+	if _active_player.has_method("set_ui_input_blocked"):
+		_active_player.call("set_ui_input_blocked", true)
+	_render_cards()
+	visible = true
 
 
 func close_draft() -> void:
+	if _hud_bar != null and is_instance_valid(_hud_bar) and _hud_bar.has_method("cancel_pickup_placement"):
+		_hud_bar.call("cancel_pickup_placement", false)
 	_is_open = false
-	_step = 1
 	_pending_spec = {}
 	visible = false
 	if _active_player != null and is_instance_valid(_active_player) and _active_player.has_method("set_ui_input_blocked"):
@@ -280,7 +219,7 @@ func _claim_and_close(action_cb: Callable) -> void:
 	close_draft()
 
 
-func _build_step1_card(card_idx: int, spec: Dictionary) -> Button:
+func _build_card(card_idx: int, spec: Dictionary) -> Button:
 	var category: String = str(spec.get("category", "trait"))
 	var item_id: int = int(spec.get("id", 1))
 	var info: Dictionary = _lookup_info(category, item_id)
@@ -291,7 +230,7 @@ func _build_step1_card(card_idx: int, spec: Dictionary) -> Button:
 	var desc_txt: String = str(info.get("desc", ""))
 
 	var card_btn := _make_whole_card_button("DraftCard_%d" % card_idx, Vector2(256.0, 232.0), accent_col)
-	card_btn.pressed.connect(func() -> void: _on_step1_card_clicked(spec))
+	card_btn.pressed.connect(func() -> void: _on_card_clicked(spec))
 
 	var vbox: VBoxContainer = card_btn.get_node("CardMargin/CardVBox") as VBoxContainer
 
@@ -323,44 +262,6 @@ func _build_step1_card(card_idx: int, spec: Dictionary) -> Button:
 	desc_lbl.add_theme_font_size_override("font_size", 13)
 	desc_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
 	vbox.add_child(desc_lbl)
-
-	return card_btn
-
-
-func _build_slot_target_card(slot_idx: int, slot_badge: String, current_lines: Array[String], accent_col: Color) -> Button:
-	var card_btn := _make_whole_card_button("SlotTarget_%d" % slot_idx, Vector2(268.0, 174.0), accent_col)
-	card_btn.pressed.connect(func() -> void: _commit_slot_choice(slot_idx))
-
-	var vbox: VBoxContainer = card_btn.get_node("CardMargin/CardVBox") as VBoxContainer
-
-	var badge_lbl := Label.new()
-	badge_lbl.text = slot_badge
-	badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge_lbl.add_theme_font_size_override("font_size", 12)
-	badge_lbl.add_theme_color_override("font_color", accent_col.lightened(0.2))
-	vbox.add_child(badge_lbl)
-
-	var cur_lbl := Label.new()
-	cur_lbl.text = current_lines[0]
-	cur_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cur_lbl.add_theme_font_size_override("font_size", 18)
-	cur_lbl.add_theme_color_override("font_color", COL_IVORY_TEXT)
-	vbox.add_child(cur_lbl)
-
-	var sep := ColorRect.new()
-	sep.custom_minimum_size = Vector2(0.0, 1.0)
-	sep.color = COL_IVORY_LINE
-	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(sep)
-
-	var detail_lbl := Label.new()
-	detail_lbl.text = current_lines[1]
-	detail_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	detail_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_lbl.add_theme_font_size_override("font_size", 13)
-	detail_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
-	vbox.add_child(detail_lbl)
 
 	return card_btn
 
