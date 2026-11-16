@@ -111,9 +111,9 @@ func activate_pedestal(p_pos: Vector3, p_players_root: Node3D, p_seed_hint: int 
 	if crystal_mesh:
 		crystal_mesh.scale = Vector3.ONE
 	if prompt_label:
-		prompt_label.text = "◆ Upgrade Pedestal"
-		prompt_label.modulate = Color(0.94, 0.91, 0.85, 0.78)
-		prompt_label.visible = true
+		prompt_label.text = "[F]"
+		prompt_label.modulate = Color(0.56, 0.96, 1.0, 1.0)
+		prompt_label.visible = false
 
 	if is_inside_tree():
 		global_position = Vector3(p_pos.x, 0.0, p_pos.z)
@@ -133,20 +133,24 @@ func get_or_roll_cards(player_node: Node) -> Array[Dictionary]:
 	var eq_abilities: Array = player_node.get("ability_slots") if (player_node and "ability_slots" in player_node) else []
 	var eq_artifact: int = int(player_node.get("artifact_id")) if (player_node and "artifact_id" in player_node) else 0
 
-	var gear_pool: Array[Dictionary] = []
-	for wid in CatalogScript.get_all_weapon_ids():
-		if not eq_weapons.has(wid):
-			gear_pool.append({"category": "weapon", "id": wid})
+	var ability_pool: Array[Dictionary] = []
 	for abid in CatalogScript.get_all_ability_ids():
 		if not eq_abilities.has(abid):
-			gear_pool.append({"category": "ability", "id": abid})
+			ability_pool.append({"category": "ability", "id": abid})
 	for artid in CatalogScript.get_all_artifact_ids():
 		if eq_artifact != artid:
-			gear_pool.append({"category": "artifact", "id": artid})
+			ability_pool.append({"category": "artifact", "id": artid})
 
-	var shard_pool: Array[Dictionary] = []
+	var weapon_or_shard_pool: Array[Dictionary] = []
 	for sh_id in CatalogScript.get_all_shard_ids():
-		shard_pool.append({"category": "shard", "id": sh_id})
+		weapon_or_shard_pool.append({"category": "shard", "id": sh_id})
+	if _rng.randf() < 0.40:
+		var unowned_weps: Array[Dictionary] = []
+		for wid in CatalogScript.get_all_weapon_ids():
+			if not eq_weapons.has(wid):
+				unowned_weps.append({"category": "weapon", "id": wid})
+		if not unowned_weps.is_empty():
+			weapon_or_shard_pool = unowned_weps
 
 	var stat_pool: Array[Dictionary] = [
 		{"category": "trait", "id": CatalogScript.TraitId.STAT_AD},
@@ -157,33 +161,17 @@ func get_or_roll_cards(player_node: Node) -> Array[Dictionary]:
 		{"category": "trait", "id": CatalogScript.TraitId.STAT_MOVE_SPD}
 	]
 
-	# Card 1: Unowned Weapon / Ability / Artifact (fallback to Weapon Shard)
-	if not gear_pool.is_empty():
-		_rolled_cards.append(gear_pool[_rng.randi_range(0, gear_pool.size() - 1)])
+	# Card 1: Ability or Artifact
+	if not ability_pool.is_empty():
+		_rolled_cards.append(ability_pool[_rng.randi_range(0, ability_pool.size() - 1)])
 	else:
-		_rolled_cards.append(shard_pool[_rng.randi_range(0, shard_pool.size() - 1)])
+		_rolled_cards.append({"category": "shard", "id": CatalogScript.ShardId.SHARD_STORM})
 
-	# Card 2: Slottable Weapon Shard (Poison / Shock / Burn / Frost / Force / Cadence)
-	var shard_pick: Dictionary = shard_pool[_rng.randi_range(0, shard_pool.size() - 1)]
-	_rolled_cards.append(shard_pick)
+	# Card 2: Weapon Shard (or new Weapon)
+	_rolled_cards.append(weapon_or_shard_pool[_rng.randi_range(0, weapon_or_shard_pool.size() - 1)])
 
-	# Card 3: Core Stat Trait or second unowned Gear option (50/50)
-	var third_candidates: Array[Dictionary] = []
-	for s in stat_pool:
-		third_candidates.append(s)
-	if _rng.randf() < 0.45:
-		for g in gear_pool:
-			if not _has_card(_rolled_cards, g):
-				third_candidates.append(g)
-
-	for _attempt in range(16):
-		var cand: Dictionary = third_candidates[_rng.randi_range(0, third_candidates.size() - 1)]
-		if not _has_card(_rolled_cards, cand):
-			_rolled_cards.append(cand)
-			break
-
-	if _rolled_cards.size() < 3:
-		_rolled_cards.append({"category": "trait", "id": CatalogScript.TraitId.STAT_AD})
+	# Card 3: Stat Buff
+	_rolled_cards.append(stat_pool[_rng.randi_range(0, stat_pool.size() - 1)])
 
 	return _rolled_cards
 
@@ -246,12 +234,10 @@ func _process(delta: float) -> void:
 	if now_in_range != _player_in_range:
 		_player_in_range = now_in_range
 		if prompt_label:
+			prompt_label.visible = _player_in_range
 			if _player_in_range:
-				prompt_label.text = "[F] Choose Upgrade"
+				prompt_label.text = "[F]"
 				prompt_label.modulate = Color(0.56, 0.96, 1.0, 1.0)
-			else:
-				prompt_label.text = "◆ Upgrade Pedestal"
-				prompt_label.modulate = Color(0.94, 0.91, 0.85, 0.78)
 
 	if _player_in_range and near_player != null:
 		var blocked: bool = bool(near_player.get("ui_input_blocked")) if ("ui_input_blocked" in near_player) else false

@@ -171,8 +171,13 @@ func _process(delta: float) -> void:
 
 	if _charges_left <= 0:
 		if prompt_label:
-			prompt_label.text = "◆ Healing Well (Depleted)"
-			prompt_label.modulate = Color(0.65, 0.72, 0.74, 0.58)
+			prompt_label.visible = false
+		return
+
+	var near_player: Node3D = _find_local_player_in_range()
+	if near_player == null:
+		if prompt_label:
+			prompt_label.visible = false
 		return
 
 	var combat_locked: bool = false
@@ -181,26 +186,21 @@ func _process(delta: float) -> void:
 
 	if combat_locked:
 		if prompt_label:
-			prompt_label.text = "◆ Healing Well (Clear Arena First)"
-			prompt_label.modulate = Color(0.95, 0.78, 0.48, 0.72)
-		return
-
-	var near_player: Node3D = _find_local_player_in_range()
-	if near_player == null:
-		if prompt_label:
-			prompt_label.text = "◆ Healing Well [%d/%d]" % [_charges_left, _max_charges]
-			prompt_label.modulate = Color(0.48, 0.98, 0.74, 0.82)
+			prompt_label.visible = true
+			prompt_label.text = "Locked"
+			prompt_label.modulate = Color(0.95, 0.78, 0.48, 0.82)
 		return
 
 	var hc: HealthComponent = near_player.call("get_health_component") as HealthComponent if near_player.has_method("get_health_component") else null
 	var is_full_hp: bool = (hc == null) or (hc.current_health >= hc.max_health - 0.25)
 
 	if prompt_label:
+		prompt_label.visible = true
 		if is_full_hp:
-			prompt_label.text = "◆ Healing Well — Full HP [%d/%d]" % [_charges_left, _max_charges]
+			prompt_label.text = "Full HP  (%d/%d)" % [_charges_left, _max_charges]
 			prompt_label.modulate = Color(0.68, 0.94, 0.82, 0.82)
 		else:
-			prompt_label.text = "[F] Drink Healing Well (+45%% HP) [%d/%d]" % [_charges_left, _max_charges]
+			prompt_label.text = "[F] Heal  (%d/%d)" % [_charges_left, _max_charges]
 			prompt_label.modulate = Color(0.42, 1.0, 0.72, 1.0)
 
 	if not is_full_hp and hc != null:

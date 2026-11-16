@@ -77,7 +77,7 @@ var weapon_slots: Array[int] = [
 	CatalogScript.WeaponId.RAIL_LANCE
 ]
 var weapon_shards: Array = [
-	[CatalogScript.ShardId.SHARD_VENOM, CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE],
+	[CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE],
 	[CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE]
 ]
 var reserve_shards: Array[int] = [
@@ -371,6 +371,21 @@ func move_or_swap_shard(from_group: int, from_idx: int, to_group: int, to_idx: i
 	loadout_changed.emit()
 
 
+## Slots a dragged/selected Shard directly onto target_weapon_slot (0 = LMB, 1 = RMB),
+## picking the first empty socket on that weapon (or swapping with socket 0 if full).
+func move_shard_to_weapon(from_group: int, from_idx: int, target_weapon_slot: int) -> void:
+	var w_slot: int = clampi(target_weapon_slot, 0, 1)
+	if from_group == w_slot:
+		return
+	var target_arr: Array = weapon_shards[w_slot] as Array
+	var dest_idx: int = 0
+	for i in range(target_arr.size()):
+		if int(target_arr[i]) == CatalogScript.ShardId.NONE:
+			dest_idx = i
+			break
+	move_or_swap_shard(from_group, from_idx, w_slot, dest_idx)
+
+
 func get_shard_at(group: int, idx: int) -> int:
 	if group == 0 or group == 1:
 		var arr: Array = weapon_shards[group] as Array
@@ -553,7 +568,7 @@ func _emit_dash_state() -> void:
 func reset_for_new_run() -> void:
 	weapon_slots[0] = CatalogScript.WeaponId.PULSE_REPEATER
 	weapon_slots[1] = CatalogScript.WeaponId.RAIL_LANCE
-	weapon_shards[0] = [CatalogScript.ShardId.SHARD_VENOM, CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE]
+	weapon_shards[0] = [CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE]
 	weapon_shards[1] = [CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE, CatalogScript.ShardId.NONE]
 	reserve_shards = [
 		CatalogScript.ShardId.NONE,

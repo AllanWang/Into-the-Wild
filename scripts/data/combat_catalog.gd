@@ -275,43 +275,49 @@ static func _ensure_init() -> void:
 	_shards[ShardId.SHARD_VENOM] = {
 		"id": ShardId.SHARD_VENOM,
 		"name": "Venom Shard",
-		"subtitle": "Weapon Shard — Poison",
-		"desc": "Slots into LMB or RMB: hits apply stacking Poison DoT (AD/AP scaled). Hold [Alt] to move.",
+		"subtitle": "Weapon Shard · Poison",
+		"short": "Poison DoT on hit (AD/AP)",
+		"desc": "Hits apply stacking Poison DoT scaling with AD and AP.",
 		"color": Color(0.36, 0.96, 0.48, 1.0)
 	}
 	_shards[ShardId.SHARD_STORM] = {
 		"id": ShardId.SHARD_STORM,
 		"name": "Storm Shard",
-		"subtitle": "Weapon Shard — Shock",
-		"desc": "Slots into LMB or RMB: chance on hit to arc AP Chain Lightning to 3 foes. Hold [Alt] to move.",
+		"subtitle": "Weapon Shard · Shock",
+		"short": "AP Chain Lightning on hit",
+		"desc": "Chance on hit to arc AP Chain Lightning to up to 3 nearby foes.",
 		"color": Color(0.42, 0.88, 1.0, 1.0)
 	}
 	_shards[ShardId.SHARD_CINDER] = {
 		"id": ShardId.SHARD_CINDER,
 		"name": "Cinder Shard",
-		"subtitle": "Weapon Shard — Burn",
-		"desc": "Slots into LMB or RMB: ignites targets for % of triggering hit damage over 3s. Hold [Alt] to move.",
+		"subtitle": "Weapon Shard · Burn",
+		"short": "Ignites for % of hit damage",
+		"desc": "Ignites targets for a percentage of triggering hit damage over 3s.",
 		"color": Color(1.0, 0.48, 0.18, 1.0)
 	}
 	_shards[ShardId.SHARD_RIME] = {
 		"id": ShardId.SHARD_RIME,
 		"name": "Rime Shard",
-		"subtitle": "Weapon Shard — Frost",
-		"desc": "Slots into LMB or RMB: chills enemies on hit, slowing move speed for 2.5s. Hold [Alt] to move.",
+		"subtitle": "Weapon Shard · Frost",
+		"short": "Chills & slows move speed",
+		"desc": "Chills enemies on hit, slowing movement speed for 2.5s.",
 		"color": Color(0.62, 0.95, 1.0, 1.0)
 	}
 	_shards[ShardId.SHARD_KEEN] = {
 		"id": ShardId.SHARD_KEEN,
 		"name": "Keen Shard",
-		"subtitle": "Weapon Shard — Force",
-		"desc": "Slots into LMB or RMB: +28% direct hit damage on the attached weapon. Hold [Alt] to move.",
+		"subtitle": "Weapon Shard · Force",
+		"short": "+28% weapon hit damage",
+		"desc": "+28% direct hit damage on the attached weapon.",
 		"color": Color(1.0, 0.80, 0.32, 1.0)
 	}
 	_shards[ShardId.SHARD_TEMPO] = {
 		"id": ShardId.SHARD_TEMPO,
 		"name": "Tempo Shard",
-		"subtitle": "Weapon Shard — Cadence",
-		"desc": "Slots into LMB or RMB: +25% fire rate (or -20% cooldown) on that weapon. Hold [Alt] to move.",
+		"subtitle": "Weapon Shard · Cadence",
+		"short": "+25% fire rate / -20% CD",
+		"desc": "+25% fire rate (or -20% cooldown) on the attached weapon.",
 		"color": Color(0.84, 0.54, 1.0, 1.0)
 	}
 

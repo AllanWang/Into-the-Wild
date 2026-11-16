@@ -4,6 +4,7 @@ const PLAYER_SCENE: PackedScene = preload("res://player/player.tscn")
 const MapPresetConfigScript = preload("res://world/map_preset_config.gd")
 const GameOverOverlayScript = preload("res://ui/game_over_overlay.gd")
 const RewardDraftOverlayScript = preload("res://ui/reward_draft_overlay.gd")
+const TutorialModalScript = preload("res://ui/tutorial_modal.gd")
 
 @onready var procedural_world: ProceduralWorld = $ProceduralWorld
 @onready var encounter_manager: ArenaEncounterManager = get_node_or_null("ArenaEncounterManager") as ArenaEncounterManager
@@ -39,6 +40,8 @@ var _active_arena_title: String = "Combat Arena"
 var _banner_fade_timer: float = 0.0
 var _game_over_overlay: Control = null
 var _reward_draft_overlay: Control = null
+var _tutorial_modal: Control = null
+var _tutorial_button: Button = null
 
 @export var overview_mode: bool = false:
 	set(val):
@@ -99,6 +102,7 @@ func _ready() -> void:
 
 	spawn_players()
 	_setup_reward_draft_overlay()
+	_setup_tutorial_modal()
 	_setup_game_over_overlay()
 	_update_hud()
 	NetworkManager.mark_client_ready()
@@ -118,6 +122,12 @@ func _configure_button(btn: Button, callback: Callable) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var ke: InputEventKey = event as InputEventKey
+		if ke.keycode == KEY_F1 or ke.keycode == KEY_H:
+			_on_tutorial_pressed()
+			get_viewport().set_input_as_handled()
+			return
 	if is_overview:
 		return
 	if event is InputEventMouseButton and event.pressed:
@@ -345,8 +355,42 @@ func _setup_reward_draft_overlay() -> void:
 
 
 func _on_reward_pedestal_interacted(pedestal: Node3D, player_node: Node) -> void:
+	if _tutorial_modal and _tutorial_modal.has_method("close_modal"):
+		_tutorial_modal.call("close_modal")
 	if _reward_draft_overlay and _reward_draft_overlay.has_method("open_for_pedestal"):
 		_reward_draft_overlay.call("open_for_pedestal", pedestal, player_node)
+
+
+func _setup_tutorial_modal() -> void:
+	if _tutorial_modal != null:
+		return
+	var tut_layer := CanvasLayer.new()
+	tut_layer.name = "TutorialLayer"
+	tut_layer.layer = 9
+	add_child(tut_layer)
+
+	_tutorial_modal = TutorialModalScript.new() as Control
+	_tutorial_modal.name = "TutorialModal"
+	tut_layer.add_child(_tutorial_modal)
+
+	if leave_button and leave_button.get_parent():
+		var hbox: Node = leave_button.get_parent()
+		_tutorial_button = Button.new()
+		_tutorial_button.name = "TutorialButton"
+		_tutorial_button.text = "Tutorial"
+		_tutorial_button.focus_mode = Control.FOCUS_NONE
+		hbox.add_child(_tutorial_button)
+		hbox.move_child(_tutorial_button, leave_button.get_index())
+		_configure_button(_tutorial_button, _on_tutorial_pressed)
+
+
+func _on_tutorial_pressed() -> void:
+	if _tutorial_modal == null:
+		return
+	if _reward_draft_overlay and bool(_reward_draft_overlay.get("_is_open")):
+		return
+	if _tutorial_modal.has_method("toggle_for_player"):
+		_tutorial_modal.call("toggle_for_player", _local_player)
 
 
 func _setup_game_over_overlay() -> void:
