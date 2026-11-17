@@ -37,6 +37,8 @@ uniform vec4 fx_color1 : source_color = vec4(0.55, 0.92, 1.0, 1.0);
 uniform vec4 fx_color2 : source_color = vec4(1.0, 0.36, 0.78, 1.0);
 uniform vec4 fx_color3 : source_color = vec4(1.0, 0.88, 0.48, 1.0);
 uniform float fx_emission_strength : hint_range(0.0, 4.0, 0.01) = 0.0;
+uniform vec3 player_focus_pos = vec3(0.0);
+uniform vec4 player_wake[4];
 
 varying vec3 vertex_pos;
 varying vec3 normal;
@@ -47,6 +49,32 @@ varying vec3 vertex_world;
 vec2 hash22(vec2 p) {
 	p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
 	return fract(sin(p) * 43758.5453123);
+}
+
+vec3 voronoi_glacier(vec2 x) {
+	vec2 n = floor(x);
+	vec2 f = fract(x);
+	float md1 = 8.0;
+	float md2 = 8.0;
+	float cid = 0.0;
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 g = vec2(float(i), float(j));
+			vec2 o = hash22(n + g);
+			vec2 r = g + (0.14 + 0.72 * o) - f;
+			float d = dot(r, r);
+			if (d < md1) {
+				md2 = md1;
+				md1 = d;
+				cid = o.x;
+			} else if (d < md2) {
+				md2 = d;
+			}
+		}
+	}
+	float s1 = sqrt(md1);
+	float s2 = sqrt(md2);
+	return vec3(s1, s2 - s1, cid);
 }
 
 vec2 seg_dist_param(vec2 p, vec2 a, vec2 b) {
@@ -65,7 +93,7 @@ float eval_constellation_edge(vec2 uv_p, vec2 c_a, vec2 c_b, float seed_tag, flo
 	vec2 a = astral_star_pos(c_a);
 	vec2 b = astral_star_pos(c_b);
 	vec2 dp = seg_dist_param(uv_p, a, b);
-	float width_mask = smoothstep(0.012, 0.003, dp.x);
+	float width_mask = 1.0 - smoothstep(0.003, 0.012, dp.x);
 	if (width_mask <= 0.0001) {
 		return 0.0;
 	}
@@ -83,17 +111,17 @@ float eval_shooting_star(vec2 world_xz, float angle_deg, float seed_off, float t
 	vec2 local_p = m_pos - patch_id * patch_size;
 
 	vec2 h_base = hash22(patch_id + vec2(seed_off, seed_off * 1.7));
-	float rate = 0.22 + 0.10 * h_base.y;
+	float rate = 0.12 + 0.06 * h_base.y;
 	float cycle_t = t_now * rate + h_base.x * 9.0;
 	float epoch = floor(cycle_t);
 	float u = fract(cycle_t);
 
-	float active_span = 0.46;
+	float active_span = 0.36;
 	if (u >= active_span) {
 		return 0.0;
 	}
 	vec2 h_ep = hash22(patch_id + vec2(epoch * 3.13 + seed_off, epoch * 7.19));
-	if (h_ep.x < 0.30) {
+	if (h_ep.x < 0.52) {
 		return 0.0;
 	}
 
@@ -104,19 +132,19 @@ float eval_shooting_star(vec2 world_xz, float angle_deg, float seed_off, float t
 
 	float dx = head_x - local_p.x;
 	float dy = abs(local_p.y - y_lane);
-	float tail_len = 3.2;
+	float tail_len = 2.6;
 
 	float streak = 0.0;
 	if (dx >= 0.0 && dx <= tail_len) {
 		float t_tail = 1.0 - (dx / tail_len);
-		float half_w = mix(0.015, 0.058, t_tail);
-		float w_mask = smoothstep(half_w, half_w * 0.2, dy);
-		streak = w_mask * pow(t_tail, 1.6);
+		float half_w = mix(0.012, 0.042, t_tail);
+		float w_mask = 1.0 - smoothstep(half_w * 0.2, half_w, dy);
+		streak = w_mask * pow(t_tail, 1.8);
 	}
 	float d_head = length(vec2(local_p.x - head_x, local_p.y - y_lane));
-	float head_glow = smoothstep(0.15, 0.025, d_head);
+	float head_glow = 1.0 - smoothstep(0.02, 0.11, d_head);
 
-	return max(streak * 0.9, head_glow * 1.2) * env;
+	return max(streak * 0.65, head_glow * 0.85) * env;
 }
 
 void vertex() {
@@ -140,22 +168,43 @@ void fragment() {
 	vec3 emissive = vec3(0.0);
 
 	if (biome_fx_mode == 1) {
-		// Glacial Frostfield: luminous sculpted winter snowdrifts, subtle subsurface glacier veins & crisp frost ridges
-		float drift_band = smoothstep(0.36, 0.68, sin(vertex_world.x * 0.16 + vertex_world.z * 0.11 + n3 * 3.2) * 0.5 + 0.5);
-		ALBEDO = mix(ALBEDO * 0.94, ALBEDO * 1.06, drift_band);
-		float glacier_vein = 1.0 - smoothstep(0.002, 0.015, abs(n3 - 0.50));
-		float frost_ridge = 1.0 - smoothstep(0.002, 0.011, abs(n2 - 0.52));
-		ALBEDO = mix(ALBEDO, fx_color2.rgb, glacier_vein * 0.20);
-		ALBEDO = mix(ALBEDO, fx_color1.rgb, frost_ridge * 0.26);
-		emissive = (fx_color1.rgb * frost_ridge * 0.65 + fx_color2.rgb * glacier_vein * 0.35) * fx_emission_strength;
+		// Glacial Frostfield: faceted Voronoi glacier ice-sheet plates + deep cerulean crevasses + crystal cracks
+		vec3 v1 = voronoi_glacier(vertex_world.xz * 0.14);
+		vec3 v2 = voronoi_glacier(vertex_world.xz * 0.33 + vec2(17.3, 9.1));
+		float slab_tone = mix(0.88, 1.12, v1.z);
+		ALBEDO *= slab_tone;
+		float deep_crevasse = 1.0 - smoothstep(0.025, 0.145, v1.y);
+		float sub_fissure = (1.0 - smoothstep(0.015, 0.085, v2.y)) * 0.45;
+		ALBEDO = mix(ALBEDO, fx_color2.rgb, clamp(deep_crevasse * 0.62 + sub_fissure * 0.35, 0.0, 0.78));
+		float ice_crack = max(1.0 - smoothstep(0.004, 0.026, v1.y), (1.0 - smoothstep(0.003, 0.018, v2.y)) * 0.65);
+		ALBEDO = mix(ALBEDO, fx_color1.rgb, ice_crack * 0.82);
+		float glint = smoothstep(0.92, 0.99, sin(vertex_world.x * 3.7 + v1.z * 19.0) * cos(vertex_world.z * 3.5 - v2.z * 15.0));
+		ALBEDO = mix(ALBEDO, fx_color3.rgb, glint * 0.35);
+		emissive = (fx_color1.rgb * ice_crack * 0.65 + fx_color2.rgb * deep_crevasse * 0.55 + fx_color3.rgb * glint * 0.40) * fx_emission_strength;
 	} else if (biome_fx_mode == 2) {
-		// Astral Constellation: deep indigo velvet with unbroken fading star-to-star threads & shooting stars
+		// Astral Constellation: galaxy nebula marble + player-wake-reactive constellations & halos + subtle meteors
+		float d_player = length(vertex_world.xz - player_focus_pos.xz);
+		float wake_factor = 1.0 - smoothstep(2.6, 8.8, d_player);
+		for (int w = 0; w < 4; w++) {
+			vec4 wk = player_wake[w];
+			float w_strength = clamp(wk.w, 0.0, 1.0);
+			if (w_strength > 0.005) {
+				float dw = length(vertex_world.xz - wk.xz);
+				wake_factor = max(wake_factor, (1.0 - smoothstep(1.8, 6.2, dw)) * w_strength);
+			}
+		}
+
+		float neb = smoothstep(0.32, 0.72, sin(vertex_world.x * 0.09 + n2 * 4.2 + TIME * 0.14) * cos(vertex_world.z * 0.08 + n3 * 3.8 - TIME * 0.11) * 0.5 + 0.5);
+		vec3 neb_col = mix(fx_color2.rgb, fx_color1.rgb, n3);
+		ALBEDO = mix(ALBEDO, neb_col * 0.52 + ALBEDO * 0.60, neb * 0.34);
+
 		vec2 uv_star = vertex_world.xz * 0.21;
 		vec2 cell = floor(uv_star);
 		vec2 star_p = astral_star_pos(cell);
 		float d_star = length(uv_star - star_p);
-		float twinkle = 0.72 + 0.28 * sin(TIME * 2.0 + cell.x * 3.1 + cell.y * 5.7);
-		float star_core = smoothstep(0.034, 0.008, d_star) * twinkle;
+		float twinkle = 0.72 + 0.28 * sin(TIME * 2.2 + cell.x * 3.1 + cell.y * 5.7);
+		float star_core = (1.0 - smoothstep(0.007, 0.036, d_star)) * twinkle * mix(0.65, 1.35, wake_factor);
+		float star_halo = (1.0 - smoothstep(0.056, 0.090, d_star)) * smoothstep(0.026, 0.052, d_star) * wake_factor * (0.75 + 0.25 * sin(TIME * 4.2));
 
 		float line_mask = 0.0;
 		for (int dx = 0; dx <= 1; dx++) {
@@ -170,6 +219,7 @@ void fragment() {
 				line_mask = max(line_mask, eval_constellation_edge(uv_star, ca_v, ca_v + vec2(0.0, 1.0), 3.7, TIME));
 			}
 		}
+		float line_vis = line_mask * mix(0.08, 1.0, wake_factor);
 
 		float meteor = max(
 			eval_shooting_star(vertex_world.xz, -32.0, 11.3, TIME),
@@ -179,9 +229,9 @@ void fragment() {
 		float h_pick = hash22(cell + vec2(7.3, 2.9)).x;
 		vec3 star_col = mix(fx_color1.rgb, fx_color3.rgb, step(0.55, h_pick));
 		vec3 meteor_col = mix(fx_color1.rgb, fx_color3.rgb, 0.45);
-		ALBEDO = mix(ALBEDO, star_col, clamp(line_mask * 0.38 + star_core * 0.68, 0.0, 1.0));
-		ALBEDO = mix(ALBEDO, meteor_col, clamp(meteor * 0.65, 0.0, 1.0));
-		emissive = (fx_color1.rgb * line_mask * 0.34 + star_col * star_core * 0.78 + meteor_col * meteor * 0.95) * fx_emission_strength;
+		ALBEDO = mix(ALBEDO, star_col, clamp(line_vis * 0.56 + star_core * 0.72 + star_halo * 0.58, 0.0, 1.0));
+		ALBEDO = mix(ALBEDO, meteor_col, clamp(meteor * 0.18, 0.0, 1.0));
+		emissive = (fx_color1.rgb * line_vis * 0.58 + star_col * (star_core * 0.78 + star_halo * 0.88) + neb_col * neb * 0.08 + meteor_col * meteor * 0.22) * fx_emission_strength;
 	} else if (biome_fx_mode == 3) {
 		// Volcanic Caldera: wide matte basalt stone slabs with restrained warm ember seams (keeps combat floor clean & dark!)
 		float seam = 1.0 - smoothstep(0.002, 0.014, abs(n2 - 0.54));

@@ -38,6 +38,7 @@ var bridges_root: Node3D = null
 var props_root: Node3D = null
 var collision_body: StaticBody3D = null
 var skirt_instance: MeshInstance3D = null
+var curb_instance: MeshInstance3D = null
 var water_instance: MeshInstance3D = null
 var pond_instance: MeshInstance3D = null
 var snow_trail: Node3D = null
@@ -54,11 +55,17 @@ var map_bounds_span: Vector2 = Vector2(100.0, 100.0)
 
 var _stamper: GrassTileStamper = null
 var _skirt_material: StandardMaterial3D = null
+var _curb_material: StandardMaterial3D = null
 var _prop_mat_primary: StandardMaterial3D = null
 var _prop_mat_secondary: StandardMaterial3D = null
 var _outer_is_cw: bool = false
+var _wake_pts: Array[Vector4] = [Vector4.ZERO, Vector4.ZERO, Vector4.ZERO, Vector4.ZERO]
+var _wake_cursor: int = 0
+var _last_wake_pos: Vector2 = Vector2(99999.0, 99999.0)
 
 static var _mesh_ice_spire: CylinderMesh = null
+static var _mesh_glacier_shelf: BoxMesh = null
+static var _mesh_astral_obelisk: CylinderMesh = null
 static var _mesh_hex_pillar: CylinderMesh = null
 static var _mesh_astrolabe_ring: TorusMesh = null
 static var _mesh_anomaly_ring: TorusMesh = null
@@ -75,6 +82,15 @@ static func _ensure_prop_meshes() -> void:
 	_mesh_ice_spire.bottom_radius = 0.56
 	_mesh_ice_spire.height = 3.2
 	_mesh_ice_spire.radial_segments = 5
+
+	_mesh_glacier_shelf = BoxMesh.new()
+	_mesh_glacier_shelf.size = Vector3(2.2, 1.25, 1.65)
+
+	_mesh_astral_obelisk = CylinderMesh.new()
+	_mesh_astral_obelisk.top_radius = 0.14
+	_mesh_astral_obelisk.bottom_radius = 0.34
+	_mesh_astral_obelisk.height = 2.6
+	_mesh_astral_obelisk.radial_segments = 4
 
 	_mesh_hex_pillar = CylinderMesh.new()
 	_mesh_hex_pillar.top_radius = 0.62
@@ -108,6 +124,7 @@ static func _ensure_prop_meshes() -> void:
 
 
 func _ready() -> void:
+	set_process(false)
 	_ensure_stamper()
 	if auto_generate_on_ready:
 		generate_world(map_seed, preset_mode, current_biome_id)
@@ -123,6 +140,12 @@ func _ensure_stamper() -> void:
 		_skirt_material.albedo_color = Color(0.443137, 0.635294, 0.0, 1.0)
 		_skirt_material.roughness = 1.0
 		_skirt_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if _curb_material == null:
+		_curb_material = StandardMaterial3D.new()
+		_curb_material.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+		_curb_material.specular_mode = BaseMaterial3D.SPECULAR_TOON
+		_curb_material.roughness = 0.38
+		_curb_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if _prop_mat_primary == null:
 		_prop_mat_primary = StandardMaterial3D.new()
 		_prop_mat_primary.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
@@ -191,8 +214,9 @@ func generate_world(p_seed: int = -1, p_mode: int = -1, p_biome: int = -1) -> vo
 	# 3. Build Seamless Chunked Floor & Tiled/Cropped Grass from the unified filleted landmass
 	_build_chunked_filleted_landmass()
 
-	# 4. Build Underwater Shoreline Rim Skirt along all filleted outer & loop coastlines
+	# 4. Build Underwater Shoreline Rim Skirt & Highlighted Border Curb along all coastlines
 	_build_shoreline_skirt()
+	_build_shoreline_curb()
 
 	# 5. Build Ground Floor + Watertight Mitered Coastline Collision Walls (zero corner snagging!)
 	_build_world_collision()
@@ -262,6 +286,13 @@ func apply_biome_materials(biome_id: int) -> void:
 
 	if _skirt_material:
 		_skirt_material.albedo_color = b["skirt_col"] as Color
+	if _curb_material:
+		var c_col: Color = b.get("curb_col", Color.WHITE) as Color
+		var c_emit: float = float(b.get("curb_emit", 0.0))
+		_curb_material.albedo_color = c_col
+		_curb_material.emission_enabled = c_emit > 0.005
+		_curb_material.emission = c_col
+		_curb_material.emission_energy_multiplier = c_emit
 
 	if _prop_mat_primary:
 		var p1: Color = b["prop_primary"] as Color
@@ -271,11 +302,46 @@ func apply_biome_materials(biome_id: int) -> void:
 	if _prop_mat_secondary:
 		_prop_mat_secondary.albedo_color = b["prop_secondary"] as Color
 
+	for i in range(4):
+		_wake_pts[i] = Vector4(spawn_world_pos.x, 0.0, spawn_world_pos.z, 0.0)
+	_wake_cursor = 0
+	_last_wake_pos = Vector2(99999.0, 99999.0)
+	if floor_material:
+		floor_material.set_shader_parameter("player_focus_pos", spawn_world_pos)
+		floor_material.set_shader_parameter("player_wake", _wake_pts)
+	set_process(current_biome_id == BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION)
+
 	VineBarrierScript.apply_biome_palette(
 		b["vine_dark"] as Color,
 		b["vine_moss"] as Color,
-		b["vine_bud"] as Color
+		b["vine_bud"] as Color,
+		current_biome_id
 	)
+
+
+func _process(delta: float) -> void:
+	if current_biome_id != BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION or floor_material == null:
+		return
+	var focus_pos: Vector3 = spawn_world_pos
+	var parent_node: Node = get_parent()
+	if parent_node != null:
+		var players_node: Node = parent_node.get_node_or_null("Players")
+		if players_node != null and players_node.get_child_count() > 0:
+			var p3d: Node3D = players_node.get_child(0) as Node3D
+			if p3d != null:
+				focus_pos = p3d.global_position
+
+	for i in range(4):
+		_wake_pts[i].w = maxf(0.0, _wake_pts[i].w - delta * 0.30)
+
+	var p2d := Vector2(focus_pos.x, focus_pos.z)
+	if _last_wake_pos.distance_squared_to(p2d) >= 1.21:
+		_wake_pts[_wake_cursor] = Vector4(focus_pos.x, 0.0, focus_pos.z, 1.0)
+		_wake_cursor = (_wake_cursor + 1) % 4
+		_last_wake_pos = p2d
+
+	floor_material.set_shader_parameter("player_focus_pos", focus_pos)
+	floor_material.set_shader_parameter("player_wake", _wake_pts)
 
 
 func _build_biome_landmarks(rng: RandomNumberGenerator) -> void:
@@ -324,19 +390,35 @@ func _spawn_shoreline_rim_accent(rim_pos: Vector3, rng: RandomNumberGenerator) -
 	accent.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	match current_biome_id:
 		BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD:
-			accent.mesh = _mesh_ice_spire
-			accent.material_override = _prop_mat_primary
-			var sc: float = rng.randf_range(0.24, 0.42)
-			accent.scale = Vector3(sc, sc * 0.9, sc)
-			accent.position = rim_pos + Vector3(0.0, sc * 1.1, 0.0)
-			accent.rotation_degrees = Vector3(rng.randf_range(-18.0, 18.0), rng.randf_range(0.0, 360.0), rng.randf_range(-18.0, 18.0))
+			if rng.randf() < 0.45:
+				accent.mesh = _mesh_glacier_shelf
+				accent.material_override = _prop_mat_primary
+				var sg: float = rng.randf_range(0.32, 0.52)
+				accent.scale = Vector3(sg, sg * 0.34, sg * 0.85)
+				accent.position = rim_pos + Vector3(0.0, sg * 0.14, 0.0)
+				accent.rotation_degrees = Vector3(rng.randf_range(-8.0, 8.0), rng.randf_range(0.0, 360.0), rng.randf_range(-8.0, 8.0))
+			else:
+				accent.mesh = _mesh_ice_spire
+				accent.material_override = _prop_mat_secondary
+				var sc: float = rng.randf_range(0.24, 0.42)
+				accent.scale = Vector3(sc, sc * 0.9, sc)
+				accent.position = rim_pos + Vector3(0.0, sc * 1.1, 0.0)
+				accent.rotation_degrees = Vector3(rng.randf_range(-18.0, 18.0), rng.randf_range(0.0, 360.0), rng.randf_range(-18.0, 18.0))
 		BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION:
-			accent.mesh = _mesh_octa_shard
-			accent.material_override = _prop_mat_secondary
-			var sc_a: float = rng.randf_range(0.55, 0.95)
-			accent.scale = Vector3.ONE * sc_a
-			accent.position = rim_pos + Vector3(0.0, rng.randf_range(0.55, 1.05), 0.0)
-			accent.rotation_degrees = Vector3(0.0, rng.randf_range(0.0, 360.0), 0.0)
+			if rng.randf() < 0.50:
+				accent.mesh = _mesh_astral_obelisk
+				accent.material_override = _prop_mat_primary
+				var ob_s: float = rng.randf_range(0.26, 0.44)
+				accent.scale = Vector3(ob_s, ob_s * 1.15, ob_s)
+				accent.position = rim_pos + Vector3(0.0, ob_s * 1.2, 0.0)
+				accent.rotation_degrees = Vector3(0.0, rng.randf_range(0.0, 360.0), 0.0)
+			else:
+				accent.mesh = _mesh_octa_shard
+				accent.material_override = _prop_mat_secondary
+				var sc_a: float = rng.randf_range(0.55, 0.95)
+				accent.scale = Vector3.ONE * sc_a
+				accent.position = rim_pos + Vector3(0.0, rng.randf_range(0.55, 1.05), 0.0)
+				accent.rotation_degrees = Vector3(0.0, rng.randf_range(0.0, 360.0), 0.0)
 		BiomeThemeScript.BiomeId.VOLCANIC_CALDERA:
 			accent.mesh = _mesh_hex_pillar
 			accent.material_override = _prop_mat_primary
@@ -356,21 +438,41 @@ func _spawn_shoreline_rim_accent(rim_pos: Vector3, rng: RandomNumberGenerator) -
 func _spawn_single_biome_cluster(base_pos: Vector3, rng: RandomNumberGenerator) -> void:
 	match current_biome_id:
 		BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD:
-			# Twin faceted Ice Crystal Spires + floating frost shard
+			# Tabular Glacier Iceberg Shelf + 2 Jagged Crystalline Spires along its crest
+			var berg := MeshInstance3D.new()
+			berg.mesh = _mesh_glacier_shelf
+			berg.material_override = _prop_mat_primary
+			var b_sc: float = rng.randf_range(0.85, 1.45)
+			berg.scale = Vector3(b_sc, b_sc * rng.randf_range(0.55, 0.95), b_sc * rng.randf_range(0.8, 1.25))
+			berg.position = base_pos + Vector3(0.0, 0.28 * b_sc, 0.0)
+			berg.rotation_degrees = Vector3(rng.randf_range(-6.0, 6.0), rng.randf_range(0.0, 360.0), rng.randf_range(-6.0, 6.0))
+			berg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			props_root.add_child(berg)
+
 			for k in range(2):
 				var spire := MeshInstance3D.new()
 				spire.mesh = _mesh_ice_spire
-				spire.material_override = _prop_mat_primary if k == 0 else _prop_mat_secondary
-				var s_scale: float = rng.randf_range(0.75, 1.35) if k == 0 else rng.randf_range(0.45, 0.85)
-				spire.scale = Vector3(s_scale, s_scale * rng.randf_range(0.9, 1.3), s_scale)
-				spire.position = base_pos + Vector3(rng.randf_range(-0.9, 0.9), 0.75 * s_scale, rng.randf_range(-0.9, 0.9))
+				spire.material_override = _prop_mat_secondary if k == 0 else _prop_mat_primary
+				var s_scale: float = rng.randf_range(0.65, 1.15) if k == 0 else rng.randf_range(0.42, 0.78)
+				spire.scale = Vector3(s_scale, s_scale * rng.randf_range(0.85, 1.25), s_scale)
+				spire.position = base_pos + Vector3(rng.randf_range(-0.65, 0.65), 0.75 * s_scale, rng.randf_range(-0.65, 0.65))
 				spire.rotation_degrees = Vector3(rng.randf_range(-16.0, 16.0), rng.randf_range(0.0, 360.0), rng.randf_range(-16.0, 16.0))
 				spire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				props_root.add_child(spire)
 
 		BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION:
-			# Floating Golden Astrolabe Ring + glowing Cyan Star Core
-			var hover_y: float = rng.randf_range(1.5, 2.9)
+			# Anchored Celestial Obelisk + Floating Golden Astrolabe Ring & Glowing Cyan Star Core
+			var obelisk := MeshInstance3D.new()
+			obelisk.mesh = _mesh_astral_obelisk
+			obelisk.material_override = _prop_mat_primary
+			var ob_sc: float = rng.randf_range(0.70, 1.15)
+			obelisk.scale = Vector3(ob_sc, ob_sc * 1.1, ob_sc)
+			obelisk.position = base_pos + Vector3(0.0, 0.85 * ob_sc, 0.0)
+			obelisk.rotation_degrees = Vector3(rng.randf_range(-6.0, 6.0), rng.randf_range(0.0, 360.0), rng.randf_range(-6.0, 6.0))
+			obelisk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			props_root.add_child(obelisk)
+
+			var hover_y: float = rng.randf_range(1.9, 3.1)
 			var ring := MeshInstance3D.new()
 			ring.mesh = _mesh_astrolabe_ring
 			ring.material_override = _prop_mat_primary
@@ -487,6 +589,9 @@ func _cleanup() -> void:
 	if skirt_instance and is_instance_valid(skirt_instance):
 		skirt_instance.queue_free()
 		skirt_instance = null
+	if curb_instance and is_instance_valid(curb_instance):
+		curb_instance.queue_free()
+		curb_instance = null
 	if water_instance and is_instance_valid(water_instance):
 		water_instance.queue_free()
 		water_instance = null
@@ -772,6 +877,97 @@ func _build_shoreline_skirt() -> void:
 	skirt_instance.material_override = _skirt_material
 	skirt_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(skirt_instance)
+
+
+## Builds a sleek non-colliding beveled 3D border trim around every island & bridge shoreline
+## so arena boundaries stand out sharply from surrounding void, water, or abyss floors.
+func _build_shoreline_curb() -> void:
+	if current_graph == null or current_graph.merged_polygons.is_empty():
+		return
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var added_any: bool = false
+
+	for poly in current_graph.merged_polygons:
+		var n: int = poly.size()
+		if n < 3:
+			continue
+		var norm_sign: float = _contour_water_normal_sign(poly)
+
+		var edge_normals: Array[Vector2] = []
+		edge_normals.resize(n)
+		for i in range(n):
+			var p1: Vector2 = poly[i]
+			var p2: Vector2 = poly[(i + 1) % n]
+			var diff: Vector2 = p2 - p1
+			var d_len: float = diff.length()
+			var dir: Vector2 = diff / d_len if d_len > 0.0001 else Vector2.RIGHT
+			edge_normals[i] = Vector2(-dir.y, dir.x) * norm_sign
+
+		var miters: Array[Vector2] = []
+		miters.resize(n)
+		for i in range(n):
+			var n_prev: Vector2 = edge_normals[(i - 1 + n) % n]
+			var n_curr: Vector2 = edge_normals[i]
+			var sum_n: Vector2 = n_prev + n_curr
+			var bis: Vector2 = sum_n.normalized() if sum_n.length_squared() > 0.0001 else n_curr
+			var proj: float = maxf(0.45, bis.dot(n_curr))
+			miters[i] = bis / proj
+
+		for i in range(n):
+			var next_i: int = (i + 1) % n
+			var p1: Vector2 = poly[i]
+			var p2: Vector2 = poly[next_i]
+			if p1.distance_squared_to(p2) < 0.0009:
+				continue
+
+			var m1: Vector2 = miters[i]
+			var m2: Vector2 = miters[next_i]
+			var in1_2d: Vector2 = p1 - m1 * 0.26
+			var in2_2d: Vector2 = p2 - m2 * 0.26
+			var cr1_2d: Vector2 = p1 - m1 * 0.02
+			var cr2_2d: Vector2 = p2 - m2 * 0.02
+			var out1_2d: Vector2 = p1 + m1 * 0.08
+			var out2_2d: Vector2 = p2 + m2 * 0.08
+
+			var in1 := Vector3(in1_2d.x, 0.008, in1_2d.y)
+			var in2 := Vector3(in2_2d.x, 0.008, in2_2d.y)
+			var cr1 := Vector3(cr1_2d.x, 0.032, cr1_2d.y)
+			var cr2 := Vector3(cr2_2d.x, 0.032, cr2_2d.y)
+			var out1 := Vector3(out1_2d.x, -0.020, out1_2d.y)
+			var out2 := Vector3(out2_2d.x, -0.020, out2_2d.y)
+
+			st.set_normal(Vector3.UP)
+			st.add_vertex(in1)
+			st.add_vertex(in2)
+			st.add_vertex(cr2)
+			st.set_normal(Vector3.UP)
+			st.add_vertex(in1)
+			st.add_vertex(cr2)
+			st.add_vertex(cr1)
+
+			var en: Vector2 = edge_normals[i]
+			var side_n := Vector3(en.x, 0.25, en.y).normalized()
+			st.set_normal(side_n)
+			st.add_vertex(cr1)
+			st.add_vertex(cr2)
+			st.add_vertex(out2)
+			st.set_normal(side_n)
+			st.add_vertex(cr1)
+			st.add_vertex(out2)
+			st.add_vertex(out1)
+			added_any = true
+
+	if not added_any:
+		return
+
+	curb_instance = MeshInstance3D.new()
+	curb_instance.name = "ShorelineCurb"
+	curb_instance.mesh = st.commit()
+	curb_instance.material_override = _curb_material
+	curb_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(curb_instance)
 
 
 ## Builds smooth, flush, zero-snag mitered ConvexPolygonShape3D shore walls.
