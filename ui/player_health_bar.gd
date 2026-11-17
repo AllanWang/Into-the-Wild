@@ -1617,6 +1617,33 @@ func _draw_slot_glyph_on(canvas: CanvasItem, c: Vector2, glyph_kind: int, col: C
 			canvas.draw_arc(c + Vector2(1.2, 0.0) * s, 5.6 * s, PI * 0.35, PI * 1.65, 12, col, 1.5 * s, true)
 			_draw_diamond_filled_on(canvas, c, 2.2 * s, col)
 
+		CatalogScript.GlyphKind.WHIP:
+			canvas.draw_arc(c + Vector2(-1.5, 1.5) * s, 5.8 * s, -PI * 0.90, -PI * 0.05, 14, col, 1.6 * s, true)
+			_draw_diamond_filled_on(canvas, c + Vector2(4.4, 0.8) * s, 2.3 * s, col)
+
+		CatalogScript.GlyphKind.PODS:
+			for p_y in [-4.0, 0.0, 4.0]:
+				canvas.draw_line(c + Vector2(-5.5, p_y) * s, c + Vector2(4.0, p_y * 0.55) * s, col, 1.3 * s, true)
+				_draw_diamond_filled_on(canvas, c + Vector2(4.5, p_y * 0.55) * s, 1.7 * s, col)
+
+		CatalogScript.GlyphKind.CANNON:
+			canvas.draw_line(c + Vector2(-6.2, 3.8) * s, c + Vector2(3.2, -3.2) * s, col, 2.6 * s, true)
+			_draw_diamond_filled_on(canvas, c + Vector2(5.2, -4.8) * s, 2.5 * s, col)
+
+		CatalogScript.GlyphKind.FLAIL:
+			canvas.draw_line(c + Vector2(-5.8, 5.2) * s, c + Vector2(1.2, -1.2) * s, col, 1.3 * s, true)
+			_draw_diamond_filled_on(canvas, c + Vector2(3.0, -3.0) * s, 3.4 * s, col)
+
+		CatalogScript.GlyphKind.CLUSTER:
+			_draw_diamond_filled_on(canvas, c, 2.4 * s, col)
+			for cl_off in [Vector2(0, -5.2), Vector2(5.2, 0), Vector2(0, 5.2), Vector2(-5.2, 0)]:
+				_draw_diamond_filled_on(canvas, c + cl_off * s, 1.8 * s, col)
+
+		CatalogScript.GlyphKind.SNIPER:
+			canvas.draw_arc(c, 5.2 * s, 0.0, TAU, 16, col, 1.2 * s, true)
+			canvas.draw_line(c + Vector2(-7.5, 0.0) * s, c + Vector2(7.5, 0.0) * s, col, 1.3 * s, true)
+			canvas.draw_line(c + Vector2(0.0, -7.5) * s, c + Vector2(0.0, 7.5) * s, col, 1.3 * s, true)
+
 
 func _draw_diamond_perimeter_progress_on(canvas: CanvasItem, center: Vector2, half_diag: float, ratio: float, stroke_col: Color) -> void:
 	var r: float = clampf(ratio, 0.0, 1.0)

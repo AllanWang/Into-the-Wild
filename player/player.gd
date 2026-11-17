@@ -985,6 +985,42 @@ func _fire_weapon_slot(slot_idx: int) -> void:
 			var rad: float = float(w.get("aoe_radius", 2.8))
 			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, target_pt, rad, hit_dmg, 0.50, "mortar", tint, 0.0, false, 0.0, slot_idx)
 
+		CatalogScript.WeaponId.CHAIN_LASH:
+			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.WHIP_ARC, global_position, rng, hit_dmg, 0.20, "whip", tint, 0.0, true, 0.0, slot_idx, _aim_dir)
+			if visual_root:
+				visual_root.scale = Vector3(1.14, 0.92, 0.94)
+
+		CatalogScript.WeaponId.SWARM_PODS:
+			var pod_count: int = int(w.get("pellets", 3))
+			var pod_half: float = deg_to_rad(float(w.get("spread_deg", 56.0)) * 0.5)
+			for p_i in range(pod_count):
+				var frac_p: float = (float(p_i) / float(maxi(1, pod_count - 1))) * 2.0 - 1.0 if pod_count > 1 else 0.0
+				var m_dir: Vector3 = _aim_dir.rotated(Vector3.UP, frac_p * pod_half)
+				_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, m_dir, spd, rng, hit_dmg, proc_c, 4, tint, slot_idx)
+
+		CatalogScript.WeaponId.SIEGE_CANNON:
+			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 5, tint, slot_idx)
+			if visual_root:
+				visual_root.scale = Vector3(0.84, 1.08, 1.22)
+
+		CatalogScript.WeaponId.METEOR_FLAIL:
+			var tip_pt: Vector3 = _get_clamped_aim_point(rng)
+			var line_dist: float = maxf(2.0, Vector2(tip_pt.x - global_position.x, tip_pt.z - global_position.z).length())
+			var line_dmg: float = hit_dmg * 0.52
+			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, line_dist, line_dmg, 0.75, 1, tint, slot_idx)
+			var slam_rad: float = float(w.get("aoe_radius", 2.3))
+			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, tip_pt, slam_rad, hit_dmg, 0.36, "flail", tint, 0.0, false, 0.0, slot_idx)
+			if visual_root:
+				visual_root.scale = Vector3(0.90, 1.06, 1.14)
+
+		CatalogScript.WeaponId.CLUSTER_SEEKER:
+			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 6, tint, slot_idx)
+
+		CatalogScript.WeaponId.GAUSS_SNIPER:
+			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 7, tint, slot_idx)
+			if visual_root:
+				visual_root.scale = Vector3(0.86, 1.04, 1.18)
+
 	if is_cd:
 		loadout_changed.emit()
 
@@ -1135,7 +1171,8 @@ func _rpc_spawn_zone(
 	p_slow: float,
 	p_follow_self: bool,
 	p_leech: float = 0.0,
-	p_slot_idx: int = -1
+	p_slot_idx: int = -1,
+	p_aim_dir: Vector3 = Vector3.FORWARD
 ) -> void:
 	var ctx_obj: Object = _ability_hit_ctx
 	if p_slot_idx == 0 or p_slot_idx == 1:
@@ -1154,7 +1191,8 @@ func _rpc_spawn_zone(
 			p_slow,
 			self if p_follow_self else null,
 			p_leech,
-			self
+			self,
+			p_aim_dir
 		)
 
 

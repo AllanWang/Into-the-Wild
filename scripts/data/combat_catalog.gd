@@ -10,7 +10,13 @@ enum WeaponId {
 	SCATTER_PRISM = 2,
 	ARCANE_CHAKRAM = 3,
 	RAIL_LANCE = 4,
-	NOVA_MORTAR = 5
+	NOVA_MORTAR = 5,
+	CHAIN_LASH = 6,
+	SWARM_PODS = 7,
+	SIEGE_CANNON = 8,
+	METEOR_FLAIL = 9,
+	CLUSTER_SEEKER = 10,
+	GAUSS_SNIPER = 11
 }
 
 enum AbilityId {
@@ -68,7 +74,13 @@ enum GlyphKind {
 	CHRONO = 11,
 	SEEKER = 12,
 	SIPHON = 13,
-	HARVEST = 14
+	HARVEST = 14,
+	WHIP = 15,
+	PODS = 16,
+	CANNON = 17,
+	FLAIL = 18,
+	CLUSTER = 19,
+	SNIPER = 20
 }
 
 static var _weapons: Dictionary = {}
@@ -180,6 +192,126 @@ static func _ensure_init() -> void:
 		"aoe_radius": 2.8,
 		"glyph": GlyphKind.MORTAR,
 		"color": Color(0.82, 0.50, 1.0, 1.0)
+	}
+
+	_weapons[WeaponId.CHAIN_LASH] = {
+		"id": WeaponId.CHAIN_LASH,
+		"name": "Chain Lash",
+		"subtitle": "Arc Whip · Sweetspot Cleave",
+		"desc": "Sweeps a 5.4m arc (0.95x AD); outer Tip Sweetspot cracks for +45% bonus damage!",
+		"is_cooldown": false,
+		"interval": 0.46,
+		"cooldown": 0.0,
+		"ad_ratio": 0.95,
+		"ap_ratio": 0.20,
+		"proc_coeff": 0.85,
+		"speed": 0.0,
+		"range": 5.4,
+		"pellets": 1,
+		"spread_deg": 116.0,
+		"aoe_radius": 5.4,
+		"glyph": GlyphKind.WHIP,
+		"color": Color(1.0, 0.68, 0.28, 1.0)
+	}
+
+	_weapons[WeaponId.SWARM_PODS] = {
+		"id": WeaponId.SWARM_PODS,
+		"name": "Swarm Pods",
+		"subtitle": "3-Missile Homing Salvo",
+		"desc": "Launches 3 arcing micro-missiles (3 x 0.38x AD + 0.42x AP) that bank onto nearby foes.",
+		"is_cooldown": false,
+		"interval": 0.66,
+		"cooldown": 0.0,
+		"ad_ratio": 0.38,
+		"ap_ratio": 0.42,
+		"proc_coeff": 0.50,
+		"speed": 21.0,
+		"range": 15.0,
+		"pellets": 3,
+		"spread_deg": 56.0,
+		"aoe_radius": 0.0,
+		"glyph": GlyphKind.PODS,
+		"color": Color(0.38, 0.96, 0.86, 1.0)
+	}
+
+	_weapons[WeaponId.SIEGE_CANNON] = {
+		"id": WeaponId.SIEGE_CANNON,
+		"name": "Siege Cannon",
+		"subtitle": "Heavy Long-Range Artillery (3.0s CD)",
+		"desc": "Fires a 22m heavy shell (2.2x AD + 1.1x AP) that explodes in a 2.8m concussive shockwave.",
+		"is_cooldown": true,
+		"interval": 0.25,
+		"cooldown": 3.0,
+		"ad_ratio": 2.2,
+		"ap_ratio": 1.1,
+		"proc_coeff": 1.0,
+		"speed": 30.0,
+		"range": 22.0,
+		"pellets": 1,
+		"spread_deg": 0.0,
+		"aoe_radius": 2.8,
+		"glyph": GlyphKind.CANNON,
+		"color": Color(1.0, 0.44, 0.18, 1.0)
+	}
+
+	_weapons[WeaponId.METEOR_FLAIL] = {
+		"id": WeaponId.METEOR_FLAIL,
+		"name": "Meteor Flail",
+		"subtitle": "Tethered Chain Slam (2.2s CD)",
+		"desc": "Hurls a piercing chain line (0.85x AD) and slams a 2.3m crater at cursor (1.6x AD + 1.0x AP).",
+		"is_cooldown": true,
+		"interval": 0.25,
+		"cooldown": 2.2,
+		"ad_ratio": 1.60,
+		"ap_ratio": 1.0,
+		"proc_coeff": 1.0,
+		"speed": 34.0,
+		"range": 8.6,
+		"pellets": 1,
+		"spread_deg": 0.0,
+		"aoe_radius": 2.3,
+		"glyph": GlyphKind.FLAIL,
+		"color": Color(0.98, 0.78, 0.34, 1.0)
+	}
+
+	_weapons[WeaponId.CLUSTER_SEEKER] = {
+		"id": WeaponId.CLUSTER_SEEKER,
+		"name": "Cluster Seeker",
+		"subtitle": "Split Warhead Launcher (2.8s CD)",
+		"desc": "Fires a heavy warhead (1.2x AD + 0.5x AP) that splits into 4 homing cluster bomblets!",
+		"is_cooldown": true,
+		"interval": 0.25,
+		"cooldown": 2.8,
+		"ad_ratio": 1.20,
+		"ap_ratio": 0.50,
+		"proc_coeff": 1.0,
+		"speed": 18.5,
+		"range": 16.0,
+		"pellets": 1,
+		"spread_deg": 0.0,
+		"aoe_radius": 0.0,
+		"glyph": GlyphKind.CLUSTER,
+		"color": Color(1.0, 0.38, 0.74, 1.0)
+	}
+
+	_weapons[WeaponId.GAUSS_SNIPER] = {
+		"id": WeaponId.GAUSS_SNIPER,
+		"name": "Gauss Longbow",
+		"subtitle": "24m Distance-Scaling Sniper",
+		"desc": "Pinpoint 24m rail bolt (1.65x AD) gaining up to +45% bonus damage at long range.",
+		"is_cooldown": false,
+		"interval": 0.86,
+		"cooldown": 0.0,
+		"ad_ratio": 1.65,
+		"ap_ratio": 0.0,
+		"proc_coeff": 1.0,
+		"speed": 48.0,
+		"range": 24.0,
+		"pellets": 1,
+		"spread_deg": 0.0,
+		"aoe_radius": 0.0,
+		"glyph": GlyphKind.SNIPER,
+		"color": Color(0.46, 1.0, 0.58, 1.0)
 	}
 
 	_abilities[AbilityId.AEGIS_BARRIER] = {
@@ -400,7 +532,13 @@ static func get_all_weapon_ids() -> Array[int]:
 		WeaponId.SCATTER_PRISM,
 		WeaponId.ARCANE_CHAKRAM,
 		WeaponId.RAIL_LANCE,
-		WeaponId.NOVA_MORTAR
+		WeaponId.NOVA_MORTAR,
+		WeaponId.CHAIN_LASH,
+		WeaponId.SWARM_PODS,
+		WeaponId.SIEGE_CANNON,
+		WeaponId.METEOR_FLAIL,
+		WeaponId.CLUSTER_SEEKER,
+		WeaponId.GAUSS_SNIPER
 	]
 
 

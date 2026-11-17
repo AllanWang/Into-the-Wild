@@ -8,7 +8,9 @@ enum ZoneMode {
 	DELAYED_BLAST = 0,  ## Nova Mortar & Starfall Strike (0.35s telegraph -> AoE hit + flash)
 	SOLAR_PILLAR = 1,   ## Solar Convergence [R] (3 orbital beam pulses over 1.35s)
 	STASIS_FIELD = 2,   ## Frost Nova [Q/E] & Chronosphere [R] (initial hit + persistent slow aura)
-	SELF_WARD = 3       ## Aegis Barrier & Tempo Surge (quick expanding aura ring around caster)
+	SELF_WARD = 3,      ## Aegis Barrier & Tempo Surge (quick expanding aura ring around caster)
+	WHIP_ARC = 4,       ## Chain Lash sweeping 116-deg ribbon cleave (+45% outer tip sweetspot!)
+	INSTANT_BLAST = 5   ## Siege Cannon concussive detonation shockwave
 }
 
 var pool: Node = null
@@ -26,6 +28,7 @@ var _leech_ratio: float = 0.0
 var _shooter_stats: Object = null
 var _follow_target: Node3D = null
 var _caster_node: Node3D = null
+var _aim_dir: Vector3 = Vector3.FORWARD
 
 var _elapsed: float = 0.0
 var _duration: float = 0.5
@@ -38,8 +41,35 @@ var _active: bool = false
 static var _shared_torus: TorusMesh = null
 static var _shared_disc: CylinderMesh = null
 static var _shared_pillar: CylinderMesh = null
+static var _shared_whip_fill: ArrayMesh = null
+static var _shared_whip_rim: ArrayMesh = null
 static var _ring_mats: Dictionary = {}
 static var _fill_mats: Dictionary = {}
+
+
+static func _build_sector_mesh(inner_r: float, outer_r: float, half_angle_deg: float, segs: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var half_rad: float = deg_to_rad(half_angle_deg)
+	for i in range(segs):
+		var a0: float = lerpf(-half_rad, half_rad, float(i) / float(segs))
+		var a1: float = lerpf(-half_rad, half_rad, float(i + 1) / float(segs))
+		# Forward in local space is -Z (matches Godot look_at)
+		var d0 := Vector3(sin(a0), 0.0, -cos(a0))
+		var d1 := Vector3(sin(a1), 0.0, -cos(a1))
+		var p00: Vector3 = d0 * inner_r
+		var p01: Vector3 = d0 * outer_r
+		var p10: Vector3 = d1 * inner_r
+		var p11: Vector3 = d1 * outer_r
+		st.set_normal(Vector3.UP)
+		st.add_vertex(p00)
+		st.add_vertex(p01)
+		st.add_vertex(p11)
+		st.set_normal(Vector3.UP)
+		st.add_vertex(p00)
+		st.add_vertex(p11)
+		st.add_vertex(p10)
+	return st.commit()
 
 
 static func _ensure_shared() -> void:
@@ -64,6 +94,9 @@ static func _ensure_shared() -> void:
 	_shared_pillar.height = 9.0
 	_shared_pillar.radial_segments = 16
 
+	_shared_whip_fill = _build_sector_mesh(0.24, 1.0, 58.0, 20)
+	_shared_whip_rim = _build_sector_mesh(0.72, 1.0, 58.0, 20)
+
 
 static func _get_palette_mats(key: String, col: Color) -> Array[StandardMaterial3D]:
 	_ensure_shared()
@@ -73,6 +106,7 @@ static func _get_palette_mats(key: String, col: Color) -> Array[StandardMaterial
 	var r_mat := StandardMaterial3D.new()
 	r_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	r_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	r_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	r_mat.albedo_color = Color(col.r, col.g, col.b, 0.90)
 
 	var f_mat := StandardMaterial3D.new()
@@ -113,7 +147,8 @@ func activate_zone(
 	p_slow_ratio: float = 0.0,
 	p_follow_target: Node3D = null,
 	p_leech_ratio: float = 0.0,
-	p_caster_node: Node3D = null
+	p_caster_node: Node3D = null,
+	p_aim_dir: Vector3 = Vector3.FORWARD
 ) -> void:
 	_mode = p_mode
 	_radius = maxf(0.8, p_radius)
@@ -124,30 +159,36 @@ func activate_zone(
 	_shooter_stats = p_shooter_stats
 	_follow_target = p_follow_target
 	_caster_node = p_caster_node
+	_aim_dir = Vector3(p_aim_dir.x, 0.0, p_aim_dir.z).normalized() if Vector2(p_aim_dir.x, p_aim_dir.z).length_squared() > 0.001 else Vector3.FORWARD
 	_elapsed = 0.0
-	_duration = maxf(0.2, p_duration)
+	_duration = maxf(0.16, p_duration)
 	_detonated = false
 	_slow_tick_timer = 0.0
 	_active = true
+	rotation = Vector3.ZERO
 
 	var mats: Array[StandardMaterial3D] = _get_palette_mats(p_color_key, p_color)
 	if ring_mesh:
+		ring_mesh.mesh = (_shared_whip_rim as Mesh) if _mode == ZoneMode.WHIP_ARC else (_shared_torus as Mesh)
 		ring_mesh.material_override = mats[0]
 		ring_mesh.visible = true
 	if disc_mesh:
+		disc_mesh.mesh = (_shared_whip_fill as Mesh) if _mode == ZoneMode.WHIP_ARC else (_shared_disc as Mesh)
 		disc_mesh.material_override = mats[1]
 		disc_mesh.visible = true
-		disc_mesh.scale = Vector3.ONE * 0.2
+		disc_mesh.scale = Vector3.ONE if _mode == ZoneMode.WHIP_ARC else Vector3.ONE * 0.2
 	if pillar_mesh:
 		pillar_mesh.material_override = mats[1]
 		pillar_mesh.visible = (_mode == ZoneMode.SOLAR_PILLAR)
 		pillar_mesh.scale = Vector3(1.0, 1.0, 1.0)
 
 	if is_inside_tree():
-		global_position = Vector3(p_pos.x, 0.05, p_pos.z)
+		global_position = Vector3(p_pos.x, 0.06, p_pos.z)
+		if _mode == ZoneMode.WHIP_ARC:
+			look_at(global_position + _aim_dir, Vector3.UP)
 		reset_physics_interpolation()
 	else:
-		position = Vector3(p_pos.x, 0.05, p_pos.z)
+		position = Vector3(p_pos.x, 0.06, p_pos.z)
 
 	if _mode == ZoneMode.SOLAR_PILLAR:
 		_pulses_left = 3
@@ -160,6 +201,16 @@ func activate_zone(
 		_apply_aoe_slow()
 	elif _mode == ZoneMode.SELF_WARD:
 		scale = Vector3(_radius * 0.25, 1.0, _radius * 0.25)
+	elif _mode == ZoneMode.WHIP_ARC:
+		_proc_coeff = 0.85
+		scale = Vector3(_radius * 0.65, 1.0, _radius * 0.65)
+		_apply_whip_cleave(_damage)
+	elif _mode == ZoneMode.INSTANT_BLAST:
+		scale = Vector3(_radius * 0.38, 1.0, _radius * 0.38)
+		if disc_mesh:
+			disc_mesh.scale = Vector3.ONE
+		if _damage > 0.0:
+			_apply_aoe_damage(_damage, true)
 	else:
 		# DELAYED_BLAST
 		scale = Vector3(_radius, 1.0, _radius)
@@ -259,6 +310,54 @@ func _process(delta: float) -> void:
 				disc_mesh.scale = Vector3(1.0 - t * 0.5, 1.0, 1.0 - t * 0.5)
 			if _elapsed >= _duration:
 				_release_self()
+
+		ZoneMode.WHIP_ARC:
+			var tw: float = clampf(_elapsed / _duration, 0.0, 1.0)
+			var snap_t: float = 1.0 - pow(1.0 - tw, 3.0)
+			var cur_s: float = lerpf(_radius * 0.65, _radius, snap_t)
+			scale = Vector3(cur_s, 1.0, cur_s)
+			if disc_mesh:
+				disc_mesh.scale = Vector3(1.0, 1.0, 1.0 - tw * 0.35)
+			if _elapsed >= _duration:
+				_release_self()
+
+		ZoneMode.INSTANT_BLAST:
+			var tb: float = clampf(_elapsed / _duration, 0.0, 1.0)
+			var eased_b: float = 1.0 - (1.0 - tb) * (1.0 - tb)
+			var sb: float = lerpf(_radius * 0.38, _radius * 1.10, eased_b)
+			scale = Vector3(sb, 1.0, sb)
+			if disc_mesh:
+				disc_mesh.scale = Vector3(1.0 - tb * 0.65, 1.0, 1.0 - tb * 0.65)
+			if _elapsed >= _duration:
+				_release_self()
+
+
+func _apply_whip_cleave(base_dmg: float) -> void:
+	if base_dmg <= 0.0 or not is_inside_tree():
+		return
+	var max_r: float = _radius + 0.45
+	var max_r2: float = max_r * max_r
+	var sweet_min_r: float = _radius * 0.70
+	var cos_half: float = cos(deg_to_rad(60.0))
+	var enemies: Array[Node] = get_tree().get_nodes_in_group("active_enemies")
+	for e_node in enemies:
+		var e3d: Node3D = e_node as Node3D
+		if e3d == null or not e3d.visible:
+			continue
+		var dx: float = e3d.global_position.x - global_position.x
+		var dz: float = e3d.global_position.z - global_position.z
+		var d2: float = dx * dx + dz * dz
+		if d2 > max_r2:
+			continue
+		var dist: float = sqrt(d2)
+		var to_e: Vector3 = Vector3(dx, 0.0, dz) / maxf(0.001, dist)
+		# Point-blank (<1.0m) always connects; beyond 1.0m check 120-deg forward arc
+		if dist > 1.0 and _aim_dir.dot(to_e) < cos_half:
+			continue
+		if e3d.has_method("apply_combat_hit"):
+			var is_sweetspot: bool = (dist >= sweet_min_r)
+			var final_dmg: float = base_dmg * (1.45 if is_sweetspot else 1.0)
+			e3d.call("apply_combat_hit", final_dmg, to_e, _proc_coeff, _shooter_stats)
 
 
 func _apply_aoe_damage(dmg: float, apply_traits: bool) -> void:

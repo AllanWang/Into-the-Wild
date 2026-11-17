@@ -113,7 +113,8 @@ func spawn_zone_effect(
 	p_slow_ratio: float = 0.0,
 	p_follow_target: Node3D = null,
 	p_leech_ratio: float = 0.0,
-	p_caster_node: Node3D = null
+	p_caster_node: Node3D = null,
+	p_aim_dir: Vector3 = Vector3.FORWARD
 ) -> Node:
 	_ensure_sub_pools()
 	var z := _zone_pool.acquire()
@@ -131,7 +132,8 @@ func spawn_zone_effect(
 			p_slow_ratio,
 			p_follow_target,
 			p_leech_ratio,
-			p_caster_node
+			p_caster_node,
+			p_aim_dir
 		)
 	return z
 

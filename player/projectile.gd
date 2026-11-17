@@ -10,7 +10,11 @@ enum FlightMode {
 	BOLT = 0,
 	PIERCE = 1,
 	BOOMERANG = 2,
-	HOMING = 3
+	HOMING = 3,
+	SWARM_HOMING = 4,     ## Swarm Pods micro-missile (0.14s outward fan -> smooth homing lock)
+	EXPLOSIVE_SHELL = 5,  ## Siege Cannon heavy shell (detonates 2.8m shockwave on hit or max range)
+	CLUSTER_WARHEAD = 6,  ## Cluster Seeker warhead (splits into 4 homing bomblets at 7.2m or impact)
+	SNIPER_BOLT = 7       ## Gauss Longbow bolt (+45% bonus damage scaling with travel distance)
 }
 
 @export var speed: float = 24.0
@@ -28,6 +32,8 @@ var _lifetime: float = 0.0
 var _shooter_node: Node3D = null
 var _shooter_stats: Object = null
 var _shooter_rid: RID = RID()
+var _tint_color: Color = Color(1.0, 0.88, 0.42, 1.0)
+var _payload_triggered: bool = false
 var _is_active: bool = false
 
 # Pre-allocated raycast query, exclude list & pierced enemy tracker (zero 60Hz GC allocations)
@@ -111,6 +117,8 @@ func activate_combat(
 	damage = maxf(0.1, p_damage)
 	_proc_coeff = clampf(p_proc_coeff, 0.0, 2.0)
 	_flight_mode = p_flight_mode
+	_tint_color = p_tint
+	_payload_triggered = false
 	_returning = false
 	_lifetime = 0.0
 	traveled_distance = 0.0
@@ -171,8 +179,14 @@ func _apply_mode_visuals(tint: Color) -> void:
 				mesh_inst.scale = Vector3(0.85, 0.85, 3.4)
 			FlightMode.BOOMERANG:
 				mesh_inst.scale = Vector3(2.5, 0.30, 2.5)
-			FlightMode.HOMING:
+			FlightMode.HOMING, FlightMode.SWARM_HOMING:
 				mesh_inst.scale = Vector3(0.90, 0.90, 1.55)
+			FlightMode.EXPLOSIVE_SHELL:
+				mesh_inst.scale = Vector3(1.85, 1.85, 2.55)
+			FlightMode.CLUSTER_WARHEAD:
+				mesh_inst.scale = Vector3(1.55, 1.55, 2.15)
+			FlightMode.SNIPER_BOLT:
+				mesh_inst.scale = Vector3(0.72, 0.72, 4.20)
 			_:
 				mesh_inst.scale = Vector3.ONE
 
@@ -182,8 +196,14 @@ func _apply_mode_visuals(tint: Color) -> void:
 				trail_node.trail_width = 0.15
 			FlightMode.BOOMERANG:
 				trail_node.trail_width = 0.14
-			FlightMode.HOMING:
+			FlightMode.HOMING, FlightMode.SWARM_HOMING:
 				trail_node.trail_width = 0.09
+			FlightMode.EXPLOSIVE_SHELL:
+				trail_node.trail_width = 0.22
+			FlightMode.CLUSTER_WARHEAD:
+				trail_node.trail_width = 0.17
+			FlightMode.SNIPER_BOLT:
+				trail_node.trail_width = 0.18
 			_:
 				trail_node.trail_width = 0.08
 
@@ -279,13 +299,14 @@ func _physics_process(delta: float) -> void:
 			if traveled_distance >= _max_range * 2.1:
 				despawn()
 				return
-	elif _flight_mode == FlightMode.HOMING:
+	elif _flight_mode == FlightMode.HOMING or (_flight_mode == FlightMode.SWARM_HOMING and _lifetime >= 0.14):
 		var target_enemy: Node3D = _find_nearest_enemy(18.0)
 		if target_enemy != null:
 			var to_e: Vector3 = (target_enemy.global_position + Vector3(0.0, 0.35, 0.0)) - global_position
 			to_e.y = 0.0
 			if to_e.length_squared() > 0.01:
-				direction = direction.lerp(to_e.normalized(), clampf(11.5 * delta, 0.0, 1.0)).normalized()
+				var turn_rate: float = 14.5 if _flight_mode == FlightMode.SWARM_HOMING else 11.5
+				direction = direction.lerp(to_e.normalized(), clampf(turn_rate * delta, 0.0, 1.0)).normalized()
 
 	if direction.length_squared() > 0.001 and _flight_mode != FlightMode.BOOMERANG:
 		look_at(global_position + direction, Vector3.UP)
@@ -315,6 +336,7 @@ func _physics_process(delta: float) -> void:
 				_apply_enemy_hit(collider)
 				if not is_piercing:
 					global_position = hit_pos
+					_trigger_impact_payload(hit_pos)
 					despawn()
 					return
 				# Piercing / Boomerang continues through enemies!
@@ -327,11 +349,17 @@ func _physics_process(delta: float) -> void:
 					_begin_boomerang_return()
 					return
 				global_position = hit_pos
+				_trigger_impact_payload(hit_pos)
 				despawn()
 				return
 
 	global_position = next_pos
 	traveled_distance += step
+
+	if _flight_mode == FlightMode.CLUSTER_WARHEAD and traveled_distance >= 7.2:
+		_trigger_impact_payload(global_position)
+		despawn()
+		return
 
 	if _flight_mode == FlightMode.BOOMERANG:
 		if not _returning and traveled_distance >= _max_range:
@@ -340,7 +368,57 @@ func _physics_process(delta: float) -> void:
 			despawn()
 	else:
 		if traveled_distance >= _max_range:
+			_trigger_impact_payload(global_position)
 			despawn()
+
+
+func _trigger_impact_payload(impact_pos: Vector3) -> void:
+	if _payload_triggered:
+		return
+	if _flight_mode == FlightMode.EXPLOSIVE_SHELL:
+		_payload_triggered = true
+		if ProjectilePool and ProjectilePool.has_method("spawn_zone_effect"):
+			ProjectilePool.call(
+				"spawn_zone_effect",
+				5, # ZoneMode.INSTANT_BLAST
+				impact_pos,
+				2.8,
+				damage * 0.65,
+				0.26,
+				"cannon_blast",
+				_tint_color,
+				_shooter_stats,
+				0.0,
+				null,
+				0.0,
+				_shooter_node,
+				direction
+			)
+	elif _flight_mode == FlightMode.CLUSTER_WARHEAD:
+		_payload_triggered = true
+		if ProjectilePool and ProjectilePool.has_method("spawn_combat_projectile"):
+			var sub_dmg: float = damage * 0.45
+			var s_id: int = shooter_id
+			var s_node: Node3D = _shooter_node
+			var s_stats: Object = _shooter_stats
+			var s_col: Color = _tint_color.lightened(0.15)
+			for k in range(4):
+				var ang: float = float(k) * (TAU / 4.0) + 0.4
+				var b_dir := Vector3(cos(ang), 0.0, sin(ang))
+				ProjectilePool.call(
+					"spawn_combat_projectile",
+					s_id,
+					impact_pos + Vector3(0.0, 0.25, 0.0) + b_dir * 0.22,
+					b_dir,
+					21.5,
+					12.0,
+					sub_dmg,
+					0.40,
+					FlightMode.SWARM_HOMING,
+					s_col,
+					s_node,
+					s_stats
+				)
 
 
 func _begin_boomerang_return() -> void:
@@ -391,6 +469,10 @@ func _apply_enemy_hit(target: Object) -> bool:
 	if target == null:
 		return false
 
+	var effective_dmg: float = damage
+	if _flight_mode == FlightMode.SNIPER_BOLT:
+		effective_dmg = damage * lerpf(1.0, 1.45, clampf(traveled_distance / 15.0, 0.0, 1.0))
+
 	var es: EnemySphere = _resolve_enemy_sphere(target)
 	if es != null:
 		if _hit_enemy_ids.has(es.enemy_id):
@@ -399,9 +481,9 @@ func _apply_enemy_hit(target: Object) -> bool:
 		_hit_enemy_ids.append(es.enemy_id)
 		_exclude_enemy_rids(es)
 		if es.has_method("apply_combat_hit"):
-			es.call("apply_combat_hit", damage, direction, _proc_coeff, _shooter_stats)
+			es.call("apply_combat_hit", effective_dmg, direction, _proc_coeff, _shooter_stats)
 		elif es.hurtbox_comp:
-			es.hurtbox_comp.apply_hit(damage, direction)
+			es.hurtbox_comp.apply_hit(effective_dmg, direction)
 		return true
 
 	if target is HurtboxComponent:
@@ -409,7 +491,7 @@ func _apply_enemy_hit(target: Object) -> bool:
 			var r: RID = (target as CollisionObject3D).get_rid()
 			if r.is_valid() and not _exclude_rids.has(r):
 				_exclude_rids.append(r)
-		(target as HurtboxComponent).apply_hit(damage, direction)
+		(target as HurtboxComponent).apply_hit(effective_dmg, direction)
 		return true
 
 	return false
@@ -434,11 +516,13 @@ func _on_body_entered(body: Node) -> void:
 	if _is_enemy_collider(body):
 		_apply_enemy_hit(body)
 		if _flight_mode != FlightMode.PIERCE and _flight_mode != FlightMode.BOOMERANG:
+			_trigger_impact_payload(global_position)
 			despawn()
 	else:
 		if _flight_mode == FlightMode.BOOMERANG and not _returning:
 			_begin_boomerang_return()
 		else:
+			_trigger_impact_payload(global_position)
 			despawn()
 
 
@@ -448,4 +532,5 @@ func _on_area_entered(area: Area3D) -> void:
 	if _is_enemy_collider(area):
 		_apply_enemy_hit(area)
 		if _flight_mode != FlightMode.PIERCE and _flight_mode != FlightMode.BOOMERANG:
+			_trigger_impact_payload(global_position)
 			despawn()
