@@ -1,5 +1,5 @@
 // MIT License.
-// Made by Dylearn — Extended with Painterly Shape of Dreams x Arcane Biome FX
+// Made by Dylearn — Extended with Calm, High-Contrast Painterly Biome Floors (Shape of Dreams x Arcane)
 
 shader_type spatial;
 
@@ -62,73 +62,65 @@ void vertex() {
 }
 
 void fragment() {
-	float albedo2_noise_tex = texture(albedo2_noise, (vertex_world.xz + noise_offset) * (albedo2_scale)).r;
-	float albedo3_noise_tex = texture(albedo3_noise, (vertex_world.xz + noise_offset) * (albedo3_scale)).r;
+	float n2 = texture(albedo2_noise, (vertex_world.xz + noise_offset) * albedo2_scale).r;
+	float n3 = texture(albedo3_noise, (vertex_world.xz + noise_offset) * albedo3_scale).r;
 
 	ALBEDO = albedo1.rgb;
-	if (albedo2_noise_tex > albedo2_threshold) {
+	if (n2 > albedo2_threshold) {
 		ALBEDO = albedo2.rgb;
 	}
-	if (albedo3_noise_tex > albedo3_threshold) {
+	if (n3 > albedo3_threshold) {
 		ALBEDO = albedo3.rgb;
 	}
 
 	vec3 emissive = vec3(0.0);
 
 	if (biome_fx_mode == 1) {
-		// Glacial Frostfield: crisp stepped frost fractures & diamond ice glint
-		float crack_a = 1.0 - smoothstep(0.004, 0.018, abs(albedo2_noise_tex - 0.50));
-		float crack_b = 1.0 - smoothstep(0.003, 0.014, abs(albedo3_noise_tex - 0.54));
-		float frost_line = clamp(crack_a + crack_b * 0.7, 0.0, 1.0);
-		ALBEDO = mix(ALBEDO, fx_color1.rgb, frost_line * 0.65);
-		emissive = fx_color1.rgb * frost_line * fx_emission_strength;
+		// Glacial Frostfield: broad pale winter-slate ice sheets with subtle soft frost seams (high contrast for blue player!)
+		float seam = 1.0 - smoothstep(0.002, 0.012, abs(n2 - 0.52));
+		ALBEDO = mix(ALBEDO, fx_color1.rgb, seam * 0.24);
+		emissive = fx_color1.rgb * seam * fx_emission_strength;
 	} else if (biome_fx_mode == 2) {
-		// Astral Constellation: nebula swirls + starlight nodes + golden/cyan constellation threads
-		vec2 uv_star = vertex_world.xz * 0.34;
+		// Astral Constellation: deep calm indigo velvet with delicate celestial threads & soft stars
+		vec2 uv_star = vertex_world.xz * 0.22;
 		vec2 cell = floor(uv_star);
 		vec2 f = fract(uv_star);
-		vec2 star_p = 0.22 + 0.56 * hash22(cell);
+		vec2 star_p = 0.24 + 0.52 * hash22(cell);
 		float d_star = length(f - star_p);
-		float twinkle = 0.72 + 0.28 * sin(TIME * 2.4 + cell.x * 3.1 + cell.y * 5.7);
-		float star_core = smoothstep(0.055, 0.010, d_star) * twinkle;
+		float twinkle = 0.78 + 0.22 * sin(TIME * 1.8 + cell.x * 3.1 + cell.y * 5.7);
+		float star_core = smoothstep(0.032, 0.008, d_star) * twinkle;
 
-		// Connect a subset of neighboring cells with crisp constellation lines
-		vec2 right_p = vec2(1.0, 0.0) + 0.22 + 0.56 * hash22(cell + vec2(1.0, 0.0));
-		vec2 up_p = vec2(0.0, 1.0) + 0.22 + 0.56 * hash22(cell + vec2(0.0, 1.0));
+		vec2 right_p = vec2(1.0, 0.0) + 0.24 + 0.52 * hash22(cell + vec2(1.0, 0.0));
+		vec2 up_p = vec2(0.0, 1.0) + 0.24 + 0.52 * hash22(cell + vec2(0.0, 1.0));
 		float h_pick = hash22(cell + vec2(7.3, 2.9)).x;
 		float line_mask = 0.0;
-		if (h_pick > 0.42) {
-			line_mask = max(line_mask, smoothstep(0.020, 0.005, seg_dist(f, star_p, right_p)));
+		if (h_pick > 0.56) {
+			line_mask = max(line_mask, smoothstep(0.011, 0.003, seg_dist(f, star_p, right_p)));
 		}
-		if (h_pick > 0.24 && h_pick < 0.78) {
-			line_mask = max(line_mask, smoothstep(0.020, 0.005, seg_dist(f, star_p, up_p)));
+		if (h_pick > 0.34 && h_pick < 0.68) {
+			line_mask = max(line_mask, smoothstep(0.011, 0.003, seg_dist(f, star_p, up_p)));
 		}
-		vec3 star_col = mix(fx_color1.rgb, fx_color3.rgb, step(0.5, h_pick));
-		ALBEDO = mix(ALBEDO, star_col, clamp(line_mask * 0.55 + star_core, 0.0, 1.0));
-		emissive = (fx_color1.rgb * line_mask * 0.55 + star_col * star_core * 1.45) * fx_emission_strength;
+		vec3 star_col = mix(fx_color1.rgb, fx_color3.rgb, step(0.55, h_pick));
+		ALBEDO = mix(ALBEDO, star_col, clamp(line_mask * 0.26 + star_core * 0.65, 0.0, 1.0));
+		emissive = (fx_color1.rgb * line_mask * 0.22 + star_col * star_core * 0.75) * fx_emission_strength;
 	} else if (biome_fx_mode == 3) {
-		// Volcanic Caldera: stepped toon magma fissures across dark obsidian plates
-		float fissure = 1.0 - smoothstep(0.006, 0.036, abs(albedo2_noise_tex - 0.49));
-		float hot_core = 1.0 - smoothstep(0.0, 0.013, abs(albedo2_noise_tex - 0.49));
-		float pulse = 0.84 + 0.16 * sin(TIME * 2.2 + vertex_world.x * 0.35 + vertex_world.z * 0.28);
-		vec3 lava_col = mix(fx_color2.rgb, fx_color1.rgb, hot_core);
-		ALBEDO = mix(ALBEDO, lava_col, fissure * 0.92);
-		emissive = lava_col * fissure * pulse * fx_emission_strength;
+		// Volcanic Caldera: wide matte basalt stone slabs with restrained warm ember seams (keeps combat floor clean & dark!)
+		float seam = 1.0 - smoothstep(0.002, 0.014, abs(n2 - 0.54));
+		float pulse = 0.85 + 0.15 * sin(TIME * 1.6 + vertex_world.x * 0.22 + vertex_world.z * 0.18);
+		vec3 ember_col = mix(fx_color2.rgb, fx_color1.rgb, seam * 0.45);
+		ALBEDO = mix(ALBEDO, ember_col, seam * 0.42);
+		emissive = ember_col * seam * pulse * fx_emission_strength;
 	} else if (biome_fx_mode == 4) {
-		// Arcane Anomaly: painterly oil-slick chromatic bands + glowing Hextech/Shimmer fractal veins
-		float swirl = sin(albedo2_noise_tex * 15.0 + albedo3_noise_tex * 11.0 + TIME * 0.55);
-		float cel_band = floor((swirl * 0.5 + 0.5) * 4.0) / 4.0;
-		vec3 oil_tint = mix(fx_color1.rgb, fx_color2.rgb, cel_band);
-		oil_tint = mix(oil_tint, fx_color3.rgb, step(0.74, cel_band) * 0.65);
-		ALBEDO = mix(ALBEDO, ALBEDO * 0.65 + oil_tint * 0.38, 0.55);
+		// Arcane Anomaly: moody painterly watercolour washes (deep plum / muted teal) with subtle soft iridescent shimmer
+		float swirl = sin(n2 * 7.5 + n3 * 5.5 + TIME * 0.32);
+		float cel_band = floor((swirl * 0.5 + 0.5) * 3.0) / 3.0;
+		vec3 wash_tint = mix(fx_color1.rgb, fx_color2.rgb, cel_band);
+		ALBEDO = mix(ALBEDO, ALBEDO * 0.82 + wash_tint * 0.16, 0.48);
 
-		float vein1 = 1.0 - smoothstep(0.004, 0.022, abs(albedo2_noise_tex - 0.51));
-		float vein2 = 1.0 - smoothstep(0.003, 0.018, abs(albedo3_noise_tex - 0.47));
-		float vein = clamp(vein1 + vein2 * 0.85, 0.0, 1.0);
-		vec3 vein_col = mix(fx_color1.rgb, fx_color2.rgb, 0.5 + 0.5 * sin(vertex_world.x * 0.18 - vertex_world.z * 0.15 + TIME * 0.9));
-		vein_col = mix(vein_col, fx_color3.rgb, step(0.82, vein));
-		ALBEDO = mix(ALBEDO, vein_col, vein * 0.88);
-		emissive = (vein_col * vein * 1.15 + oil_tint * 0.10) * fx_emission_strength;
+		float fine_vein = 1.0 - smoothstep(0.001, 0.009, abs(n2 - 0.53));
+		vec3 vein_col = mix(fx_color1.rgb, fx_color3.rgb, 0.5 + 0.5 * sin(vertex_world.x * 0.12 - vertex_world.z * 0.10 + TIME * 0.5));
+		ALBEDO = mix(ALBEDO, vein_col, fine_vein * 0.28);
+		emissive = (vein_col * fine_vein * 0.35 + wash_tint * 0.05) * fx_emission_strength;
 	}
 
 	if (water_pool_radius > 0.0) {

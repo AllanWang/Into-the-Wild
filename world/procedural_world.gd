@@ -217,6 +217,8 @@ func apply_biome_materials(biome_id: int) -> void:
 		floor_material.set_shader_parameter("albedo1", b["floor_a1"])
 		floor_material.set_shader_parameter("albedo2", b["floor_a2"])
 		floor_material.set_shader_parameter("albedo3", b["floor_a3"])
+		floor_material.set_shader_parameter("albedo2_scale", float(b.get("a2_scale", 0.11)))
+		floor_material.set_shader_parameter("albedo3_scale", float(b.get("a3_scale", 0.10)))
 		floor_material.set_shader_parameter("bank_color", b["bank_col"])
 		floor_material.set_shader_parameter("biome_fx_mode", int(b["fx_mode"]))
 		floor_material.set_shader_parameter("fx_color1", b["fx_c1"])
@@ -292,12 +294,52 @@ func _build_biome_landmarks(rng: RandomNumberGenerator) -> void:
 			var edge_dir: Vector2 = (p2 - p1) / seg_len
 			var out_norm: Vector2 = Vector2(-edge_dir.y, edge_dir.x) * norm_sign
 			var mid: Vector2 = (p1 + p2) * 0.5
+
+			# Subtle shoreline-rim crystal / basalt / hexcore accent right on the bank edge
+			var rim_2d: Vector2 = mid - out_norm * 0.35
+			if _is_point_on_filleted_land(rim_2d):
+				_spawn_shoreline_rim_accent(Vector3(rim_2d.x, 0.0, rim_2d.y), rng)
+
 			var offshore_dist: float = rng.randf_range(2.6, 5.8)
 			var anchor_2d: Vector2 = mid + out_norm * offshore_dist
 			if _is_point_on_filleted_land(anchor_2d):
 				continue
 
 			_spawn_single_biome_cluster(Vector3(anchor_2d.x, 0.0, anchor_2d.y), rng)
+
+
+func _spawn_shoreline_rim_accent(rim_pos: Vector3, rng: RandomNumberGenerator) -> void:
+	var accent := MeshInstance3D.new()
+	accent.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	match current_biome_id:
+		BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD:
+			accent.mesh = _mesh_ice_spire
+			accent.material_override = _prop_mat_primary
+			var sc: float = rng.randf_range(0.24, 0.42)
+			accent.scale = Vector3(sc, sc * 0.9, sc)
+			accent.position = rim_pos + Vector3(0.0, sc * 1.1, 0.0)
+			accent.rotation_degrees = Vector3(rng.randf_range(-18.0, 18.0), rng.randf_range(0.0, 360.0), rng.randf_range(-18.0, 18.0))
+		BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION:
+			accent.mesh = _mesh_octa_shard
+			accent.material_override = _prop_mat_secondary
+			var sc_a: float = rng.randf_range(0.55, 0.95)
+			accent.scale = Vector3.ONE * sc_a
+			accent.position = rim_pos + Vector3(0.0, rng.randf_range(0.55, 1.05), 0.0)
+			accent.rotation_degrees = Vector3(0.0, rng.randf_range(0.0, 360.0), 0.0)
+		BiomeThemeScript.BiomeId.VOLCANIC_CALDERA:
+			accent.mesh = _mesh_hex_pillar
+			accent.material_override = _prop_mat_primary
+			accent.scale = Vector3(rng.randf_range(0.45, 0.72), rng.randf_range(0.14, 0.30), rng.randf_range(0.45, 0.72))
+			accent.position = rim_pos + Vector3(0.0, 0.12, 0.0)
+			accent.rotation_degrees = Vector3(0.0, rng.randf_range(0.0, 360.0), 0.0)
+		BiomeThemeScript.BiomeId.ARCANE_ANOMALY:
+			accent.mesh = _mesh_poly_core
+			accent.material_override = _prop_mat_primary if rng.randf() < 0.55 else _prop_mat_secondary
+			var sc_h: float = rng.randf_range(0.28, 0.48)
+			accent.scale = Vector3.ONE * sc_h
+			accent.position = rim_pos + Vector3(0.0, rng.randf_range(0.52, 1.15), 0.0)
+			accent.rotation_degrees = Vector3(rng.randf_range(0.0, 180.0), rng.randf_range(0.0, 180.0), 0.0)
+	props_root.add_child(accent)
 
 
 func _spawn_single_biome_cluster(base_pos: Vector3, rng: RandomNumberGenerator) -> void:
@@ -612,16 +654,18 @@ func _spawn_land_chunk_node(chunk_idx: int, chunk_poly: PackedVector2Array) -> v
 		floor_inst.material_override = floor_material
 		chunk_node.add_child(floor_inst)
 
-	var mm: MultiMesh = _stamper.stamp_polygon(chunk_poly, center_2d)
-	if mm:
-		var grass_inst := MultiMeshInstance3D.new()
-		grass_inst.name = "Grass"
-		grass_inst.add_to_group("grass")
-		grass_inst.material_override = grass_material
-		grass_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		grass_inst.multimesh = mm
-		chunk_node.add_child(grass_inst)
-		total_grass_blades += mm.visible_instance_count
+	var enable_grass_now: bool = bool(BiomeThemeScript.get_biome_data(current_biome_id).get("enable_grass", true))
+	if enable_grass_now:
+		var mm: MultiMesh = _stamper.stamp_polygon(chunk_poly, center_2d)
+		if mm:
+			var grass_inst := MultiMeshInstance3D.new()
+			grass_inst.name = "Grass"
+			grass_inst.add_to_group("grass")
+			grass_inst.material_override = grass_material
+			grass_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			grass_inst.multimesh = mm
+			chunk_node.add_child(grass_inst)
+			total_grass_blades += mm.visible_instance_count
 
 
 func _create_flat_polygon_mesh(world_poly: PackedVector2Array, local_origin: Vector2) -> ArrayMesh:
