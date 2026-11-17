@@ -6,9 +6,11 @@ const NodePoolScript = preload("res://scripts/node_pool.gd")
 const PROJECTILE_SCENE: PackedScene = preload("res://player/projectile.tscn")
 const ZONE_SCENE: PackedScene = preload("res://world/combat_zone_effect.tscn")
 const ARC_SCENE: PackedScene = preload("res://world/lightning_arc_effect.tscn")
+const EnemyHazardScript = preload("res://world/enemy_hazard_effect.gd")
 
 var _zone_pool: NodePool = null
 var _arc_pool: NodePool = null
+var _enemy_hazards: Array[Node3D] = []
 
 
 func _init() -> void:
@@ -47,6 +49,27 @@ func _ensure_sub_pools() -> void:
 	_arc_pool.can_grow = true
 	add_child(_arc_pool)
 
+	for i in range(24):
+		_create_enemy_hazard(i)
+
+
+func _create_enemy_hazard(idx: int) -> Node3D:
+	var hz: Node3D = EnemyHazardScript.new() as Node3D
+	hz.name = "EnemyHazard_%d" % idx
+	add_child(hz)
+	if hz.has_method("deactivate"):
+		hz.call("deactivate")
+	_enemy_hazards.append(hz)
+	return hz
+
+
+func _acquire_enemy_hazard() -> Node3D:
+	_ensure_sub_pools()
+	for h in _enemy_hazards:
+		if h != null and is_instance_valid(h) and h.has_method("is_available") and bool(h.call("is_available")):
+			return h
+	return _create_enemy_hazard(_enemy_hazards.size())
+
 
 func release_all() -> void:
 	super.release_all()
@@ -54,6 +77,70 @@ func release_all() -> void:
 		_zone_pool.release_all()
 	if _arc_pool:
 		_arc_pool.release_all()
+	for h in _enemy_hazards:
+		if h != null and is_instance_valid(h) and h.has_method("deactivate"):
+			h.call("deactivate")
+
+
+func spawn_enemy_orb(
+	p_start: Vector3,
+	p_dir: Vector3,
+	p_speed: float,
+	p_range: float,
+	p_damage: float,
+	p_color: Color,
+	p_is_lance: bool,
+	p_players_root: Node3D
+) -> Node3D:
+	var hz: Node3D = _acquire_enemy_hazard()
+	if hz and hz.has_method("activate_orb"):
+		hz.call("activate_orb", p_start, p_dir, p_speed, p_range, p_damage, p_color, p_is_lance, p_players_root)
+	return hz
+
+
+func spawn_enemy_sightline(
+	p_origin: Vector3,
+	p_dir: Vector3,
+	p_length: float,
+	p_duration: float,
+	p_color: Color
+) -> Node3D:
+	var hz: Node3D = _acquire_enemy_hazard()
+	if hz and hz.has_method("activate_sightline"):
+		hz.call("activate_sightline", p_origin, p_dir, p_length, p_duration, p_color)
+	return hz
+
+
+func spawn_enemy_ground_hazard(
+	p_mode: int,
+	p_origin: Vector3,
+	p_target: Vector3,
+	p_radius: float,
+	p_inner_radius: float,
+	p_damage: float,
+	p_telegraph_s: float,
+	p_pool_duration_s: float,
+	p_color: Color,
+	p_shake: float,
+	p_players_root: Node3D
+) -> Node3D:
+	var hz: Node3D = _acquire_enemy_hazard()
+	if hz and hz.has_method("activate_ground_hazard"):
+		hz.call(
+			"activate_ground_hazard",
+			p_mode,
+			p_origin,
+			p_target,
+			p_radius,
+			p_inner_radius,
+			p_damage,
+			p_telegraph_s,
+			p_pool_duration_s,
+			p_color,
+			p_shake,
+			p_players_root
+		)
+	return hz
 
 
 ## Legacy simple spawn signature

@@ -795,7 +795,7 @@ func _rpc_clear_encounter(area_idx: int) -> void:
 
 
 func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves: int) -> Array[Dictionary]:
-	# Escalate second & third waves as players advance into deeper tiers / additional cleared areas
+	# Escalate mini-unit abilities, elite casters, and bosses as players advance deeper into tiers!
 	var progression_stage: int = maxi(1, maxi(area.tier, _arenas_cleared_count + 1))
 	var stage_bonus: int = mini(2, maxi(0, progression_stage - 1))
 	var is_final_wave: bool = (wave_idx >= total_waves)
@@ -804,86 +804,114 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 	match area.role:
 		AreaPresetScript.RoomRole.DEADEND:
 			if wave_idx == 1:
-				for _i in range(2 + mini(1, stage_bonus)):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-			elif not is_final_wave:
-				for _i in range(3):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
 				if stage_bonus >= 1:
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+					archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+			elif not is_final_wave:
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 			else:
-				for _i in range(3 + mini(1, stage_bonus)):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
 				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 
 		AreaPresetScript.RoomRole.ELITE:
 			if wave_idx == 1:
-				for _i in range(4):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				for _i in range(2):
+					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 			elif not is_final_wave:
-				for _i in range(4 + stage_bonus):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-				for _i in range(2):
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+				for _i in range(2 + mini(1, stage_bonus)):
+					archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 			else:
-				for _i in range(5 + stage_bonus):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-				for _i in range(2 + (1 if stage_bonus >= 2 else 0)):
+				for _i in range(2):
+					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+					archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+				for _i in range(2):
 					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 
 		AreaPresetScript.RoomRole.HUB:
 			if wave_idx == 1:
-				for _i in range(4):
+				for _i in range(2):
 					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
 			elif not is_final_wave:
-				for _i in range(3 + stage_bonus):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 			else:
-				for _i in range(4 + stage_bonus):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-				for _i in range(2):
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 
 		AreaPresetScript.RoomRole.BOSS:
 			if wave_idx == 1:
-				for _i in range(4):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+				for _i in range(2):
+					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+					archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 			elif not is_final_wave:
-				for _i in range(5):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
 				for _i in range(2):
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+					archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 			else:
-				archetypes.append(ArchetypeScript.ArchetypeId.BOSS)
-				for _i in range(2):
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
-				for _i in range(4):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				var boss_arch: int = ArchetypeScript.ArchetypeId.BOSS if ((area.index + _rng.randi()) % 2 == 0) else ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
+				archetypes.append(boss_arch)
+				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 
 		_:
-			# Standard COMBAT arena: 3 waves escalating across both wave index and map progression
+			# Standard COMBAT arena: introduces upgraded mini-units & specialists as progression_stage rises!
 			if wave_idx == 1:
-				for _i in range(3 + mini(1, stage_bonus)):
+				for _i in range(2):
 					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				if progression_stage >= 2:
+					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+					archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				else:
+					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
 			elif not is_final_wave:
-				for _i in range(3 + stage_bonus):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-				if stage_bonus >= 1:
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+				archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				if progression_stage >= 2:
+					archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+					archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+				else:
+					archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				if stage_bonus >= 2:
+					archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
 			else:
-				for _i in range(3 + stage_bonus):
-					archetypes.append(ArchetypeScript.ArchetypeId.CHASER)
-				for _i in range(1 + mini(1, stage_bonus)):
-					archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
+				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
+				archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
+				if progression_stage >= 2:
+					archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
+					archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER if (area.index % 2 == 0) else ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 
 	var chosen_pts: Array[Vector2] = []
 	var manifest: Array[Dictionary] = []
 
 	for arch_id in archetypes:
-		var pt2d: Vector2 = _sample_safe_spawn_point(area, chosen_pts, arch_id == ArchetypeScript.ArchetypeId.BOSS)
+		var pt2d: Vector2 = _sample_safe_spawn_point(area, chosen_pts, ArchetypeScript.is_boss_archetype(arch_id))
 		chosen_pts.append(pt2d)
 		var eid: int = _next_enemy_id
 		_next_enemy_id += 1

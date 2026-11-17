@@ -48,6 +48,12 @@ var _tutorial_modal: Control = null
 var _tutorial_button: Button = null
 var _portal_confirm_modal: Control = null
 var _biome_button: Button = null
+var _camera_shake_trauma: float = 0.0
+var _shake_phase: float = 0.0
+
+
+func add_camera_shake(trauma: float) -> void:
+	_camera_shake_trauma = clampf(_camera_shake_trauma + trauma, 0.0, 1.0)
 
 @export var overview_mode: bool = false:
 	set(val):
@@ -58,6 +64,7 @@ var _biome_button: Button = null
 
 
 func _ready() -> void:
+	add_to_group("world_camera_shake")
 	var is_emb: bool = ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
 	if not is_emb:
 		DisplayServer.window_move_to_foreground()
@@ -179,6 +186,11 @@ func _physics_process(delta: float) -> void:
 		if _local_player:
 			var target_pos: Vector3 = _local_player.global_position + camera_offset
 			camera.global_position = camera.global_position.lerp(target_pos, clampf(10.0 * delta, 0.0, 1.0))
+			if _camera_shake_trauma > 0.005:
+				_shake_phase += delta * 46.0
+				var shake_amp: float = _camera_shake_trauma * _camera_shake_trauma * 0.42
+				camera.global_position += Vector3(sin(_shake_phase) * shake_amp, cos(_shake_phase * 1.3) * shake_amp * 0.5, cos(_shake_phase * 0.9) * shake_amp)
+				_camera_shake_trauma = maxf(0.0, _camera_shake_trauma - 2.2 * delta)
 
 
 func _on_world_generated(spawn_pos: Vector3, _goal_pos: Vector3) -> void:
