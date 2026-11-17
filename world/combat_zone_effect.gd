@@ -2,12 +2,13 @@ class_name CombatZoneEffect
 extends Node3D
 
 ## Pooled multi-mode 3D combat zone effect for AoE weapons, Abilities (Q/E), and Artifacts (R).
-## Shares static TorusMesh, CylinderMesh, and cached palette materials for zero runtime allocations.
+## Distinct Celestial Player Signatures: spinning 4-point inner diamond rune, inward-converging
+## focus ring on casts, airy additive aura, and sky-beam flash on detonation!
 
 enum ZoneMode {
-	DELAYED_BLAST = 0,  ## Nova Mortar & Starfall Strike (0.35s telegraph -> AoE hit + flash)
+	DELAYED_BLAST = 0,  ## Nova Mortar & Starfall Strike (inward focus convergence -> sky-beam blast)
 	SOLAR_PILLAR = 1,   ## Solar Convergence [R] (3 orbital beam pulses over 1.35s)
-	STASIS_FIELD = 2,   ## Frost Nova [Q/E] & Chronosphere [R] (initial hit + persistent slow aura)
+	STASIS_FIELD = 2,   ## Frost Nova [Q/E] & Chronosphere [R] (spinning rune + persistent slow aura)
 	SELF_WARD = 3,      ## Aegis Barrier & Tempo Surge (quick expanding aura ring around caster)
 	WHIP_ARC = 4,       ## Chain Lash sweeping 116-deg ribbon cleave (+45% outer tip sweetspot!)
 	INSTANT_BLAST = 5   ## Siege Cannon concussive detonation shockwave
@@ -18,6 +19,9 @@ var pool: Node = null
 @onready var ring_mesh: MeshInstance3D = $RingMesh
 @onready var disc_mesh: MeshInstance3D = $DiscMesh
 @onready var pillar_mesh: MeshInstance3D = $PillarMesh
+
+var inner_rune_mesh: MeshInstance3D = null
+var focus_ring_mesh: MeshInstance3D = null
 
 var _mode: int = ZoneMode.DELAYED_BLAST
 var _radius: float = 2.8
@@ -39,6 +43,7 @@ var _slow_tick_timer: float = 0.0
 var _active: bool = false
 
 static var _shared_torus: TorusMesh = null
+static var _shared_diamond_rune: TorusMesh = null
 static var _shared_disc: CylinderMesh = null
 static var _shared_pillar: CylinderMesh = null
 static var _shared_whip_fill: ArrayMesh = null
@@ -54,7 +59,6 @@ static func _build_sector_mesh(inner_r: float, outer_r: float, half_angle_deg: f
 	for i in range(segs):
 		var a0: float = lerpf(-half_rad, half_rad, float(i) / float(segs))
 		var a1: float = lerpf(-half_rad, half_rad, float(i + 1) / float(segs))
-		# Forward in local space is -Z (matches Godot look_at)
 		var d0 := Vector3(sin(a0), 0.0, -cos(a0))
 		var d1 := Vector3(sin(a1), 0.0, -cos(a1))
 		var p00: Vector3 = d0 * inner_r
@@ -82,6 +86,13 @@ static func _ensure_shared() -> void:
 	_shared_torus.rings = 28
 	_shared_torus.ring_segments = 8
 
+	# Crisp 4-point celestial diamond rune for Friendly / Player AoEs!
+	_shared_diamond_rune = TorusMesh.new()
+	_shared_diamond_rune.inner_radius = 0.86
+	_shared_diamond_rune.outer_radius = 0.96
+	_shared_diamond_rune.rings = 4
+	_shared_diamond_rune.ring_segments = 6
+
 	_shared_disc = CylinderMesh.new()
 	_shared_disc.top_radius = 0.90
 	_shared_disc.bottom_radius = 0.90
@@ -107,22 +118,40 @@ static func _get_palette_mats(key: String, col: Color) -> Array[StandardMaterial
 	r_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	r_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	r_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	r_mat.albedo_color = Color(col.r, col.g, col.b, 0.90)
+	r_mat.albedo_color = Color(col.r, col.g, col.b, 0.92)
 
 	var f_mat := StandardMaterial3D.new()
 	f_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	f_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	f_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	f_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	f_mat.albedo_color = Color(col.r, col.g, col.b, 0.26)
+	f_mat.albedo_color = Color(col.r, col.g, col.b, 0.18)
 
 	_ring_mats[key] = r_mat
 	_fill_mats[key] = f_mat
 	return [r_mat, f_mat]
 
 
-func _ready() -> void:
+func _ensure_player_fx_nodes() -> void:
 	_ensure_shared()
+	if inner_rune_mesh == null:
+		inner_rune_mesh = MeshInstance3D.new()
+		inner_rune_mesh.name = "InnerRuneMesh"
+		inner_rune_mesh.mesh = _shared_diamond_rune
+		inner_rune_mesh.position = Vector3(0.0, 0.02, 0.0)
+		inner_rune_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(inner_rune_mesh)
+	if focus_ring_mesh == null:
+		focus_ring_mesh = MeshInstance3D.new()
+		focus_ring_mesh.name = "FocusRingMesh"
+		focus_ring_mesh.mesh = _shared_torus
+		focus_ring_mesh.position = Vector3(0.0, 0.025, 0.0)
+		focus_ring_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(focus_ring_mesh)
+
+
+func _ready() -> void:
+	_ensure_player_fx_nodes()
 	if ring_mesh:
 		ring_mesh.mesh = _shared_torus
 		ring_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -150,6 +179,7 @@ func activate_zone(
 	p_caster_node: Node3D = null,
 	p_aim_dir: Vector3 = Vector3.FORWARD
 ) -> void:
+	_ensure_player_fx_nodes()
 	_mode = p_mode
 	_radius = maxf(0.8, p_radius)
 	_damage = maxf(0.0, p_damage)
@@ -167,24 +197,34 @@ func activate_zone(
 	_active = true
 	rotation = Vector3.ZERO
 
+	var is_whip: bool = (_mode == ZoneMode.WHIP_ARC)
 	var mats: Array[StandardMaterial3D] = _get_palette_mats(p_color_key, p_color)
 	if ring_mesh:
-		ring_mesh.mesh = (_shared_whip_rim as Mesh) if _mode == ZoneMode.WHIP_ARC else (_shared_torus as Mesh)
+		ring_mesh.mesh = (_shared_whip_rim as Mesh) if is_whip else (_shared_torus as Mesh)
 		ring_mesh.material_override = mats[0]
 		ring_mesh.visible = true
 	if disc_mesh:
-		disc_mesh.mesh = (_shared_whip_fill as Mesh) if _mode == ZoneMode.WHIP_ARC else (_shared_disc as Mesh)
+		disc_mesh.mesh = (_shared_whip_fill as Mesh) if is_whip else (_shared_disc as Mesh)
 		disc_mesh.material_override = mats[1]
 		disc_mesh.visible = true
-		disc_mesh.scale = Vector3.ONE if _mode == ZoneMode.WHIP_ARC else Vector3.ONE * 0.2
+		disc_mesh.scale = Vector3.ONE if (is_whip or _mode == ZoneMode.DELAYED_BLAST) else Vector3.ONE * 0.25
 	if pillar_mesh:
 		pillar_mesh.material_override = mats[1]
 		pillar_mesh.visible = (_mode == ZoneMode.SOLAR_PILLAR)
 		pillar_mesh.scale = Vector3(1.0, 1.0, 1.0)
+	if inner_rune_mesh:
+		inner_rune_mesh.material_override = mats[0]
+		inner_rune_mesh.visible = not is_whip
+		inner_rune_mesh.scale = Vector3(0.68, 1.0, 0.68)
+		inner_rune_mesh.rotation = Vector3.ZERO
+	if focus_ring_mesh:
+		focus_ring_mesh.material_override = mats[0]
+		focus_ring_mesh.visible = (not is_whip) and (_mode != ZoneMode.INSTANT_BLAST)
+		focus_ring_mesh.scale = Vector3.ONE if _mode == ZoneMode.DELAYED_BLAST else Vector3(0.42, 1.0, 0.42)
 
 	if is_inside_tree():
 		global_position = Vector3(p_pos.x, 0.06, p_pos.z)
-		if _mode == ZoneMode.WHIP_ARC:
+		if is_whip:
 			look_at(global_position + _aim_dir, Vector3.UP)
 		reset_physics_interpolation()
 	else:
@@ -212,7 +252,7 @@ func activate_zone(
 		if _damage > 0.0:
 			_apply_aoe_damage(_damage, true)
 	else:
-		# DELAYED_BLAST
+		# DELAYED_BLAST: inward-converging focus ring + airy glow (opposite of enemy outward fill!)
 		scale = Vector3(_radius, 1.0, _radius)
 
 	visible = true
@@ -229,6 +269,10 @@ func deactivate() -> void:
 	visible = false
 	if pillar_mesh:
 		pillar_mesh.visible = false
+	if inner_rune_mesh:
+		inner_rune_mesh.visible = false
+	if focus_ring_mesh:
+		focus_ring_mesh.visible = false
 
 
 func on_pool_release() -> void:
@@ -252,23 +296,38 @@ func _process(delta: float) -> void:
 	if _follow_target != null and is_instance_valid(_follow_target):
 		global_position = Vector3(_follow_target.global_position.x, 0.05, _follow_target.global_position.z)
 
+	if inner_rune_mesh and inner_rune_mesh.visible:
+		inner_rune_mesh.rotation.y += delta * 2.8
+
 	match _mode:
 		ZoneMode.DELAYED_BLAST:
 			var telegraph_time: float = _duration - 0.16
 			if not _detonated:
 				var t: float = clampf(_elapsed / maxf(0.1, telegraph_time), 0.0, 1.0)
+				if focus_ring_mesh:
+					var s_f: float = lerpf(1.0, 0.12, t)
+					focus_ring_mesh.scale = Vector3(s_f, 1.0, s_f)
 				if disc_mesh:
-					disc_mesh.scale = Vector3(t, 1.0, t)
+					var breathe: float = 0.88 + 0.08 * sin(_elapsed * 10.0)
+					disc_mesh.scale = Vector3(breathe, 1.0, breathe)
 				if _elapsed >= telegraph_time:
 					_detonated = true
 					_apply_aoe_damage(_damage, true)
+					if focus_ring_mesh:
+						focus_ring_mesh.visible = false
 					if disc_mesh:
 						disc_mesh.scale = Vector3(1.12, 1.0, 1.12)
+					if pillar_mesh:
+						pillar_mesh.visible = true
+						pillar_mesh.scale = Vector3(0.45, 1.0, 0.45)
 					scale = Vector3(_radius * 1.12, 1.0, _radius * 1.12)
 			else:
 				var fade_t: float = clampf((_elapsed - telegraph_time) / 0.16, 0.0, 1.0)
 				var s: float = lerpf(_radius * 1.12, _radius * 0.4, fade_t)
 				scale = Vector3(s, 1.0, s)
+				if pillar_mesh:
+					var bw: float = lerpf(0.45, 0.05, fade_t)
+					pillar_mesh.scale = Vector3(bw, 1.0, bw)
 				if _elapsed >= _duration:
 					_release_self()
 
@@ -276,6 +335,9 @@ func _process(delta: float) -> void:
 			if disc_mesh:
 				var pulse_s: float = 0.85 + 0.15 * sin(_elapsed * 14.0)
 				disc_mesh.scale = Vector3(pulse_s, 1.0, pulse_s)
+			if focus_ring_mesh:
+				var fp: float = 0.40 + 0.08 * cos(_elapsed * 12.0)
+				focus_ring_mesh.scale = Vector3(fp, 1.0, fp)
 			if pillar_mesh:
 				var beam_w: float = 0.75 + 0.25 * sin(_elapsed * 18.0)
 				pillar_mesh.scale = Vector3(beam_w, 1.0, beam_w)
@@ -294,6 +356,9 @@ func _process(delta: float) -> void:
 			scale = Vector3(cur_r, 1.0, cur_r)
 			if disc_mesh:
 				disc_mesh.scale = Vector3(0.96, 1.0, 0.96)
+			if focus_ring_mesh:
+				var fs: float = 0.42 + 0.06 * sin(_elapsed * 6.0)
+				focus_ring_mesh.scale = Vector3(fs, 1.0, fs)
 			_slow_tick_timer -= delta
 			if _slow_tick_timer <= 0.0:
 				_slow_tick_timer = 0.18
@@ -351,7 +416,6 @@ func _apply_whip_cleave(base_dmg: float) -> void:
 			continue
 		var dist: float = sqrt(d2)
 		var to_e: Vector3 = Vector3(dx, 0.0, dz) / maxf(0.001, dist)
-		# Point-blank (<1.0m) always connects; beyond 1.0m check 120-deg forward arc
 		if dist > 1.0 and _aim_dir.dot(to_e) < cos_half:
 			continue
 		if e3d.has_method("apply_combat_hit"):

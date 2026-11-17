@@ -3,10 +3,10 @@ extends Node3D
 
 ## Pooled multi-mode Enemy Projectile & Ground Hazard node:
 ## - ENEMY_ORB (0): Enemy ranged bolt / sniper lance / boss volley orb
-## - LOB_POOL (1): Arcing mortar globule (0.85s telegraph) -> persistent damaging ground pool
-## - GROUND_QUAKE (2): Telegraphed radial ground slam + camera shake
-## - DONUT_AFTERSHOCK (3): Telegraphed outer-ring eruption with a safe inner eye!
-## - SNIPER_SIGHTLINE (4): Tracking/locked laser line warning before sniper lance fires
+## - LOB_POOL (1): Arcing mortar globule -> crimson-bordered bubbling corrosive pool
+## - GROUND_QUAKE (2): Outward sweeping danger telegraph -> eruption with 3D rock/danger spikes
+## - DONUT_AFTERSHOCK (3): Outer-ring danger eruption with safe inner eye & 3D spikes
+## - SNIPER_SIGHTLINE (4): Tracking/locked laser line warning before sniper/dash/charge fires
 
 enum HazardMode {
 	ENEMY_ORB = 0,
@@ -15,6 +15,9 @@ enum HazardMode {
 	DONUT_AFTERSHOCK = 3,
 	SNIPER_SIGHTLINE = 4
 }
+
+const HAZARD_SHADER: Shader = preload("res://shaders/EnemyHazard.gdshader")
+const SPIKE_COUNT: int = 8
 
 var _active: bool = false
 var _mode: int = HazardMode.ENEMY_ORB
@@ -42,19 +45,21 @@ var inner_ring: MeshInstance3D = null
 var fill_disc: MeshInstance3D = null
 var orb_mesh: MeshInstance3D = null
 var beam_mesh: MeshInstance3D = null
+var spike_ring_root: Node3D = null
+var _spike_meshes: Array[MeshInstance3D] = []
 
 var _ring_mat: StandardMaterial3D = null
-var _fill_mat: StandardMaterial3D = null
+var _hazard_mat: ShaderMaterial = null
 var _orb_mat: StandardMaterial3D = null
 
 var _ray_query: PhysicsRayQueryParameters3D = null
 
 static var _shared_torus: TorusMesh = null
-static var _shared_disc: CylinderMesh = null
-static var _shared_donut_disc: TorusMesh = null
+static var _shared_hazard_plane: PlaneMesh = null
 static var _shared_orb: SphereMesh = null
 static var _shared_lance: BoxMesh = null
 static var _shared_beam: BoxMesh = null
+static var _shared_spike_mesh: CylinderMesh = null
 
 
 static func _ensure_shared() -> void:
@@ -67,17 +72,8 @@ static func _ensure_shared() -> void:
 	_shared_torus.rings = 28
 	_shared_torus.ring_segments = 8
 
-	_shared_disc = CylinderMesh.new()
-	_shared_disc.top_radius = 0.94
-	_shared_disc.bottom_radius = 0.94
-	_shared_disc.height = 0.02
-	_shared_disc.radial_segments = 24
-
-	_shared_donut_disc = TorusMesh.new()
-	_shared_donut_disc.inner_radius = 0.48
-	_shared_donut_disc.outer_radius = 0.98
-	_shared_donut_disc.rings = 32
-	_shared_donut_disc.ring_segments = 8
+	_shared_hazard_plane = PlaneMesh.new()
+	_shared_hazard_plane.size = Vector2(2.0, 2.0)
 
 	_shared_orb = SphereMesh.new()
 	_shared_orb.radius = 0.24
@@ -89,7 +85,13 @@ static func _ensure_shared() -> void:
 	_shared_lance.size = Vector3(0.18, 0.18, 1.35)
 
 	_shared_beam = BoxMesh.new()
-	_shared_beam.size = Vector3(0.07, 0.04, 1.0)
+	_shared_beam.size = Vector3(0.08, 0.04, 1.0)
+
+	_shared_spike_mesh = CylinderMesh.new()
+	_shared_spike_mesh.top_radius = 0.02
+	_shared_spike_mesh.bottom_radius = 0.14
+	_shared_spike_mesh.height = 0.95
+	_shared_spike_mesh.radial_segments = 4
 
 
 func _ready() -> void:
@@ -110,10 +112,9 @@ func _ensure_nodes() -> void:
 	_ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_ring_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	_fill_mat = StandardMaterial3D.new()
-	_fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_fill_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_fill_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_hazard_mat = ShaderMaterial.new()
+	_hazard_mat.shader = HAZARD_SHADER
+	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.12, 0.20, 1.0))
 
 	_orb_mat = StandardMaterial3D.new()
 	_orb_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -134,8 +135,8 @@ func _ensure_nodes() -> void:
 
 	fill_disc = MeshInstance3D.new()
 	fill_disc.name = "FillDisc"
-	fill_disc.mesh = _shared_disc
-	fill_disc.material_override = _fill_mat
+	fill_disc.mesh = _shared_hazard_plane
+	fill_disc.material_override = _hazard_mat
 	fill_disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(fill_disc)
 
@@ -153,6 +154,21 @@ func _ensure_nodes() -> void:
 	beam_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(beam_mesh)
 
+	spike_ring_root = Node3D.new()
+	spike_ring_root.name = "SpikeRingRoot"
+	spike_ring_root.visible = false
+	add_child(spike_ring_root)
+
+	_spike_meshes.clear()
+	for i in range(SPIKE_COUNT):
+		var sp := MeshInstance3D.new()
+		sp.name = "Spike_%d" % i
+		sp.mesh = _shared_spike_mesh
+		sp.material_override = _orb_mat
+		sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		spike_ring_root.add_child(sp)
+		_spike_meshes.append(sp)
+
 	_ray_query = PhysicsRayQueryParameters3D.new()
 	_ray_query.collision_mask = 1 # World walls & VineBarriers only
 	_ray_query.collide_with_bodies = true
@@ -169,6 +185,8 @@ func deactivate() -> void:
 	set_process(false)
 	set_physics_process(false)
 	visible = false
+	if spike_ring_root:
+		spike_ring_root.visible = false
 
 
 func activate_orb(
@@ -198,6 +216,7 @@ func activate_orb(
 	inner_ring.visible = false
 	fill_disc.visible = false
 	beam_mesh.visible = false
+	spike_ring_root.visible = false
 	orb_mesh.visible = true
 	orb_mesh.mesh = (_shared_lance as Mesh) if p_is_lance else (_shared_orb as Mesh)
 	orb_mesh.position = Vector3.ZERO
@@ -237,10 +256,11 @@ func activate_sightline(
 	inner_ring.visible = false
 	fill_disc.visible = false
 	orb_mesh.visible = false
+	spike_ring_root.visible = false
 	beam_mesh.visible = true
 	beam_mesh.scale = Vector3(1.0, 1.0, _max_range)
 	beam_mesh.position = Vector3(0.0, 0.32, -_max_range * 0.5)
-	_ring_mat.albedo_color = Color(p_color.r, p_color.g, p_color.b, 0.88)
+	_ring_mat.albedo_color = Color(p_color.r, p_color.g, p_color.b, 0.90)
 
 	scale = Vector3.ONE
 	rotation = Vector3.ZERO
@@ -273,7 +293,7 @@ func activate_ground_hazard(
 	_mode = p_mode
 	_players_root = p_players_root
 	_origin_pos = p_origin
-	_target_pos = Vector3(p_target.x, 0.04, p_target.z)
+	_target_pos = Vector3(p_target.x, 0.045, p_target.z)
 	_radius = maxf(0.8, p_radius)
 	_inner_radius = clampf(p_inner_radius, 0.0, _radius - 0.5)
 	_damage = p_damage
@@ -288,30 +308,29 @@ func activate_ground_hazard(
 	rotation = Vector3.ZERO
 	scale = Vector3.ONE
 	beam_mesh.visible = false
+	outer_ring.visible = false
+	inner_ring.visible = false
+	spike_ring_root.visible = false
+	spike_ring_root.rotation = Vector3.ZERO
 
-	_ring_mat.albedo_color = Color(p_color.r, p_color.g, p_color.b, 0.92)
-	_fill_mat.albedo_color = Color(p_color.r, p_color.g, p_color.b, 0.30)
-	_orb_mat.albedo_color = p_color.lightened(0.20)
+	var in_ratio: float = (_inner_radius / _radius) if (_mode == HazardMode.DONUT_AFTERSHOCK and _inner_radius > 0.2) else 0.0
+	_hazard_mat.set_shader_parameter("hazard_color", p_color)
+	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.14, 0.22, 1.0))
+	_hazard_mat.set_shader_parameter("inner_ratio", in_ratio)
+	_hazard_mat.set_shader_parameter("progress", 0.0)
+	_hazard_mat.set_shader_parameter("hazard_stage", 0)
+	_hazard_mat.set_shader_parameter("fade_out", 1.0)
 
-	outer_ring.visible = true
-	outer_ring.scale = Vector3(_radius, 1.0, _radius)
+	fill_disc.visible = true
+	fill_disc.scale = Vector3(_radius, 1.0, _radius)
 
-	if _mode == HazardMode.DONUT_AFTERSHOCK and _inner_radius > 0.2:
-		inner_ring.visible = true
-		inner_ring.scale = Vector3(_inner_radius, 1.0, _inner_radius)
-		fill_disc.mesh = _shared_donut_disc as Mesh
-		fill_disc.visible = true
-		fill_disc.scale = Vector3(_radius, 0.15, _radius)
-	else:
-		inner_ring.visible = false
-		fill_disc.mesh = _shared_disc as Mesh
-		fill_disc.visible = true
-		fill_disc.scale = Vector3(0.15, 1.0, 0.15)
-
+	_orb_mat.albedo_color = p_color.lightened(0.22)
 	orb_mesh.visible = (_mode == HazardMode.LOB_POOL)
 	if orb_mesh.visible:
 		orb_mesh.mesh = _shared_orb as Mesh
-		orb_mesh.scale = Vector3.ONE * 1.15
+		orb_mesh.scale = Vector3.ONE * 1.18
+
+	_layout_spike_ring()
 
 	if is_inside_tree():
 		global_position = _target_pos
@@ -322,6 +341,20 @@ func activate_ground_hazard(
 	visible = true
 	set_physics_process(false)
 	set_process(true)
+
+
+func _layout_spike_ring() -> void:
+	if _spike_meshes.is_empty():
+		return
+	var ring_r: float = _radius * 0.82
+	if _mode == HazardMode.DONUT_AFTERSHOCK and _inner_radius > 0.2:
+		ring_r = (_inner_radius + _radius) * 0.5
+	for i in range(_spike_meshes.size()):
+		var ang: float = (float(i) / float(_spike_meshes.size())) * TAU
+		var sp: MeshInstance3D = _spike_meshes[i]
+		sp.position = Vector3(cos(ang) * ring_r, 0.35, sin(ang) * ring_r)
+		sp.rotation = Vector3(sin(ang) * 0.14, -ang, -cos(ang) * 0.14)
+		sp.scale = Vector3.ONE
 
 
 func _physics_process(delta: float) -> void:
@@ -366,30 +399,39 @@ func _process(delta: float) -> void:
 				return
 			# Flash bright white-gold during final lock-on moment!
 			var pulse: float = 0.5 + 0.5 * sin(_elapsed * 38.0)
-			beam_mesh.scale.x = lerpf(0.7, 1.7, pulse)
-			if rem < 0.26:
+			beam_mesh.scale.x = lerpf(0.75, 1.85, pulse)
+			if rem < 0.32:
 				_ring_mat.albedo_color = Color(1.0, 0.96, 0.58, 0.98)
 
 		HazardMode.LOB_POOL:
 			if not _detonated:
 				var t: float = clampf(_elapsed / _telegraph_time, 0.0, 1.0)
-				fill_disc.scale = Vector3(_radius * t, 1.0, _radius * t)
+				_hazard_mat.set_shader_parameter("progress", t)
 				if orb_mesh:
 					var world_lob: Vector3 = _origin_pos.lerp(_target_pos, t)
-					world_lob.y += sin(t * PI) * 3.8 + 0.35
+					world_lob.y += sin(t * PI) * 4.2 + 0.35
 					orb_mesh.global_position = world_lob
 				if _elapsed >= _telegraph_time:
 					_detonated = true
 					if orb_mesh:
 						orb_mesh.visible = false
-					fill_disc.scale = Vector3(_radius, 1.0, _radius)
-					_fill_mat.albedo_color.a = 0.46
+					_hazard_mat.set_shader_parameter("hazard_stage", 2)
+					_hazard_mat.set_shader_parameter("progress", 1.0)
+					_show_spore_globules()
 					_damage_players_in_band(0.0, _radius, _damage)
 					_tick_timer = 0.45
 			else:
 				var pool_age: float = _elapsed - _telegraph_time
-				var pulse_r: float = _radius * (0.96 + 0.04 * sin(pool_age * 7.0))
-				fill_disc.scale = Vector3(pulse_r, 1.0, pulse_r)
+				var fade_rem: float = clampf((_active_duration - pool_age) / 0.65, 0.0, 1.0)
+				_hazard_mat.set_shader_parameter("fade_out", fade_rem)
+				if spike_ring_root and spike_ring_root.visible:
+					spike_ring_root.rotation.y += delta * 1.4
+					for i in range(_spike_meshes.size()):
+						var sp: MeshInstance3D = _spike_meshes[i]
+						var bob: float = 0.20 + 0.09 * sin(_elapsed * 5.0 + float(i) * 1.3)
+						sp.position.y = bob
+						var s_val: float = 0.35 * fade_rem
+						sp.scale = Vector3(s_val, s_val, s_val)
 				_tick_timer -= delta
 				if _tick_timer <= 0.0:
 					_tick_timer = 0.48
@@ -400,37 +442,73 @@ func _process(delta: float) -> void:
 		HazardMode.GROUND_QUAKE:
 			if not _detonated:
 				var tq: float = clampf(_elapsed / _telegraph_time, 0.0, 1.0)
-				fill_disc.scale = Vector3(_radius * tq, 1.0, _radius * tq)
+				_hazard_mat.set_shader_parameter("progress", tq)
 				if _elapsed >= _telegraph_time:
 					_detonated = true
-					fill_disc.scale = Vector3(_radius * 1.08, 1.0, _radius * 1.08)
-					_fill_mat.albedo_color.a = 0.65
+					_hazard_mat.set_shader_parameter("hazard_stage", 1)
+					_hazard_mat.set_shader_parameter("progress", 1.0)
+					_show_eruption_spikes()
 					_damage_players_in_band(0.0, _radius, _damage)
 					if _shake_amount > 0.01 and is_inside_tree():
 						get_tree().call_group("world_camera_shake", "add_camera_shake", _shake_amount)
 			else:
 				var fade_q: float = clampf((_elapsed - _telegraph_time) / _active_duration, 0.0, 1.0)
-				_fill_mat.albedo_color.a = lerpf(0.65, 0.0, fade_q)
-				_ring_mat.albedo_color.a = lerpf(0.95, 0.0, fade_q)
+				_hazard_mat.set_shader_parameter("fade_out", 1.0 - fade_q)
+				_animate_eruption_spikes(fade_q)
 				if fade_q >= 1.0:
 					deactivate()
 
 		HazardMode.DONUT_AFTERSHOCK:
 			if not _detonated:
 				var td: float = clampf(_elapsed / _telegraph_time, 0.0, 1.0)
-				_fill_mat.albedo_color.a = lerpf(0.14, 0.44, td)
+				_hazard_mat.set_shader_parameter("progress", td)
 				if _elapsed >= _telegraph_time:
 					_detonated = true
-					_fill_mat.albedo_color.a = 0.72
+					_hazard_mat.set_shader_parameter("hazard_stage", 1)
+					_hazard_mat.set_shader_parameter("progress", 1.0)
+					_show_eruption_spikes()
 					_damage_players_in_band(_inner_radius, _radius, _damage)
 					if _shake_amount > 0.01 and is_inside_tree():
 						get_tree().call_group("world_camera_shake", "add_camera_shake", _shake_amount)
 			else:
 				var fade_d: float = clampf((_elapsed - _telegraph_time) / _active_duration, 0.0, 1.0)
-				_fill_mat.albedo_color.a = lerpf(0.72, 0.0, fade_d)
-				_ring_mat.albedo_color.a = lerpf(0.95, 0.0, fade_d)
+				_hazard_mat.set_shader_parameter("fade_out", 1.0 - fade_d)
+				_animate_eruption_spikes(fade_d)
 				if fade_d >= 1.0:
 					deactivate()
+
+
+func _show_eruption_spikes() -> void:
+	if spike_ring_root == null:
+		return
+	spike_ring_root.visible = true
+	for sp in _spike_meshes:
+		sp.mesh = _shared_spike_mesh
+		sp.scale = Vector3(1.15, 0.15, 1.15)
+
+
+func _animate_eruption_spikes(fade_t: float) -> void:
+	if spike_ring_root == null or not spike_ring_root.visible:
+		return
+	var s_y: float = sin(clampf(fade_t, 0.0, 1.0) * PI) * 1.15
+	for i in range(_spike_meshes.size()):
+		var sp: MeshInstance3D = _spike_meshes[i]
+		sp.scale = Vector3(maxf(0.1, 1.15 * (1.0 - fade_t * 0.65)), maxf(0.05, s_y), maxf(0.1, 1.15 * (1.0 - fade_t * 0.65)))
+		sp.position.y = 0.42 * s_y
+
+
+func _show_spore_globules() -> void:
+	if spike_ring_root == null:
+		return
+	spike_ring_root.visible = true
+	var ring_r: float = _radius * 0.68
+	for i in range(_spike_meshes.size()):
+		var ang: float = (float(i) / float(_spike_meshes.size())) * TAU
+		var sp: MeshInstance3D = _spike_meshes[i]
+		sp.mesh = _shared_orb
+		sp.rotation = Vector3.ZERO
+		sp.position = Vector3(cos(ang) * ring_r, 0.22, sin(ang) * ring_r)
+		sp.scale = Vector3.ONE * 0.35
 
 
 func _check_orb_player_hit() -> bool:
