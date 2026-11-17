@@ -5,6 +5,7 @@ const MapPresetConfigScript = preload("res://world/map_preset_config.gd")
 const GameOverOverlayScript = preload("res://ui/game_over_overlay.gd")
 const RewardDraftOverlayScript = preload("res://ui/reward_draft_overlay.gd")
 const TutorialModalScript = preload("res://ui/tutorial_modal.gd")
+const PortalConfirmModalScript = preload("res://ui/portal_confirm_modal.gd")
 
 @onready var procedural_world: ProceduralWorld = $ProceduralWorld
 @onready var encounter_manager: ArenaEncounterManager = get_node_or_null("ArenaEncounterManager") as ArenaEncounterManager
@@ -42,6 +43,7 @@ var _game_over_overlay: Control = null
 var _reward_draft_overlay: Control = null
 var _tutorial_modal: Control = null
 var _tutorial_button: Button = null
+var _portal_confirm_modal: Control = null
 
 @export var overview_mode: bool = false:
 	set(val):
@@ -105,6 +107,7 @@ func _ready() -> void:
 	spawn_players()
 	_setup_reward_draft_overlay()
 	_setup_tutorial_modal()
+	_setup_portal_confirm_modal()
 	_setup_game_over_overlay()
 	_update_hud()
 	NetworkManager.mark_client_ready()
@@ -235,7 +238,25 @@ func _on_encounter_cleared(area_idx: int, area_name: String) -> void:
 			_banner_fade_timer = 3.0
 
 
-func _on_stage_portal_entered(_player_node: Node) -> void:
+func _on_stage_portal_entered(player_node: Node) -> void:
+	if _tutorial_modal and _tutorial_modal.has_method("close_modal"):
+		_tutorial_modal.call("close_modal")
+	if _reward_draft_overlay and _reward_draft_overlay.has_method("close_draft"):
+		_reward_draft_overlay.call("close_draft")
+
+	var unclaimed: int = 0
+	if encounter_manager and encounter_manager.has_method("get_unclaimed_pedestal_count"):
+		unclaimed = int(encounter_manager.call("get_unclaimed_pedestal_count"))
+
+	if unclaimed > 0 and _portal_confirm_modal != null and _portal_confirm_modal.has_method("open_for_unclaimed"):
+		var p_target: Node = player_node if player_node != null else _local_player
+		_portal_confirm_modal.call("open_for_unclaimed", unclaimed, p_target)
+		return
+
+	_traverse_stage_portal()
+
+
+func _traverse_stage_portal() -> void:
 	_on_regen_pressed()
 	if camera and _local_player and is_instance_valid(_local_player) and not is_overview:
 		camera.global_position = _local_player.global_position + camera_offset
@@ -324,6 +345,8 @@ func _on_regen_pressed() -> void:
 func _sync_world_layout(p_seed: int, p_mode: int) -> void:
 	if _reward_draft_overlay and _reward_draft_overlay.has_method("close_draft"):
 		_reward_draft_overlay.call("close_draft")
+	if _portal_confirm_modal and _portal_confirm_modal.has_method("close_modal"):
+		_portal_confirm_modal.call("close_modal")
 	NetworkManager.active_map_seed = p_seed
 	NetworkManager.active_map_preset = p_mode
 	if ProjectilePool and ProjectilePool.has_method("release_all"):
@@ -373,9 +396,25 @@ func _on_player_item_replaced_for_drop(category: String, item_id: int, drop_orig
 func _on_dropped_item_interacted(drop_node: Node3D, player_node: Node) -> void:
 	if _tutorial_modal and _tutorial_modal.has_method("close_modal"):
 		_tutorial_modal.call("close_modal")
+	if _portal_confirm_modal and _portal_confirm_modal.has_method("close_modal"):
+		_portal_confirm_modal.call("close_modal")
 	if _reward_draft_overlay and _reward_draft_overlay.has_method("open_for_ground_item"):
 		_reward_draft_overlay.call("open_for_ground_item", drop_node, player_node)
 
+
+func _setup_portal_confirm_modal() -> void:
+	if _portal_confirm_modal != null:
+		return
+	var confirm_layer := CanvasLayer.new()
+	confirm_layer.name = "PortalConfirmLayer"
+	confirm_layer.layer = 10
+	add_child(confirm_layer)
+
+	_portal_confirm_modal = PortalConfirmModalScript.new() as Control
+	_portal_confirm_modal.name = "PortalConfirmModal"
+	confirm_layer.add_child(_portal_confirm_modal)
+	if _portal_confirm_modal.has_signal("proceed_confirmed"):
+		_portal_confirm_modal.connect("proceed_confirmed", _traverse_stage_portal)
 
 
 func _bind_local_player_health_hud() -> void:

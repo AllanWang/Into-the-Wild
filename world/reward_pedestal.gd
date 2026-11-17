@@ -183,6 +183,10 @@ func _has_card(arr: Array[Dictionary], cand: Dictionary) -> bool:
 	return false
 
 
+func is_unclaimed() -> bool:
+	return _active and not _consuming
+
+
 func consume_pedestal() -> void:
 	if not _active or _consuming:
 		return

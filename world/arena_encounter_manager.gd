@@ -213,6 +213,16 @@ func _is_clear_of_interactables(cand_2d: Vector2) -> bool:
 	return true
 
 
+func get_unclaimed_pedestal_count() -> int:
+	if _pedestal_pool == null:
+		return 0
+	var count: int = 0
+	for ped_n in _pedestal_pool.get_children():
+		if ped_n != null and ped_n.has_method("is_unclaimed") and bool(ped_n.call("is_unclaimed")):
+			count += 1
+	return count
+
+
 func is_nearest_interactable(candidate: Node3D, player_node: Node3D, max_radius: float) -> bool:
 	if candidate == null or player_node == null:
 		return false
@@ -228,6 +238,8 @@ func is_nearest_interactable(candidate: Node3D, player_node: Node3D, max_radius:
 		for ped_n in _pedestal_pool.get_children():
 			var ped3d: Node3D = ped_n as Node3D
 			if ped3d == null or ped3d == candidate or not ped3d.visible:
+				continue
+			if ped3d.has_method("is_unclaimed") and not bool(ped3d.call("is_unclaimed")):
 				continue
 			var dx: float = px - ped3d.global_position.x
 			var dz: float = pz - ped3d.global_position.z

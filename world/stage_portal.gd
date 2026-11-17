@@ -230,11 +230,15 @@ func _process(delta: float) -> void:
 				prompt_label.modulate = Color(0.86, 0.78, 1.0, 0.86)
 
 	if _player_in_range and near_player != null:
-		var blocked: bool = bool(near_player.get("ui_input_blocked")) if ("ui_input_blocked" in near_player) else false
-		if not blocked and Input.is_action_just_pressed("interact"):
-			var p_ref: Node = near_player
-			deactivate()
-			portal_activated.emit(p_ref)
+		var can_act: bool = true
+		if near_player.has_method("can_world_interact"):
+			can_act = bool(near_player.call("can_world_interact"))
+		elif "ui_input_blocked" in near_player:
+			can_act = not bool(near_player.get("ui_input_blocked"))
+		if can_act and Input.is_action_just_pressed("interact"):
+			if near_player.has_method("consume_world_interact"):
+				near_player.call("consume_world_interact")
+			portal_activated.emit(near_player)
 
 
 func _find_local_player_in_range() -> Node3D:
@@ -251,5 +255,8 @@ func _find_local_player_in_range() -> Node3D:
 		var dx: float = p3d.global_position.x - global_position.x
 		var dz: float = p3d.global_position.z - global_position.z
 		if dx * dx + dz * dz <= r2:
+			var mgr: Node = get_parent()
+			if mgr != null and mgr.has_method("is_nearest_interactable") and not bool(mgr.call("is_nearest_interactable", self, p3d, INTERACT_RADIUS)):
+				return null
 			return p3d
 	return null
