@@ -128,6 +128,10 @@ func _detect_instance_index() -> void:
 func _ready() -> void:
 	if not is_active:
 		return
+	if OS.has_feature("editor") and not is_embedded:
+		get_tree().create_timer(0.5).timeout.connect(func() -> void:
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, false)
+		)
 	
 	if is_embedded:
 		print("[DebugTools] Instance is embedded in editor (--wid).")
