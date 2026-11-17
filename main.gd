@@ -7,6 +7,7 @@ const GameOverOverlayScript = preload("res://ui/game_over_overlay.gd")
 const RewardDraftOverlayScript = preload("res://ui/reward_draft_overlay.gd")
 const TutorialModalScript = preload("res://ui/tutorial_modal.gd")
 const PortalConfirmModalScript = preload("res://ui/portal_confirm_modal.gd")
+const PauseMenuModalScript = preload("res://ui/pause_menu_modal.gd")
 
 @onready var procedural_world: ProceduralWorld = $ProceduralWorld
 @onready var encounter_manager: ArenaEncounterManager = get_node_or_null("ArenaEncounterManager") as ArenaEncounterManager
@@ -47,6 +48,7 @@ var _reward_draft_overlay: Control = null
 var _tutorial_modal: Control = null
 var _tutorial_button: Button = null
 var _portal_confirm_modal: Control = null
+var _pause_menu_modal: Control = null
 var _biome_button: Button = null
 var _camera_shake_trauma: float = 0.0
 var _shake_phase: float = 0.0
@@ -134,6 +136,7 @@ func _ready() -> void:
 	_setup_tutorial_modal()
 	_setup_portal_confirm_modal()
 	_setup_game_over_overlay()
+	_setup_pause_menu_modal()
 	_update_hud()
 	NetworkManager.mark_client_ready()
 
@@ -151,10 +154,50 @@ func _configure_button(btn: Button, callback: Callable) -> void:
 		btn.pressed.connect(callback)
 
 
+func _is_solo_session() -> bool:
+	var p_count: int = NetworkManager.get_player_count()
+	if p_count > 1:
+		return false
+	if multiplayer.has_multiplayer_peer() and not multiplayer.get_peers().is_empty():
+		return false
+	return true
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var ke: InputEventKey = event as InputEventKey
+		if ke.keycode == KEY_ESCAPE:
+			if _game_over_overlay and _game_over_overlay.visible:
+				return
+			if _portal_confirm_modal and _portal_confirm_modal.has_method("is_open") and bool(_portal_confirm_modal.call("is_open")):
+				_portal_confirm_modal.call("close_modal")
+				get_viewport().set_input_as_handled()
+				return
+			if _tutorial_modal and _tutorial_modal.has_method("is_open") and bool(_tutorial_modal.call("is_open")):
+				_tutorial_modal.call("close_modal")
+				get_viewport().set_input_as_handled()
+				return
+			if _reward_draft_overlay and bool(_reward_draft_overlay.get("_is_open")):
+				_reward_draft_overlay.call("close_draft")
+				get_viewport().set_input_as_handled()
+				return
+			if player_health_bar:
+				if player_health_bar.has_method("is_pickup_placement_active") and bool(player_health_bar.call("is_pickup_placement_active")):
+					return
+				if bool(player_health_bar.get("_tab_toggled_open")) and player_health_bar.has_method("close_tab_edit_mode"):
+					player_health_bar.call("close_tab_edit_mode")
+					get_viewport().set_input_as_handled()
+					return
+			if _pause_menu_modal:
+				if bool(_pause_menu_modal.call("is_open")):
+					_pause_menu_modal.call("close_menu")
+				else:
+					_pause_menu_modal.call("open_menu", _local_player, _is_solo_session())
+				get_viewport().set_input_as_handled()
+				return
 		if ke.keycode == KEY_F1 or ke.keycode == KEY_H:
+			if _pause_menu_modal and bool(_pause_menu_modal.call("is_open")):
+				return
 			_on_tutorial_pressed()
 			get_viewport().set_input_as_handled()
 			return
@@ -554,6 +597,27 @@ func _on_tutorial_pressed() -> void:
 		_tutorial_modal.call("toggle_for_player", _local_player)
 
 
+func _setup_pause_menu_modal() -> void:
+	if _pause_menu_modal != null:
+		return
+	var pause_layer := CanvasLayer.new()
+	pause_layer.name = "PauseMenuLayer"
+	pause_layer.layer = 11
+	pause_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(pause_layer)
+
+	_pause_menu_modal = PauseMenuModalScript.new() as Control
+	_pause_menu_modal.name = "PauseMenuModal"
+	pause_layer.add_child(_pause_menu_modal)
+	_pause_menu_modal.connect("tutorial_requested", _on_tutorial_pressed)
+	_pause_menu_modal.connect("main_menu_requested", _on_leave_pressed)
+	_pause_menu_modal.connect("debug_biome_requested", _on_biome_pressed)
+	_pause_menu_modal.connect("debug_preset_requested", _on_preset_pressed)
+	_pause_menu_modal.connect("debug_regen_requested", _on_regen_pressed)
+	_pause_menu_modal.connect("debug_teleport_requested", _on_teleport_pressed)
+	_pause_menu_modal.connect("debug_overview_requested", _on_cam_button_pressed)
+
+
 func _setup_game_over_overlay() -> void:
 	if _game_over_overlay != null:
 		return
@@ -579,6 +643,10 @@ func _close_game_over_and_restore_hud() -> void:
 
 
 func _on_game_over_restart_new_map() -> void:
+	if _pause_menu_modal and _pause_menu_modal.has_method("close_menu"):
+		_pause_menu_modal.call("close_menu")
+	if get_tree().paused:
+		get_tree().paused = false
 	_close_game_over_and_restore_hud()
 	for ch in players_container.get_children():
 		if ch.has_method("reset_for_new_run"):
@@ -591,6 +659,10 @@ func _on_game_over_restart_new_map() -> void:
 
 
 func _on_game_over_retry_sanctuary() -> void:
+	if _pause_menu_modal and _pause_menu_modal.has_method("close_menu"):
+		_pause_menu_modal.call("close_menu")
+	if get_tree().paused:
+		get_tree().paused = false
 	_close_game_over_and_restore_hud()
 	if encounter_manager and encounter_manager.is_encounter_active():
 		encounter_manager.reset_active_encounter(false)
@@ -602,6 +674,10 @@ func _on_game_over_retry_sanctuary() -> void:
 
 func _on_player_defeated(_peer_id: int) -> void:
 	# Keep the 3D world and remaining arena units active in the background while fading to grayscale
+	if _pause_menu_modal and _pause_menu_modal.has_method("close_menu"):
+		_pause_menu_modal.call("close_menu")
+	if get_tree().paused:
+		get_tree().paused = false
 	if _reward_draft_overlay and _reward_draft_overlay.has_method("close_draft"):
 		_reward_draft_overlay.call("close_draft")
 	if hud_layer:
@@ -680,6 +756,8 @@ func _on_player_connected(peer_id: int, info: Dictionary) -> void:
 		player_instance.call("setup", peer_id, info)
 		_wire_player_signals_and_hud(player_instance)
 	_update_hud()
+	if _pause_menu_modal and bool(_pause_menu_modal.call("is_open")):
+		_pause_menu_modal.call("refresh_pause_mode", _is_solo_session())
 
 
 func _on_player_disconnected(peer_id: int) -> void:
@@ -687,14 +765,24 @@ func _on_player_disconnected(peer_id: int) -> void:
 	if player_node:
 		player_node.queue_free()
 	_update_hud()
+	if _pause_menu_modal and bool(_pause_menu_modal.call("is_open")):
+		_pause_menu_modal.call("refresh_pause_mode", _is_solo_session())
 
 
 func _on_server_disconnected() -> void:
+	if _pause_menu_modal and _pause_menu_modal.has_method("close_menu"):
+		_pause_menu_modal.call("close_menu")
+	if get_tree() and get_tree().paused:
+		get_tree().paused = false
 	if get_tree() and get_tree().current_scene and get_tree().current_scene.scene_file_path != "res://ui/lobby.tscn":
 		get_tree().change_scene_to_file("res://ui/lobby.tscn")
 
 
 func _on_leave_pressed() -> void:
+	if _pause_menu_modal and _pause_menu_modal.has_method("close_menu"):
+		_pause_menu_modal.call("close_menu")
+	if get_tree() and get_tree().paused:
+		get_tree().paused = false
 	NetworkManager.leave_game()
 	get_tree().change_scene_to_file("res://ui/lobby.tscn")
 
