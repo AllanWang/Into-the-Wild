@@ -1,17 +1,16 @@
 class_name EnemySphere
 extends CharacterBody3D
 
-## Pooled Enemy unit supporting Progressive Mini-Unit Abilities, Specialized Arena Elites,
-## and Multi-Pattern Bosses:
-## - CHASER (0): Fast melee swarm sphere
-## - DASHER (1): Periodic diagonal/lateral juke-dash burst
-## - BURROWER (2): Dives underground (invulnerable & untargetable while tunneling!) -> warning ring -> erupts
-## - LUNGER (3): Crouched telegraph wind-up -> high-speed forward lunge
-## - BRUISER (4): Heavy Tremor Sentinel -> radial Ground Quake + camera shake
-## - MIRE_LOBBER (5): Standoff caster -> arcing Corrosive Pool mortar
-## - OCULAR_SNIPER (6): Long-range marksman -> tracking sightline + locked Sniper Lance
-## - BOSS (7): Tectonic Sovereign -> Double-Quake (inner + donut ring), Faultline Spikes & Charge
-## - BOSS_BLIGHTWEAVER (8): Blightweaver Core -> Acidic Rain Pools, Horizon Fans & Safe-Eye Cataclysm
+## Pooled Enemy unit supporting Distinct 3D Role Silhouettes, Wind-Up Tells & Telegraph Timings:
+## - CHASER (0): Crimson melee swarm sphere with eager forward-rolling bounce
+## - DASHER (1): Twin wing-fins, nervous hover weave -> 0.58s rapid spin + cyan sightline -> juke-dash
+## - BURROWER (2): Nose drill-auger -> 0.55s nose-down drill hop -> invulnerable tunnel -> 0.78s strobe emerge ring
+## - LUNGER (3): Twin forward tusks -> 0.78s pull-back shudder + crimson sightline -> lunge
+## - BRUISER (4): Orbiting monolith armor plates -> 1.15s high levitation spin -> radial Ground Quake + camera shake
+## - MIRE_LOBBER (5): Overhead swelling toxic mortar sac -> 0.65s swell lean-back -> 1.10s arcing Blight Pool
+## - OCULAR_SNIPER (6): Floating front aiming scope ring -> 1.25s spinning lock-on sightline -> Sniper Lance
+## - BOSS (7): Tectonic Sovereign -> 1.15s levitating double-quake, 0.95s faultline cascade, 0.85s shudder charge
+## - BOSS_BLIGHTWEAVER (8): Blightweaver Core -> 0.75s acidic rain, 0.70s salvo spin, 1.30s levitating safe-eye cataclysm
 
 const ArchetypeScript = preload("res://enemies/enemy_archetype_data.gd")
 const HazardScript = preload("res://world/enemy_hazard_effect.gd")
@@ -35,6 +34,8 @@ var grass_displacement_size: float = 0.65
 
 var _trim_ring_a: MeshInstance3D = null
 var _trim_ring_b: MeshInstance3D = null
+var _role_prop_a: MeshInstance3D = null
+var _role_prop_b: MeshInstance3D = null
 var _burrow_ring_inst: MeshInstance3D = null
 
 var _archetype: EnemyArchetypeData = null
@@ -51,8 +52,11 @@ var _base_radius: float = 0.38
 var _ability_cd: float = 2.0
 var _action_timer: float = 0.0
 var _windup_timer: float = 0.0
+var _windup_duration_ref: float = 1.0
+var _pending_action_kind: int = 0 # 0=none, 1=dash/lunge/lob, 2=boss_charge, 3=boss_acid, 4=boss_salvo
+var _pending_target_pos: Vector3 = Vector3.ZERO
 var _action_dir: Vector3 = Vector3.FORWARD
-var _burrow_state: int = 0 # 0=Surface, 1=Burrowed (Invulnerable!), 2=Emerging warning
+var _burrow_state: int = 0 # 0=Surface, 1=Burrowed (Invulnerable!), 2=Emerging warning, 3=Diving windup
 var _boss_pattern_idx: int = 0
 var _sub_step_timer: float = 0.0
 var _sub_steps_left: int = 0
@@ -96,6 +100,18 @@ func _ready() -> void:
 		_trim_ring_b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		visual_root.add_child(_trim_ring_b)
 
+		_role_prop_a = MeshInstance3D.new()
+		_role_prop_a.name = "RolePropA"
+		_role_prop_a.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_role_prop_a.visible = false
+		visual_root.add_child(_role_prop_a)
+
+		_role_prop_b = MeshInstance3D.new()
+		_role_prop_b.name = "RolePropB"
+		_role_prop_b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_role_prop_b.visible = false
+		visual_root.add_child(_role_prop_b)
+
 	if _burrow_ring_inst == null:
 		_burrow_ring_inst = MeshInstance3D.new()
 		_burrow_ring_inst.name = "BurrowFloorRing"
@@ -134,12 +150,15 @@ func _reset_statuses() -> void:
 	_suppress_hit_flash = false
 	_burrow_state = 0
 	_windup_timer = 0.0
+	_windup_duration_ref = 1.0
+	_pending_action_kind = 0
 	_action_timer = 0.0
 	_sub_steps_left = 0
 	if _burrow_ring_inst:
 		_burrow_ring_inst.visible = false
 	if visual_root:
 		visual_root.visible = true
+		visual_root.rotation = Vector3.ZERO
 
 
 func activate(
@@ -182,6 +201,7 @@ func activate(
 		visual_root.visible = true
 		visual_root.position = Vector3(0.0, _base_radius + 0.06, 0.0)
 		visual_root.scale = Vector3.ONE * (_base_radius * 0.2)
+		visual_root.rotation = Vector3.ZERO
 
 	var is_boss: bool = ArchetypeScript.is_boss_archetype(_archetype.archetype_id)
 	if hp_bar_root:
@@ -199,7 +219,7 @@ func activate(
 	_is_dying = false
 	_death_timer = 0.0
 	_hit_flash_timer = 0.0
-	_ability_cd = 1.35 + float(p_enemy_id % 5) * 0.32
+	_ability_cd = 1.45 + float(p_enemy_id % 5) * 0.32
 	_boss_pattern_idx = p_enemy_id % 3
 	_bob_phase = float(p_enemy_id) * 1.37
 	velocity = Vector3.ZERO
@@ -232,20 +252,95 @@ func _configure_trim_visuals() -> void:
 	_trim_ring_a.scale = Vector3.ONE
 	_trim_ring_b.scale = Vector3.ONE * 1.22
 
+	if _role_prop_a:
+		_role_prop_a.visible = false
+		_role_prop_a.scale = Vector3.ONE
+		_role_prop_a.rotation = Vector3.ZERO
+		_role_prop_a.material_override = _archetype.trim_material
+	if _role_prop_b:
+		_role_prop_b.visible = false
+		_role_prop_b.scale = Vector3.ONE
+		_role_prop_b.rotation = Vector3.ZERO
+		_role_prop_b.material_override = _archetype.trim_material
+
 	match aid:
 		ArchetypeScript.ArchetypeId.DASHER:
 			_trim_ring_a.rotation_degrees = Vector3(18.0, 0.0, -18.0)
+			if _role_prop_a and _role_prop_b:
+				_role_prop_a.mesh = ArchetypeScript.get_fin_mesh()
+				_role_prop_a.position = Vector3(-0.95, 0.0, 0.25)
+				_role_prop_a.rotation_degrees = Vector3(0.0, 28.0, 0.0)
+				_role_prop_a.visible = true
+				_role_prop_b.mesh = ArchetypeScript.get_fin_mesh()
+				_role_prop_b.position = Vector3(0.95, 0.0, 0.25)
+				_role_prop_b.rotation_degrees = Vector3(0.0, -28.0, 0.0)
+				_role_prop_b.visible = true
 		ArchetypeScript.ArchetypeId.BURROWER:
 			_trim_ring_a.rotation_degrees = Vector3(0.0, 0.0, 0.0)
+			if _role_prop_a:
+				_role_prop_a.mesh = ArchetypeScript.get_cone_spike_mesh()
+				_role_prop_a.position = Vector3(0.0, -0.35, 0.85)
+				_role_prop_a.rotation_degrees = Vector3(-125.0, 0.0, 0.0)
+				_role_prop_a.visible = true
 		ArchetypeScript.ArchetypeId.LUNGER:
 			_trim_ring_a.rotation_degrees = Vector3(68.0, 0.0, 0.0)
-		ArchetypeScript.ArchetypeId.OCULAR_SNIPER:
-			_trim_ring_a.rotation_degrees = Vector3(88.0, 0.0, 0.0)
+			if _role_prop_a and _role_prop_b:
+				_role_prop_a.mesh = ArchetypeScript.get_cone_spike_mesh()
+				_role_prop_a.position = Vector3(-0.55, -0.10, 0.92)
+				_role_prop_a.rotation_degrees = Vector3(85.0, 0.0, 0.0)
+				_role_prop_a.scale = Vector3(0.85, 0.85, 0.85)
+				_role_prop_a.visible = true
+				_role_prop_b.mesh = ArchetypeScript.get_cone_spike_mesh()
+				_role_prop_b.position = Vector3(0.55, -0.10, 0.92)
+				_role_prop_b.rotation_degrees = Vector3(85.0, 0.0, 0.0)
+				_role_prop_b.scale = Vector3(0.85, 0.85, 0.85)
+				_role_prop_b.visible = true
+		ArchetypeScript.ArchetypeId.BRUISER:
+			_trim_ring_a.rotation_degrees = Vector3(24.0, 0.0, -24.0)
+			if _role_prop_a and _role_prop_b:
+				_role_prop_a.mesh = ArchetypeScript.get_plate_mesh()
+				_role_prop_a.position = Vector3(-1.15, 0.0, 0.0)
+				_role_prop_a.visible = true
+				_role_prop_b.mesh = ArchetypeScript.get_plate_mesh()
+				_role_prop_b.position = Vector3(1.15, 0.0, 0.0)
+				_role_prop_b.visible = true
 		ArchetypeScript.ArchetypeId.MIRE_LOBBER:
 			_trim_ring_a.rotation_degrees = Vector3(36.0, 0.0, 28.0)
-		_:
+			if _role_prop_a:
+				_role_prop_a.mesh = ArchetypeScript.get_sac_orb_mesh()
+				_role_prop_a.position = Vector3(0.0, 1.05, 0.0)
+				_role_prop_a.visible = true
+		ArchetypeScript.ArchetypeId.OCULAR_SNIPER:
+			_trim_ring_a.rotation_degrees = Vector3(88.0, 0.0, 0.0)
+			if _role_prop_a:
+				_role_prop_a.mesh = ArchetypeScript.get_scope_ring_mesh()
+				_role_prop_a.position = Vector3(0.0, 0.05, 1.08)
+				_role_prop_a.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+				_role_prop_a.visible = true
+		ArchetypeScript.ArchetypeId.BOSS:
 			_trim_ring_a.rotation_degrees = Vector3(24.0, 0.0, -24.0)
 			_trim_ring_b.rotation_degrees = Vector3(-42.0, 30.0, 32.0)
+			if _role_prop_a and _role_prop_b:
+				_role_prop_a.mesh = ArchetypeScript.get_plate_mesh()
+				_role_prop_a.position = Vector3(-1.18, 0.22, 0.0)
+				_role_prop_a.scale = Vector3(1.12, 1.12, 1.12)
+				_role_prop_a.visible = true
+				_role_prop_b.mesh = ArchetypeScript.get_plate_mesh()
+				_role_prop_b.position = Vector3(1.18, 0.22, 0.0)
+				_role_prop_b.scale = Vector3(1.12, 1.12, 1.12)
+				_role_prop_b.visible = true
+		ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
+			_trim_ring_a.rotation_degrees = Vector3(24.0, 0.0, -24.0)
+			_trim_ring_b.rotation_degrees = Vector3(-42.0, 30.0, 32.0)
+			if _role_prop_a and _role_prop_b:
+				_role_prop_a.mesh = ArchetypeScript.get_sac_orb_mesh()
+				_role_prop_a.position = Vector3(0.0, 1.12, 0.0)
+				_role_prop_a.scale = Vector3(0.76, 0.76, 0.76)
+				_role_prop_a.visible = true
+				_role_prop_b.mesh = ArchetypeScript.get_scope_ring_mesh()
+				_role_prop_b.position = Vector3(0.0, 0.08, 1.18)
+				_role_prop_b.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+				_role_prop_b.visible = true
 
 
 func deactivate() -> void:
@@ -388,12 +483,22 @@ func _refresh_body_material() -> void:
 		sphere_mesh_inst.material_override = _archetype.body_material
 
 
+func _enter_burrow_dive_windup(tunnel_dir: Vector3) -> void:
+	_burrow_state = 3
+	_windup_timer = 0.55
+	_windup_duration_ref = 0.55
+	_action_dir = tunnel_dir
+	velocity = Vector3.ZERO
+
+
 func _enter_burrow(tunnel_dir: Vector3) -> void:
 	_burrow_state = 1
 	_action_timer = 0.95
+	_windup_timer = 0.0
 	_action_dir = tunnel_dir
 	if visual_root:
 		visual_root.visible = false
+		visual_root.rotation.x = 0.0
 	if hp_bar_root:
 		hp_bar_root.visible = false
 	if hurtbox_comp:
@@ -406,15 +511,16 @@ func _enter_burrow(tunnel_dir: Vector3) -> void:
 
 func _enter_burrow_emerge_warning() -> void:
 	_burrow_state = 2
-	_windup_timer = 0.34
+	_windup_timer = 0.78
+	_windup_duration_ref = 0.78
 	velocity = Vector3.ZERO
 	if _burrow_ring_inst:
-		_burrow_ring_inst.scale = Vector3.ONE * (_base_radius * 2.3)
+		_burrow_ring_inst.scale = Vector3.ONE * (_base_radius * 2.35)
 
 
 func _complete_burrow_emerge() -> void:
 	_burrow_state = 0
-	_ability_cd = 4.2
+	_ability_cd = 4.4
 	if _burrow_ring_inst:
 		_burrow_ring_inst.visible = false
 		_burrow_ring_inst.scale = Vector3.ONE * (_base_radius * 1.6)
@@ -424,6 +530,8 @@ func _complete_burrow_emerge() -> void:
 		hurtbox_comp.set_active_deferred(true)
 	if visual_root:
 		visual_root.visible = true
+		visual_root.rotation.x = 0.0
+		visual_root.position = Vector3(0.0, _base_radius + 0.06, 0.0)
 		visual_root.scale = Vector3(_base_radius * 0.75, _base_radius * 1.45, _base_radius * 0.75)
 	if health_comp and hp_bar_root and health_comp.current_health < health_comp.max_health:
 		hp_bar_root.visible = true
@@ -438,7 +546,7 @@ func _process(delta: float) -> void:
 			_release_to_pool()
 		return
 
-	if not _is_active_unit:
+	if not _is_active_unit or _archetype == null:
 		return
 
 	if _hit_flash_timer > 0.0:
@@ -448,26 +556,116 @@ func _process(delta: float) -> void:
 
 	_bob_phase += delta * 5.2
 
-	if _burrow_state > 0 and _burrow_ring_inst:
-		var pulse_b: float = (2.2 if _burrow_state == 2 else 1.55) + 0.22 * sin(_bob_phase * 3.0)
+	if (_burrow_state == 1 or _burrow_state == 2) and _burrow_ring_inst:
+		var pulse_b: float = (2.35 if _burrow_state == 2 else 1.55) + 0.25 * sin(_bob_phase * (3.8 if _burrow_state == 2 else 2.6))
 		_burrow_ring_inst.scale = Vector3.ONE * (_base_radius * pulse_b)
-		_burrow_ring_inst.rotation.y += delta * 4.5
+		_burrow_ring_inst.rotation.y += delta * (7.5 if _burrow_state == 2 else 4.5)
 		return
 
+	var aid: int = _archetype.archetype_id
+	var windup_prog: float = clampf(1.0 - (_windup_timer / maxf(0.05, _windup_duration_ref)), 0.0, 1.0) if _windup_timer > 0.0 else 0.0
+
 	if _trim_ring_a and _trim_ring_a.visible:
-		_trim_ring_a.rotation.y += delta * 1.9
+		var spin_a: float = 7.5 if _windup_timer > 0.0 else 1.9
+		_trim_ring_a.rotation.y += delta * spin_a
 	if _trim_ring_b and _trim_ring_b.visible:
-		_trim_ring_b.rotation.y -= delta * 1.4
+		var spin_b: float = -6.0 if _windup_timer > 0.0 else -1.4
+		_trim_ring_b.rotation.y += delta * spin_b
 		_trim_ring_b.rotation.x += delta * 0.7
 
-	if visual_root:
-		var target_scale := Vector3.ONE * _base_radius
-		if _windup_timer > 0.0:
-			target_scale = Vector3(_base_radius * 1.24, _base_radius * 0.74, _base_radius * 1.24)
-		elif _action_timer > 0.0:
-			target_scale = Vector3(_base_radius * 0.84, _base_radius * 0.86, _base_radius * 1.32)
-		visual_root.scale = visual_root.scale.lerp(target_scale, clampf(14.0 * delta, 0.0, 1.0))
-		visual_root.position.y = _base_radius + 0.06 + sin(_bob_phase) * 0.05
+	if visual_root == null:
+		return
+
+	var target_scale := Vector3.ONE * _base_radius
+	var target_pos := Vector3(0.0, _base_radius + 0.06 + sin(_bob_phase) * 0.05, 0.0)
+	var target_rot_x: float = 0.0
+	var target_rot_z: float = 0.0
+
+	if _windup_timer > 0.0:
+		match aid:
+			ArchetypeScript.ArchetypeId.DASHER:
+				visual_root.rotation.y += delta * 18.0
+				target_scale = Vector3(_base_radius * 0.88, _base_radius * 1.15, _base_radius * 0.88)
+			ArchetypeScript.ArchetypeId.BURROWER:
+				target_pos.y = _base_radius + 0.35 * sin(windup_prog * PI)
+				target_rot_x = deg_to_rad(75.0)
+				visual_root.rotation.y += delta * 14.0
+			ArchetypeScript.ArchetypeId.LUNGER:
+				var pull_back: Vector3 = -_action_dir * (0.28 * windup_prog)
+				var shudder: Vector3 = Vector3(-_action_dir.z, 0.0, _action_dir.x) * (sin(_bob_phase * 11.0) * 0.09)
+				target_pos = Vector3(pull_back.x + shudder.x, _base_radius * 0.72, pull_back.z + shudder.z)
+				target_scale = Vector3(_base_radius * 1.36, _base_radius * 0.58, _base_radius * 1.36)
+			ArchetypeScript.ArchetypeId.BRUISER:
+				var lev_h: float = 0.95 * windup_prog if windup_prog < 0.85 else 0.95 * (1.0 - (windup_prog - 0.85) / 0.15)
+				target_pos.y = _base_radius + 0.08 + maxf(0.0, lev_h)
+				visual_root.rotation.y += delta * 7.5
+				target_scale = Vector3(_base_radius * 1.14, _base_radius * 0.92, _base_radius * 1.14)
+			ArchetypeScript.ArchetypeId.MIRE_LOBBER:
+				target_rot_x = -0.35 * windup_prog
+				if _role_prop_a:
+					var sac_s: float = lerpf(1.0, 1.85, windup_prog)
+					_role_prop_a.scale = Vector3.ONE * sac_s
+			ArchetypeScript.ArchetypeId.OCULAR_SNIPER:
+				target_pos.y = _base_radius + 0.28
+				if _role_prop_a:
+					_role_prop_a.rotation.y += delta * 12.0
+					var sc_ring: float = lerpf(1.0, 0.58, windup_prog)
+					_role_prop_a.scale = Vector3.ONE * sc_ring
+			ArchetypeScript.ArchetypeId.BOSS:
+				if _pending_action_kind == 2:
+					var c_back: Vector3 = -_action_dir * (0.36 * windup_prog)
+					var c_shud: Vector3 = Vector3(-_action_dir.z, 0.0, _action_dir.x) * (sin(_bob_phase * 12.0) * 0.11)
+					target_pos = Vector3(c_back.x + c_shud.x, _base_radius * 0.82, c_back.z + c_shud.z)
+					target_scale = Vector3(_base_radius * 1.24, _base_radius * 0.72, _base_radius * 1.24)
+				elif _pending_action_kind == 5:
+					target_rot_x = 0.28 * windup_prog
+				else:
+					var b_lev: float = 1.25 * sin(windup_prog * PI * 0.85)
+					target_pos.y = _base_radius + 0.08 + maxf(0.0, b_lev)
+					visual_root.rotation.y += delta * 5.0
+			ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
+				if _pending_action_kind == 3 and _role_prop_a:
+					_role_prop_a.scale = Vector3.ONE * lerpf(0.76, 1.55, windup_prog)
+					target_rot_x = -0.25 * windup_prog
+				elif _pending_action_kind == 4:
+					visual_root.rotation.y += delta * 10.0
+					target_pos.y = _base_radius + 0.30
+				else:
+					var bw_lev: float = 1.25 * sin(windup_prog * PI * 0.85)
+					target_pos.y = _base_radius + 0.08 + maxf(0.0, bw_lev)
+			_:
+				target_scale = Vector3(_base_radius * 1.24, _base_radius * 0.74, _base_radius * 1.24)
+	elif _action_timer > 0.0:
+		target_scale = Vector3(_base_radius * 0.84, _base_radius * 0.86, _base_radius * 1.32)
+	else:
+		# Distinct per-role idle/movement animations!
+		match aid:
+			ArchetypeScript.ArchetypeId.CHASER:
+				target_rot_x = sin(_bob_phase * 1.4) * 0.18
+			ArchetypeScript.ArchetypeId.DASHER:
+				target_pos.x = sin(_bob_phase * 2.2) * 0.10
+				target_rot_z = -sin(_bob_phase * 2.2) * 0.18
+			ArchetypeScript.ArchetypeId.BURROWER:
+				target_pos.y = _base_radius + 0.02 + absf(sin(_bob_phase * 1.6)) * 0.03
+			ArchetypeScript.ArchetypeId.BRUISER:
+				target_pos.y = _base_radius + 0.04 + absf(sin(_bob_phase * 0.85)) * 0.08
+			ArchetypeScript.ArchetypeId.MIRE_LOBBER:
+				var sq: float = 0.07 * sin(_bob_phase)
+				target_scale = Vector3(_base_radius * (1.0 + sq), _base_radius * (1.0 - sq), _base_radius * (1.0 + sq))
+				if _role_prop_a:
+					_role_prop_a.scale = Vector3.ONE
+			ArchetypeScript.ArchetypeId.OCULAR_SNIPER:
+				target_pos.y = _base_radius + 0.28
+				if _role_prop_a:
+					_role_prop_a.scale = Vector3.ONE
+			ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
+				if _role_prop_a:
+					_role_prop_a.scale = Vector3.ONE * 0.76
+
+	visual_root.scale = visual_root.scale.lerp(target_scale, clampf(14.0 * delta, 0.0, 1.0))
+	visual_root.position = visual_root.position.lerp(target_pos, clampf(16.0 * delta, 0.0, 1.0))
+	visual_root.rotation.x = lerpf(visual_root.rotation.x, target_rot_x, clampf(14.0 * delta, 0.0, 1.0))
+	visual_root.rotation.z = lerpf(visual_root.rotation.z, target_rot_z, clampf(14.0 * delta, 0.0, 1.0))
 
 
 func _physics_process(delta: float) -> void:
@@ -489,7 +687,6 @@ func _physics_process(delta: float) -> void:
 	var desired_vel := Vector3.ZERO
 	var aid: int = _archetype.archetype_id
 
-	# Handle multi-step boss follow-ups (e.g. Tectonic outer donut ring or staggered salvo!)
 	if _sub_steps_left > 0:
 		_sub_step_timer -= delta
 		if _sub_step_timer <= 0.0:
@@ -503,27 +700,39 @@ func _physics_process(delta: float) -> void:
 
 		match aid:
 			ArchetypeScript.ArchetypeId.DASHER:
-				if _action_timer > 0.0:
+				if _windup_timer > 0.0:
+					_windup_timer -= delta
+					desired_vel = Vector3.ZERO
+					if _windup_timer <= 0.0:
+						_pending_action_kind = 0
+						_action_timer = 0.22
+				elif _action_timer > 0.0:
 					_action_timer -= delta
 					desired_vel = _action_dir * (14.5 * speed_mult)
 				else:
 					_ability_cd -= delta * speed_mult
 					if _ability_cd <= 0.0 and dist < 11.5 and dist > 1.8:
-						_ability_cd = 2.35
-						_action_timer = 0.20
+						_ability_cd = 2.6
+						_windup_timer = 0.58
+						_windup_duration_ref = 0.58
+						_pending_action_kind = 1
 						var side_sign: float = 1.0 if (enemy_id % 2 == 0) else -1.0
-						enemy_id += 0 # deterministic flip via bob_phase
 						if sin(_bob_phase) < 0.0:
 							side_sign = -side_sign
 						_action_dir = dir.rotated(Vector3.UP, side_sign * 0.58).normalized()
+						_rpc_enemy_sightline(global_position, _action_dir, 3.2, 0.58, Color(0.25, 0.92, 1.0))
 					elif dist > (_base_radius + 0.18):
 						desired_vel = dir * (_archetype.move_speed * speed_mult)
 
 			ArchetypeScript.ArchetypeId.BURROWER:
-				if _burrow_state == 1:
+				if _burrow_state == 3:
+					_windup_timer -= delta
+					desired_vel = Vector3.ZERO
+					if _windup_timer <= 0.0:
+						_enter_burrow(_action_dir)
+				elif _burrow_state == 1:
 					_action_timer -= delta
 					desired_vel = dir * (_archetype.move_speed * 1.72)
-					# Stay strictly on land while tunneling; stop early when close to player!
 					if _action_timer <= 0.0 or dist <= 1.35:
 						_enter_burrow_emerge_warning()
 				elif _burrow_state == 2:
@@ -534,7 +743,7 @@ func _physics_process(delta: float) -> void:
 				else:
 					_ability_cd -= delta * speed_mult
 					if _ability_cd <= 0.0 and dist > 2.6 and dist < 10.5:
-						_enter_burrow(dir)
+						_enter_burrow_dive_windup(dir)
 					elif dist > (_base_radius + 0.18):
 						desired_vel = dir * (_archetype.move_speed * speed_mult)
 
@@ -543,16 +752,20 @@ func _physics_process(delta: float) -> void:
 					_windup_timer -= delta
 					desired_vel = Vector3.ZERO
 					if _windup_timer <= 0.0:
-						_action_timer = 0.30
+						_action_timer = 0.32
 				elif _action_timer > 0.0:
 					_action_timer -= delta
 					desired_vel = _action_dir * (16.2 * speed_mult)
 				else:
 					_ability_cd -= delta * speed_mult
 					if _ability_cd <= 0.0 and dist < 6.8 and dist > 1.6:
-						_ability_cd = 2.85
-						_windup_timer = 0.38
+						_ability_cd = 3.1
+						_windup_timer = 0.78
+						_windup_duration_ref = 0.78
 						_action_dir = dir
+						if visual_root:
+							visual_root.rotation.y = atan2(_action_dir.x, _action_dir.z)
+						_rpc_enemy_sightline(global_position, _action_dir, 4.8, 0.78, Color(1.0, 0.22, 0.28))
 						if sphere_mesh_inst:
 							sphere_mesh_inst.material_override = ArchetypeScript.get_hit_flash_material()
 						_hit_flash_timer = 0.20
@@ -566,8 +779,9 @@ func _physics_process(delta: float) -> void:
 				else:
 					_ability_cd -= delta * speed_mult
 					if _ability_cd <= 0.0 and dist <= 4.1:
-						_ability_cd = 3.8
-						_windup_timer = 0.72
+						_ability_cd = 4.2
+						_windup_timer = 1.15
+						_windup_duration_ref = 1.15
 						_rpc_enemy_ground_hazard(
 							HazardScript.HazardMode.GROUND_QUAKE,
 							global_position,
@@ -575,43 +789,51 @@ func _physics_process(delta: float) -> void:
 							4.2,
 							0.0,
 							12.0,
-							0.72,
-							0.28,
-							Color(1.0, 0.56, 0.16),
+							1.15,
+							0.30,
+							Color(1.0, 0.18, 0.26),
 							0.36
 						)
 					elif dist > (_base_radius + 0.18):
 						desired_vel = dir * (_archetype.move_speed * speed_mult)
 
 			ArchetypeScript.ArchetypeId.MIRE_LOBBER:
-				# Standoff artillery caster: keeps 8.5m..12.0m distance and lobs damaging pools!
-				if dist < 6.8:
-					desired_vel = -dir * (_archetype.move_speed * 0.82 * speed_mult)
-				elif dist > 11.2:
-					desired_vel = dir * (_archetype.move_speed * speed_mult)
+				if _windup_timer > 0.0:
+					_windup_timer -= delta
+					desired_vel = Vector3.ZERO
+					if _windup_timer <= 0.0:
+						_pending_action_kind = 0
+						_rpc_enemy_ground_hazard(
+							HazardScript.HazardMode.LOB_POOL,
+							global_position + Vector3(0.0, 0.9, 0.0),
+							_pending_target_pos,
+							2.5,
+							0.0,
+							9.0,
+							1.10,
+							4.8,
+							Color(0.36, 0.98, 0.48),
+							0.0
+						)
 				else:
-					var strafe := Vector3(-dir.z, 0.0, dir.x) * (1.0 if (enemy_id % 2 == 0) else -1.0)
-					desired_vel = strafe * (_archetype.move_speed * 0.55 * speed_mult)
+					if dist < 6.8:
+						desired_vel = -dir * (_archetype.move_speed * 0.82 * speed_mult)
+					elif dist > 11.2:
+						desired_vel = dir * (_archetype.move_speed * speed_mult)
+					else:
+						var strafe := Vector3(-dir.z, 0.0, dir.x) * (1.0 if (enemy_id % 2 == 0) else -1.0)
+						desired_vel = strafe * (_archetype.move_speed * 0.55 * speed_mult)
 
-				_ability_cd -= delta * speed_mult
-				if _ability_cd <= 0.0 and dist < 16.5:
-					_ability_cd = 3.6
-					var lead_pos: Vector3 = target_player.global_position
-					if target_player is CharacterBody3D:
-						var pv: Vector3 = (target_player as CharacterBody3D).velocity
-						lead_pos += Vector3(pv.x, 0.0, pv.z) * 0.38
-					_rpc_enemy_ground_hazard(
-						HazardScript.HazardMode.LOB_POOL,
-						global_position + Vector3(0.0, 0.6, 0.0),
-						lead_pos,
-						2.5,
-						0.0,
-						9.0,
-						0.85,
-						4.8,
-						Color(0.36, 0.98, 0.48),
-						0.0
-					)
+					_ability_cd -= delta * speed_mult
+					if _ability_cd <= 0.0 and dist < 16.5:
+						_ability_cd = 4.0
+						_windup_timer = 0.65
+						_windup_duration_ref = 0.65
+						_pending_action_kind = 1
+						_pending_target_pos = target_player.global_position
+						if target_player is CharacterBody3D:
+							var pv: Vector3 = (target_player as CharacterBody3D).velocity
+							_pending_target_pos += Vector3(pv.x, 0.0, pv.z) * 0.35
 
 			ArchetypeScript.ArchetypeId.OCULAR_SNIPER:
 				if _windup_timer > 0.0:
@@ -634,10 +856,13 @@ func _physics_process(delta: float) -> void:
 						desired_vel = dir * (_archetype.move_speed * speed_mult)
 					_ability_cd -= delta * speed_mult
 					if _ability_cd <= 0.0 and dist < 21.0:
-						_ability_cd = 3.9
-						_windup_timer = 0.82
+						_ability_cd = 4.2
+						_windup_timer = 1.25
+						_windup_duration_ref = 1.25
 						_action_dir = dir
-						_rpc_enemy_sightline(global_position, _action_dir, 23.0, 0.82, Color(1.0, 0.28, 0.38))
+						if visual_root:
+							visual_root.rotation.y = atan2(_action_dir.x, _action_dir.z)
+						_rpc_enemy_sightline(global_position, _action_dir, 23.0, 1.25, Color(1.0, 0.24, 0.34))
 
 			ArchetypeScript.ArchetypeId.BOSS, ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
 				desired_vel = _tick_boss_ai(delta, target_player, dir, dist, speed_mult)
@@ -655,7 +880,6 @@ func _physics_process(delta: float) -> void:
 	velocity.y = 0.0
 
 	if _burrow_state == 1:
-		# Keep burrowed movement inside walkable land by enabling collision slide briefly or checking walls
 		global_position += velocity * delta
 	else:
 		move_and_slide()
@@ -664,15 +888,26 @@ func _physics_process(delta: float) -> void:
 
 func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: float, speed_mult: float) -> Vector3:
 	var is_enraged: bool = (health_comp != null and health_comp.current_health <= health_comp.max_health * 0.5)
-	var rate_mult: float = 1.28 if is_enraged else 1.0
+	var rate_mult: float = 1.22 if is_enraged else 1.0
 
 	if _windup_timer > 0.0:
 		_windup_timer -= delta
+		if _windup_timer <= 0.0:
+			var kind: int = _pending_action_kind
+			_pending_action_kind = 0
+			if kind == 2:
+				_action_timer = 0.48
+			elif kind == 3:
+				_launch_boss_acidic_rain(target_player, is_enraged)
+			elif kind == 4:
+				_fire_boss_orb_fan(_action_dir, 7, 108.0, Color(0.84, 0.36, 1.0))
+				_sub_steps_left = 1
+				_sub_step_timer = 0.55
 		return Vector3.ZERO
+
 	if _action_timer > 0.0:
 		_action_timer -= delta
 		if _action_timer <= 0.0 and _archetype.archetype_id == ArchetypeScript.ArchetypeId.BOSS:
-			# Terminal slam at the end of Juggernaut Charge!
 			_rpc_enemy_ground_hazard(
 				HazardScript.HazardMode.GROUND_QUAKE,
 				global_position,
@@ -680,9 +915,9 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 				3.8,
 				0.0,
 				14.0,
-				0.35,
-				0.25,
-				Color(1.0, 0.44, 0.20),
+				0.65,
+				0.28,
+				Color(1.0, 0.22, 0.28),
 				0.48
 			)
 		return _action_dir * (14.2 * speed_mult)
@@ -695,9 +930,11 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 			# TECTONIC SOVEREIGN
 			match pat:
 				0:
-					# Pattern 1: Seismic Double-Quake (4.4m inner crater -> 4.4m..9.2m outer donut ring!)
-					_ability_cd = 3.6
-					_windup_timer = 0.85
+					# Pattern 1: Seismic Double-Quake (1.15s inner crater -> 1.05s outer donut ring!)
+					_ability_cd = 4.0
+					_windup_timer = 1.15
+					_windup_duration_ref = 1.15
+					_pending_action_kind = 1
 					_rpc_enemy_ground_hazard(
 						HazardScript.HazardMode.GROUND_QUAKE,
 						global_position,
@@ -705,17 +942,19 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 						4.4,
 						0.0,
 						16.0,
-						0.80,
-						0.28,
-						Color(1.0, 0.42, 0.18),
+						1.15,
+						0.30,
+						Color(1.0, 0.16, 0.24),
 						0.62
 					)
 					_sub_steps_left = 1
-					_sub_step_timer = 0.52
+					_sub_step_timer = 0.85
 				1:
-					# Pattern 2: Faultline Spikes (3 -> 5 fanning ground-eruption craters!)
-					_ability_cd = 3.4
-					_windup_timer = 0.55
+					# Pattern 2: Faultline Spikes (3 -> 5 fanning crimson ground-eruption craters!)
+					_ability_cd = 3.8
+					_windup_timer = 0.95
+					_windup_duration_ref = 0.95
+					_pending_action_kind = 5
 					var lanes: int = 5 if is_enraged else 3
 					var half_ang: float = deg_to_rad(32.0 if is_enraged else 22.0)
 					for l_i in range(lanes):
@@ -730,52 +969,44 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 								1.85,
 								0.0,
 								13.0,
-								0.55 + float(step_d) * 0.04,
-								0.24,
-								Color(1.0, 0.68, 0.22),
+								0.95 + float(step_d) * 0.06,
+								0.26,
+								Color(1.0, 0.24, 0.30),
 								0.20 if step_d < 4.0 else 0.0
 							)
 				_:
-					# Pattern 3: Juggernaut Charge across the arena!
-					_ability_cd = 3.2
+					# Pattern 3: Telegraphed Juggernaut Charge (0.85s windup + sightline before moving!)
+					_ability_cd = 3.8
 					_action_dir = dir
-					_action_timer = 0.48
-					_rpc_enemy_sightline(global_position, _action_dir, 9.5, 0.38, Color(1.0, 0.52, 0.22))
+					_windup_timer = 0.85
+					_windup_duration_ref = 0.85
+					_pending_action_kind = 2
+					if visual_root:
+						visual_root.rotation.y = atan2(_action_dir.x, _action_dir.z)
+					_rpc_enemy_sightline(global_position, _action_dir, 9.8, 0.85, Color(1.0, 0.22, 0.30))
 		else:
 			# BLIGHTWEAVER CORE
 			match pat:
 				0:
-					# Pattern 1: Acidic Rain (3 -> 5 persistent 3.1m Damaging Blight Pools!)
-					_ability_cd = 3.8
-					_windup_timer = 0.45
-					var count_p: int = 5 if is_enraged else 3
-					for m_i in range(count_p):
-						var ang_m: float = float(m_i) * (TAU / float(count_p)) + _bob_phase
-						var off_r: float = 0.8 if m_i == 0 else 3.8
-						var land_pt: Vector3 = target_player.global_position + Vector3(cos(ang_m) * off_r, 0.0, sin(ang_m) * off_r)
-						_rpc_enemy_ground_hazard(
-							HazardScript.HazardMode.LOB_POOL,
-							global_position + Vector3(0.0, 1.1, 0.0),
-							land_pt,
-							3.0,
-							0.0,
-							11.0,
-							0.92,
-							6.2,
-							Color(0.42, 1.0, 0.56),
-							0.18 if m_i == 0 else 0.0
-						)
-				1:
-					# Pattern 2: Horizon Salvo (2 staggered 7-orb long-range fans!)
-					_ability_cd = 3.3
-					_action_dir = dir
-					_fire_boss_orb_fan(_action_dir, 7, 108.0, Color(0.84, 0.36, 1.0))
-					_sub_steps_left = 1
-					_sub_step_timer = 0.42
-				_:
-					# Pattern 3: Safe-Eye Cataclysm (4.3m safe inner eye, 4.3m..11.8m outer blast!)
+					# Pattern 1: Acidic Rain (0.75s wind-up -> 1.15s LOB_POOL flight!)
 					_ability_cd = 4.2
-					_windup_timer = 1.05
+					_windup_timer = 0.75
+					_windup_duration_ref = 0.75
+					_pending_action_kind = 3
+					_pending_target_pos = target_player.global_position
+				1:
+					# Pattern 2: Horizon Salvo (0.70s spin wind-up -> staggered 7-orb + 6-orb fans!)
+					_ability_cd = 3.8
+					_action_dir = dir
+					_windup_timer = 0.70
+					_windup_duration_ref = 0.70
+					_pending_action_kind = 4
+				_:
+					# Pattern 3: Safe-Eye Cataclysm (1.30s levitating telegraph -> 4.3m..11.8m outer blast!)
+					_ability_cd = 4.5
+					_windup_timer = 1.30
+					_windup_duration_ref = 1.30
+					_pending_action_kind = 1
 					_rpc_enemy_ground_hazard(
 						HazardScript.HazardMode.DONUT_AFTERSHOCK,
 						global_position,
@@ -783,9 +1014,9 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 						11.8,
 						4.3,
 						18.0,
-						1.05,
-						0.34,
-						Color(0.92, 0.30, 0.96),
+						1.30,
+						0.36,
+						Color(0.92, 0.24, 0.92),
 						0.68
 					)
 
@@ -794,12 +1025,32 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 	return Vector3.ZERO
 
 
+func _launch_boss_acidic_rain(target_player: Node3D, is_enraged: bool) -> void:
+	var anchor: Vector3 = target_player.global_position if (target_player != null and is_instance_valid(target_player)) else _pending_target_pos
+	var count_p: int = 5 if is_enraged else 3
+	for m_i in range(count_p):
+		var ang_m: float = float(m_i) * (TAU / float(count_p)) + _bob_phase
+		var off_r: float = 0.8 if m_i == 0 else 3.8
+		var land_pt: Vector3 = anchor + Vector3(cos(ang_m) * off_r, 0.0, sin(ang_m) * off_r)
+		_rpc_enemy_ground_hazard(
+			HazardScript.HazardMode.LOB_POOL,
+			global_position + Vector3(0.0, 1.25, 0.0),
+			land_pt,
+			3.0,
+			0.0,
+			11.0,
+			1.15,
+			6.2,
+			Color(0.42, 1.0, 0.56),
+			0.18 if m_i == 0 else 0.0
+		)
+
+
 func _execute_boss_sub_step(_target_player: Node3D) -> void:
 	_sub_steps_left = maxi(0, _sub_steps_left - 1)
 	if _archetype == null:
 		return
 	if _archetype.archetype_id == ArchetypeScript.ArchetypeId.BOSS:
-		# Outer Donut Aftershock (4.4m safe center, 4.4m..9.2m outer eruption!)
 		_rpc_enemy_ground_hazard(
 			HazardScript.HazardMode.DONUT_AFTERSHOCK,
 			global_position,
@@ -807,13 +1058,12 @@ func _execute_boss_sub_step(_target_player: Node3D) -> void:
 			9.2,
 			4.4,
 			16.0,
-			0.68,
-			0.30,
-			Color(1.0, 0.64, 0.20),
+			1.05,
+			0.32,
+			Color(1.0, 0.18, 0.28),
 			0.55
 		)
 	elif _archetype.archetype_id == ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
-		# Offset second fan so players weave left-right between lanes!
 		_fire_boss_orb_fan(_action_dir.rotated(Vector3.UP, deg_to_rad(9.0)), 6, 94.0, Color(0.42, 0.96, 0.68))
 
 

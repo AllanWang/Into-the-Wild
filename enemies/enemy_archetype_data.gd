@@ -7,13 +7,13 @@ extends Resource
 
 enum ArchetypeId {
 	CHASER = 0,          ## Agile crimson swarm sphere
-	DASHER = 1,          ## Electric-cyan mini-sphere with periodic lateral/diagonal juke-dash
-	BURROWER = 2,        ## Subterranean amethyst-gold mini-sphere that burrows underground (invulnerable!)
-	LUNGER = 3,          ## Fiery coral-orange striker sphere with crouched wind-up lunge
-	BRUISER = 4,         ## Heavy armored amber sentinel that slams radial ground quakes
-	MIRE_LOBBER = 5,     ## Standoff emerald-violet caster lobbing persistent damaging corrosive pools
-	OCULAR_SNIPER = 6,   ## Long-range alabaster-gold marksman with lock-on sightline & lance
-	BOSS = 7,            ## Tectonic Sovereign — double-quake rings, faultline spikes & juggernaut charge
+	DASHER = 1,          ## Electric-cyan mini-sphere with swept wing-fins & spin wind-up juke-dash
+	BURROWER = 2,        ## Subterranean amethyst-gold mini-sphere with nose drill-auger & invulnerable tunnel
+	LUNGER = 3,          ## Fiery coral-orange striker sphere with twin tusks & crouched wind-up lunge
+	BRUISER = 4,         ## Heavy armored amber sentinel with orbiting monolith shields & levitating quake slam
+	MIRE_LOBBER = 5,     ## Standoff emerald castor with overhead swelling toxic mortar sac
+	OCULAR_SNIPER = 6,   ## Long-range alabaster-gold marksman with spinning front scope monocle
+	BOSS = 7,            ## Tectonic Sovereign — double-quake rings, faultline spikes & telegraphed charge
 	BOSS_BLIGHTWEAVER = 8 ## Blightweaver Core — acidic rain pools, horizon fans & safe-eye cataclysm
 }
 
@@ -38,6 +38,11 @@ static var _cache: Dictionary = {}
 static var _unit_sphere_mesh: SphereMesh = null
 static var _trim_ring_mesh: TorusMesh = null
 static var _burrow_ring_mesh: TorusMesh = null
+static var _fin_mesh: BoxMesh = null
+static var _cone_spike_mesh: CylinderMesh = null
+static var _plate_mesh: BoxMesh = null
+static var _scope_ring_mesh: TorusMesh = null
+static var _sac_orb_mesh: SphereMesh = null
 static var _hit_flash_material: StandardMaterial3D = null
 static var _status_poison_mat: StandardMaterial3D = null
 static var _status_burn_mat: StandardMaterial3D = null
@@ -71,6 +76,30 @@ static func _ensure_cache() -> void:
 	_burrow_ring_mesh.outer_radius = 1.05
 	_burrow_ring_mesh.rings = 20
 	_burrow_ring_mesh.ring_segments = 6
+
+	_fin_mesh = BoxMesh.new()
+	_fin_mesh.size = Vector3(0.12, 0.08, 0.65)
+
+	_cone_spike_mesh = CylinderMesh.new()
+	_cone_spike_mesh.top_radius = 0.03
+	_cone_spike_mesh.bottom_radius = 0.28
+	_cone_spike_mesh.height = 0.78
+	_cone_spike_mesh.radial_segments = 6
+
+	_plate_mesh = BoxMesh.new()
+	_plate_mesh.size = Vector3(0.24, 0.62, 0.14)
+
+	_scope_ring_mesh = TorusMesh.new()
+	_scope_ring_mesh.inner_radius = 0.42
+	_scope_ring_mesh.outer_radius = 0.54
+	_scope_ring_mesh.rings = 18
+	_scope_ring_mesh.ring_segments = 6
+
+	_sac_orb_mesh = SphereMesh.new()
+	_sac_orb_mesh.radius = 0.46
+	_sac_orb_mesh.height = 0.92
+	_sac_orb_mesh.radial_segments = 12
+	_sac_orb_mesh.rings = 8
 
 	_hit_flash_material = StandardMaterial3D.new()
 	_hit_flash_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -217,6 +246,31 @@ static func get_trim_ring_mesh() -> TorusMesh:
 static func get_burrow_ring_mesh() -> TorusMesh:
 	_ensure_cache()
 	return _burrow_ring_mesh
+
+
+static func get_fin_mesh() -> BoxMesh:
+	_ensure_cache()
+	return _fin_mesh
+
+
+static func get_cone_spike_mesh() -> CylinderMesh:
+	_ensure_cache()
+	return _cone_spike_mesh
+
+
+static func get_plate_mesh() -> BoxMesh:
+	_ensure_cache()
+	return _plate_mesh
+
+
+static func get_scope_ring_mesh() -> TorusMesh:
+	_ensure_cache()
+	return _scope_ring_mesh
+
+
+static func get_sac_orb_mesh() -> SphereMesh:
+	_ensure_cache()
+	return _sac_orb_mesh
 
 
 static func get_hit_flash_material() -> StandardMaterial3D:
