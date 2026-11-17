@@ -65,8 +65,8 @@ func add_camera_shake(trauma: float) -> void:
 
 func _ready() -> void:
 	add_to_group("world_camera_shake")
-	var is_emb: bool = ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
-	if not is_emb:
+	var is_emb: bool = Engine.is_embedded_in_editor() or ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
+	if not is_emb and not EngineDebugger.is_active():
 		DisplayServer.window_move_to_foreground()
 
 	if not NetworkManager.peer:

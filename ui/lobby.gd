@@ -15,9 +15,9 @@ static var _has_auto_joined_once: bool = false
 var _auto_join_disabled: bool = false
 
 func _ready() -> void:
-	# Request window focus on desktop if not embedded in editor
-	var is_emb: bool = ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
-	if not is_emb:
+	# Request window focus in standalone production builds only (skip when embedded or testing via editor/MCP)
+	var is_emb: bool = Engine.is_embedded_in_editor() or ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
+	if not is_emb and not EngineDebugger.is_active():
 		DisplayServer.window_move_to_foreground()
 	
 	# Only show debug quick buttons in debug builds

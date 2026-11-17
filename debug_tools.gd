@@ -42,6 +42,15 @@ func _init() -> void:
 	_detect_instance_index()
 
 func _detect_embedded_status() -> void:
+	if Engine.is_embedded_in_editor():
+		is_embedded = true
+		var emb_size: Vector2i = DisplayServer.window_get_size()
+		if emb_size.x > 0 and emb_size.y > 0:
+			host_window_rect.size = emb_size
+		host_window_rect.position = DisplayServer.window_get_position()
+		print("[DebugTools] Detected embedded in editor via Engine.is_embedded_in_editor().")
+		return
+
 	var cmd_str: String = ""
 	if OS.get_name() == "Windows":
 		var out: Array = []
