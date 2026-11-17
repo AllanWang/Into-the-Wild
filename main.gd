@@ -2,6 +2,7 @@ extends Node3D
 
 const PLAYER_SCENE: PackedScene = preload("res://player/player.tscn")
 const MapPresetConfigScript = preload("res://world/map_preset_config.gd")
+const BiomeThemeScript = preload("res://world/biome_theme.gd")
 const GameOverOverlayScript = preload("res://ui/game_over_overlay.gd")
 const RewardDraftOverlayScript = preload("res://ui/reward_draft_overlay.gd")
 const TutorialModalScript = preload("res://ui/tutorial_modal.gd")
@@ -11,6 +12,8 @@ const PortalConfirmModalScript = preload("res://ui/portal_confirm_modal.gd")
 @onready var encounter_manager: ArenaEncounterManager = get_node_or_null("ArenaEncounterManager") as ArenaEncounterManager
 @onready var players_container: Node3D = $Players
 @onready var camera: Camera3D = $Camera3D
+@onready var world_env: WorldEnvironment = get_node_or_null("WorldEnvironment") as WorldEnvironment
+@onready var dir_light: DirectionalLight3D = get_node_or_null("DirectionalLight3D") as DirectionalLight3D
 @onready var hud_layer: CanvasLayer = $HUD
 @onready var info_label: Label = $HUD/MarginContainer/HBoxContainer/InfoLabel
 @onready var leave_button: Button = $HUD/MarginContainer/HBoxContainer/LeaveButton
@@ -44,6 +47,7 @@ var _reward_draft_overlay: Control = null
 var _tutorial_modal: Control = null
 var _tutorial_button: Button = null
 var _portal_confirm_modal: Control = null
+var _biome_button: Button = null
 
 @export var overview_mode: bool = false:
 	set(val):
@@ -70,6 +74,17 @@ func _ready() -> void:
 	_configure_button(teleport_button, _on_teleport_pressed)
 	_configure_button(preset_button, _on_preset_pressed)
 	_configure_button(regen_button, _on_regen_pressed)
+
+	if regen_button and regen_button.get_parent():
+		var dbg_row: Node = regen_button.get_parent()
+		_biome_button = Button.new()
+		_biome_button.name = "BiomeButton"
+		_biome_button.custom_minimum_size = Vector2(188.0, 30.0)
+		_biome_button.focus_mode = Control.FOCUS_NONE
+		_biome_button.text = "Biome: Verdant Meadow"
+		dbg_row.add_child(_biome_button)
+		dbg_row.move_child(_biome_button, regen_button.get_index())
+		_configure_button(_biome_button, _on_biome_pressed)
 
 	if cam_button:
 		cam_button.text = "Player Cam" if is_overview else "Overview Cam"
@@ -102,7 +117,8 @@ func _ready() -> void:
 		procedural_world.graph_ready.connect(_on_world_graph_ready)
 		var initial_seed: int = NetworkManager.active_map_seed if NetworkManager.active_map_seed > 0 else procedural_world.map_seed
 		var initial_preset: int = NetworkManager.active_map_preset
-		procedural_world.generate_world(initial_seed if initial_seed > 0 else -1, initial_preset)
+		var initial_biome: int = NetworkManager.active_biome_id
+		procedural_world.generate_world(initial_seed if initial_seed > 0 else -1, initial_preset, initial_biome)
 
 	spawn_players()
 	_setup_reward_draft_overlay()
@@ -169,6 +185,8 @@ func _on_world_generated(spawn_pos: Vector3, _goal_pos: Vector3) -> void:
 	_spawn_pos = spawn_pos
 	_waypoints = procedural_world.get_room_waypoints()
 	_current_waypoint_idx = 0
+	if procedural_world:
+		_apply_biome_environment(procedural_world.current_biome_id)
 	_recompute_overview_camera()
 	_update_debug_labels()
 	_update_teleport_button_label()
@@ -257,15 +275,20 @@ func _on_stage_portal_entered(player_node: Node) -> void:
 
 
 func _traverse_stage_portal() -> void:
-	_on_regen_pressed()
+	var next_biome: int = 0
+	if procedural_world:
+		next_biome = (procedural_world.current_biome_id + 1) % BiomeThemeScript.get_biome_count()
+	NetworkManager.active_biome_id = next_biome
+	_regen_with_biome(next_biome)
 	if camera and _local_player and is_instance_valid(_local_player) and not is_overview:
 		camera.global_position = _local_player.global_position + camera_offset
 		camera.reset_physics_interpolation()
 	if encounter_banner and procedural_world:
-		encounter_banner.add_theme_color_override("font_color", Color(0.76, 0.88, 1.0, 1.0))
-		encounter_banner.text = "Rift Traversed — Entered New Map (Seed %d)" % procedural_world.current_seed
+		var b_name: String = BiomeThemeScript.get_biome_name(procedural_world.current_biome_id)
+		encounter_banner.add_theme_color_override("font_color", Color(0.76, 0.90, 1.0, 1.0))
+		encounter_banner.text = "Rift Traversed — Entered %s (Seed %d)" % [b_name, procedural_world.current_seed]
 		encounter_banner.visible = true
-		_banner_fade_timer = 3.8
+		_banner_fade_timer = 4.0
 
 
 func _on_encounters_reset() -> void:
@@ -289,25 +312,50 @@ func _recompute_overview_camera() -> void:
 	overview_pos = procedural_world.map_bounds_center + Vector3(-pullback, pullback, pullback)
 
 
+func _apply_biome_environment(biome_id: int) -> void:
+	var b: Dictionary = BiomeThemeScript.get_biome_data(biome_id)
+	if world_env and world_env.environment:
+		world_env.environment.ambient_light_color = b["ambient_col"] as Color
+		world_env.environment.ambient_light_energy = float(b["ambient_energy"])
+	if dir_light:
+		dir_light.light_color = b["light_col"] as Color
+		dir_light.light_energy = float(b["light_energy"])
+
+
 func _update_debug_labels() -> void:
 	if procedural_world == null or procedural_world.current_graph == null:
 		return
 	var g: PlainsGraph = procedural_world.current_graph
+	var b_name: String = BiomeThemeScript.get_biome_name(procedural_world.current_biome_id)
 	if preset_button:
 		preset_button.text = "Mode: %s" % g.preset_name
+	if _biome_button:
+		_biome_button.text = "Biome: %s" % b_name
 	if stats_label:
-		stats_label.text = "[%s] Seed: %d | Arenas: %d | Paths: %d | Grass: %d" % [
+		stats_label.text = "[%s | %s] Seed: %d | Arenas: %d" % [
 			g.preset_name,
+			b_name,
 			procedural_world.current_seed,
-			g.areas.size(),
-			g.paths.size(),
-			procedural_world.total_grass_blades
+			g.areas.size()
 		]
 
 
 func _on_cam_button_pressed() -> void:
 	_recompute_overview_camera()
 	overview_mode = not overview_mode
+
+
+func _on_biome_pressed() -> void:
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	var next_biome: int = (procedural_world.current_biome_id + 1) % BiomeThemeScript.get_biome_count()
+	NetworkManager.active_biome_id = next_biome
+	var cur_seed: int = procedural_world.current_seed
+	var cur_mode: int = int(procedural_world.preset_mode)
+	if multiplayer.has_multiplayer_peer():
+		_sync_world_layout.rpc(cur_seed, cur_mode, next_biome)
+	else:
+		_sync_world_layout(cur_seed, cur_mode, next_biome)
 
 
 func _on_preset_pressed() -> void:
@@ -317,15 +365,21 @@ func _on_preset_pressed() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var new_seed: int = int(rng.seed & 0x7FFFFFFF)
+	var cur_biome: int = procedural_world.current_biome_id
 	NetworkManager.active_map_preset = next_mode
 	NetworkManager.active_map_seed = new_seed
 	if multiplayer.has_multiplayer_peer():
-		_sync_world_layout.rpc(new_seed, next_mode)
+		_sync_world_layout.rpc(new_seed, next_mode, cur_biome)
 	else:
-		_sync_world_layout(new_seed, next_mode)
+		_sync_world_layout(new_seed, next_mode, cur_biome)
 
 
 func _on_regen_pressed() -> void:
+	var cur_biome: int = procedural_world.current_biome_id if procedural_world else 0
+	_regen_with_biome(cur_biome)
+
+
+func _regen_with_biome(target_biome: int) -> void:
 	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
 		return
 	var rng := RandomNumberGenerator.new()
@@ -335,23 +389,26 @@ func _on_regen_pressed() -> void:
 		new_seed = maxi(1, int((new_seed + 7919) & 0x7FFFFFFF))
 	var cur_mode: int = int(procedural_world.preset_mode)
 	NetworkManager.active_map_seed = new_seed
+	NetworkManager.active_biome_id = target_biome
 	if multiplayer.has_multiplayer_peer():
-		_sync_world_layout.rpc(new_seed, cur_mode)
+		_sync_world_layout.rpc(new_seed, cur_mode, target_biome)
 	else:
-		_sync_world_layout(new_seed, cur_mode)
+		_sync_world_layout(new_seed, cur_mode, target_biome)
 
 
 @rpc("authority", "call_local", "reliable")
-func _sync_world_layout(p_seed: int, p_mode: int) -> void:
+func _sync_world_layout(p_seed: int, p_mode: int, p_biome: int = -1) -> void:
 	if _reward_draft_overlay and _reward_draft_overlay.has_method("close_draft"):
 		_reward_draft_overlay.call("close_draft")
 	if _portal_confirm_modal and _portal_confirm_modal.has_method("close_modal"):
 		_portal_confirm_modal.call("close_modal")
 	NetworkManager.active_map_seed = p_seed
 	NetworkManager.active_map_preset = p_mode
+	if p_biome >= 0:
+		NetworkManager.active_biome_id = p_biome
 	if ProjectilePool and ProjectilePool.has_method("release_all"):
 		ProjectilePool.call("release_all")
-	procedural_world.generate_world(p_seed, p_mode)
+	procedural_world.generate_world(p_seed, p_mode, p_biome)
 	_reposition_existing_players(_spawn_pos)
 
 
@@ -512,7 +569,8 @@ func _on_game_over_restart_new_map() -> void:
 	for ch in players_container.get_children():
 		if ch.has_method("reset_for_new_run"):
 			ch.call("reset_for_new_run")
-	_on_regen_pressed()
+	NetworkManager.active_biome_id = 0
+	_regen_with_biome(0)
 	if camera and not is_overview and _local_player:
 		camera.global_position = _local_player.global_position + camera_offset
 		camera.reset_physics_interpolation()

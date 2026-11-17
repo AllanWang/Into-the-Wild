@@ -10,6 +10,8 @@ const PlainsGraphScript = preload("res://world/plains_graph.gd")
 const AreaPresetScript = preload("res://world/area_preset.gd")
 const MapPresetConfigScript = preload("res://world/map_preset_config.gd")
 const GrassTileStamperScript = preload("res://world/grass_tile_stamper.gd")
+const BiomeThemeScript = preload("res://world/biome_theme.gd")
+const VineBarrierScript = preload("res://world/vine_barrier.gd")
 
 const CHUNK_SIZE: float = 40.0
 
@@ -32,6 +34,7 @@ signal graph_ready(graph: PlainsGraph)
 # Generated containers
 var areas_root: Node3D = null
 var bridges_root: Node3D = null
+var props_root: Node3D = null
 var collision_body: StaticBody3D = null
 var skirt_instance: MeshInstance3D = null
 var water_instance: MeshInstance3D = null
@@ -40,6 +43,7 @@ var pond_instance: MeshInstance3D = null
 # Runtime state
 var current_graph: PlainsGraph = null
 var current_seed: int = 0
+var current_biome_id: int = BiomeThemeScript.BiomeId.VERDANT_MEADOW
 var total_grass_blades: int = 0
 var spawn_world_pos: Vector3 = Vector3(0.0, 0.0, 6.8)
 var goal_world_pos: Vector3 = Vector3.ZERO
@@ -48,16 +52,67 @@ var map_bounds_span: Vector2 = Vector2(100.0, 100.0)
 
 var _stamper: GrassTileStamper = null
 var _skirt_material: StandardMaterial3D = null
+var _prop_mat_primary: StandardMaterial3D = null
+var _prop_mat_secondary: StandardMaterial3D = null
 var _outer_is_cw: bool = false
+
+static var _mesh_ice_spire: CylinderMesh = null
+static var _mesh_hex_pillar: CylinderMesh = null
+static var _mesh_astrolabe_ring: TorusMesh = null
+static var _mesh_anomaly_ring: TorusMesh = null
+static var _mesh_poly_core: SphereMesh = null
+static var _mesh_octa_shard: SphereMesh = null
+
+
+static func _ensure_prop_meshes() -> void:
+	if _mesh_ice_spire != null:
+		return
+
+	_mesh_ice_spire = CylinderMesh.new()
+	_mesh_ice_spire.top_radius = 0.04
+	_mesh_ice_spire.bottom_radius = 0.56
+	_mesh_ice_spire.height = 3.2
+	_mesh_ice_spire.radial_segments = 5
+
+	_mesh_hex_pillar = CylinderMesh.new()
+	_mesh_hex_pillar.top_radius = 0.62
+	_mesh_hex_pillar.bottom_radius = 0.68
+	_mesh_hex_pillar.height = 2.4
+	_mesh_hex_pillar.radial_segments = 6
+
+	_mesh_astrolabe_ring = TorusMesh.new()
+	_mesh_astrolabe_ring.inner_radius = 1.15
+	_mesh_astrolabe_ring.outer_radius = 1.28
+	_mesh_astrolabe_ring.rings = 24
+	_mesh_astrolabe_ring.ring_segments = 8
+
+	_mesh_anomaly_ring = TorusMesh.new()
+	_mesh_anomaly_ring.inner_radius = 0.92
+	_mesh_anomaly_ring.outer_radius = 1.06
+	_mesh_anomaly_ring.rings = 18
+	_mesh_anomaly_ring.ring_segments = 6
+
+	_mesh_poly_core = SphereMesh.new()
+	_mesh_poly_core.radius = 0.54
+	_mesh_poly_core.height = 1.08
+	_mesh_poly_core.radial_segments = 6
+	_mesh_poly_core.rings = 2
+
+	_mesh_octa_shard = SphereMesh.new()
+	_mesh_octa_shard.radius = 0.28
+	_mesh_octa_shard.height = 0.68
+	_mesh_octa_shard.radial_segments = 4
+	_mesh_octa_shard.rings = 1
 
 
 func _ready() -> void:
 	_ensure_stamper()
 	if auto_generate_on_ready:
-		generate_world(map_seed, preset_mode)
+		generate_world(map_seed, preset_mode, current_biome_id)
 
 
 func _ensure_stamper() -> void:
+	_ensure_prop_meshes()
 	if _stamper == null:
 		_stamper = GrassTileStamperScript.new()
 		_stamper.initialize(grass_multimesh)
@@ -66,15 +121,26 @@ func _ensure_stamper() -> void:
 		_skirt_material.albedo_color = Color(0.443137, 0.635294, 0.0, 1.0)
 		_skirt_material.roughness = 1.0
 		_skirt_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if _prop_mat_primary == null:
+		_prop_mat_primary = StandardMaterial3D.new()
+		_prop_mat_primary.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+		_prop_mat_primary.specular_mode = BaseMaterial3D.SPECULAR_TOON
+		_prop_mat_primary.roughness = 0.35
+		_prop_mat_primary.emission_enabled = true
+	if _prop_mat_secondary == null:
+		_prop_mat_secondary = StandardMaterial3D.new()
+		_prop_mat_secondary.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
 
-## Generates or regenerates the entire Shape of Dreams web world
-func generate_world(p_seed: int = -1, p_mode: int = -1) -> void:
+## Generates or regenerates the entire Shape of Dreams web world with coordinated Biome styling
+func generate_world(p_seed: int = -1, p_mode: int = -1, p_biome: int = -1) -> void:
 	_ensure_stamper()
 	_cleanup()
 
 	if p_mode >= 0:
 		preset_mode = p_mode as MapPresetConfig.TopologyMode
+	if p_biome >= 0:
+		current_biome_id = posmod(p_biome, BiomeThemeScript.get_biome_count())
 
 	var active_cfg: MapPresetConfig = custom_preset
 	if active_cfg == null:
@@ -105,9 +171,14 @@ func generate_world(p_seed: int = -1, p_mode: int = -1) -> void:
 	bridges_root.name = "Bridges"
 	add_child(bridges_root)
 
+	props_root = Node3D.new()
+	props_root.name = "BiomeLandmarks"
+	add_child(props_root)
+
 	total_grass_blades = 0
 
-	# 2. Sync Spawn Pond shader uniforms on original materials (zero shader edits)
+	# 2. Apply Biome Shader Palette + Spawn Pond uniforms
+	apply_biome_materials(current_biome_id)
 	_sync_pond_uniforms(active_cfg.enable_spawn_pond)
 
 	# 3. Build Seamless Chunked Floor & Tiled/Cropped Grass from the unified filleted landmass
@@ -119,10 +190,11 @@ func generate_world(p_seed: int = -1, p_mode: int = -1) -> void:
 	# 5. Build Ground Floor + Watertight Mitered Coastline Collision Walls (zero corner snagging!)
 	_build_world_collision()
 
-	# 6. Build Surrounding Toon Water & Optional Spawn Sanctuary Pond
+	# 6. Build Surrounding Toon Water/Lava/Void & Optional Spawn Sanctuary Pond + 3D Biome Landmarks
 	_build_surrounding_water()
 	if active_cfg.enable_spawn_pond:
 		_build_spawn_pond()
+	_build_biome_landmarks(rng)
 
 	var spawn_area: PlainsGraph.AreaData = current_graph.areas[current_graph.spawn_index]
 	var goal_area: PlainsGraph.AreaData = current_graph.areas[current_graph.goal_index]
@@ -135,6 +207,179 @@ func generate_world(p_seed: int = -1, p_mode: int = -1) -> void:
 
 	graph_ready.emit(current_graph)
 	world_generated.emit(spawn_world_pos, goal_world_pos)
+
+
+func apply_biome_materials(biome_id: int) -> void:
+	current_biome_id = posmod(biome_id, BiomeThemeScript.get_biome_count())
+	var b: Dictionary = BiomeThemeScript.get_biome_data(current_biome_id)
+
+	if floor_material:
+		floor_material.set_shader_parameter("albedo1", b["floor_a1"])
+		floor_material.set_shader_parameter("albedo2", b["floor_a2"])
+		floor_material.set_shader_parameter("albedo3", b["floor_a3"])
+		floor_material.set_shader_parameter("bank_color", b["bank_col"])
+		floor_material.set_shader_parameter("biome_fx_mode", int(b["fx_mode"]))
+		floor_material.set_shader_parameter("fx_color1", b["fx_c1"])
+		floor_material.set_shader_parameter("fx_color2", b["fx_c2"])
+		floor_material.set_shader_parameter("fx_color3", b["fx_c3"])
+		floor_material.set_shader_parameter("fx_emission_strength", float(b["fx_emit"]))
+
+	if grass_material:
+		grass_material.set_shader_parameter("albedo1", b["floor_a1"])
+		grass_material.set_shader_parameter("albedo2", b["floor_a2"])
+		grass_material.set_shader_parameter("albedo3", b["floor_a3"])
+		grass_material.set_shader_parameter("blade_density", float(b["blade_density"]))
+		grass_material.set_shader_parameter("blade_scale", float(b["blade_scale"]))
+		grass_material.set_shader_parameter("accent_albedo1", b["grass_acc1"])
+		grass_material.set_shader_parameter("accent_albedo2", b["grass_acc2"])
+		grass_material.set_shader_parameter("tip_emission_color", b["tip_col"])
+		grass_material.set_shader_parameter("tip_emission_strength", float(b["tip_emit"]))
+		grass_material.set_shader_parameter("anomaly_iridescence", bool(b["anomaly_iri"]))
+
+	for w_mat_var in [water_material, pond_material]:
+		var w_mat: ShaderMaterial = w_mat_var as ShaderMaterial
+		if w_mat:
+			w_mat.set_shader_parameter("shallow_color", b["water_shallow"])
+			w_mat.set_shader_parameter("deep_color", b["water_deep"])
+			w_mat.set_shader_parameter("foam_color", b["water_foam"])
+			w_mat.set_shader_parameter("secondary_foam_color", b["water_foam2"])
+			w_mat.set_shader_parameter("surface_noise_cutoff", float(b["water_cutoff"]))
+			w_mat.set_shader_parameter("chromatic_foam", bool(b["water_chromatic"]))
+			w_mat.set_shader_parameter("emission_strength", float(b["water_emit"]))
+
+	if _skirt_material:
+		_skirt_material.albedo_color = b["skirt_col"] as Color
+
+	if _prop_mat_primary:
+		var p1: Color = b["prop_primary"] as Color
+		_prop_mat_primary.albedo_color = p1
+		_prop_mat_primary.emission = p1.darkened(0.25)
+		_prop_mat_primary.emission_energy_multiplier = 0.75 if current_biome_id != 3 else 0.18
+	if _prop_mat_secondary:
+		_prop_mat_secondary.albedo_color = b["prop_secondary"] as Color
+
+	VineBarrierScript.apply_biome_palette(
+		b["vine_dark"] as Color,
+		b["vine_moss"] as Color,
+		b["vine_bud"] as Color
+	)
+
+
+func _build_biome_landmarks(rng: RandomNumberGenerator) -> void:
+	if props_root == null or current_graph == null or current_biome_id == BiomeThemeScript.BiomeId.VERDANT_MEADOW:
+		return
+
+	# Place atmospheric 3D landmarks offshore along outer contours so combat arenas stay 100% snag-free!
+	for poly in current_graph.outer_contours:
+		var n: int = poly.size()
+		if n < 6:
+			continue
+		var norm_sign: float = _contour_water_normal_sign(poly)
+		var accum_dist: float = 0.0
+		var next_spacing: float = rng.randf_range(9.0, 15.0)
+		for i in range(n):
+			var p1: Vector2 = poly[i]
+			var p2: Vector2 = poly[(i + 1) % n]
+			var seg_len: float = p1.distance_to(p2)
+			if seg_len < 0.1:
+				continue
+			accum_dist += seg_len
+			if accum_dist < next_spacing:
+				continue
+			accum_dist = 0.0
+			next_spacing = rng.randf_range(11.0, 19.0)
+
+			var edge_dir: Vector2 = (p2 - p1) / seg_len
+			var out_norm: Vector2 = Vector2(-edge_dir.y, edge_dir.x) * norm_sign
+			var mid: Vector2 = (p1 + p2) * 0.5
+			var offshore_dist: float = rng.randf_range(2.6, 5.8)
+			var anchor_2d: Vector2 = mid + out_norm * offshore_dist
+			if _is_point_on_filleted_land(anchor_2d):
+				continue
+
+			_spawn_single_biome_cluster(Vector3(anchor_2d.x, 0.0, anchor_2d.y), rng)
+
+
+func _spawn_single_biome_cluster(base_pos: Vector3, rng: RandomNumberGenerator) -> void:
+	match current_biome_id:
+		BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD:
+			# Twin faceted Ice Crystal Spires + floating frost shard
+			for k in range(2):
+				var spire := MeshInstance3D.new()
+				spire.mesh = _mesh_ice_spire
+				spire.material_override = _prop_mat_primary if k == 0 else _prop_mat_secondary
+				var s_scale: float = rng.randf_range(0.75, 1.35) if k == 0 else rng.randf_range(0.45, 0.85)
+				spire.scale = Vector3(s_scale, s_scale * rng.randf_range(0.9, 1.3), s_scale)
+				spire.position = base_pos + Vector3(rng.randf_range(-0.9, 0.9), 0.75 * s_scale, rng.randf_range(-0.9, 0.9))
+				spire.rotation_degrees = Vector3(rng.randf_range(-16.0, 16.0), rng.randf_range(0.0, 360.0), rng.randf_range(-16.0, 16.0))
+				spire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				props_root.add_child(spire)
+
+		BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION:
+			# Floating Golden Astrolabe Ring + glowing Cyan Star Core
+			var hover_y: float = rng.randf_range(1.5, 2.9)
+			var ring := MeshInstance3D.new()
+			ring.mesh = _mesh_astrolabe_ring
+			ring.material_override = _prop_mat_primary
+			var r_sc: float = rng.randf_range(0.85, 1.45)
+			ring.scale = Vector3.ONE * r_sc
+			ring.position = base_pos + Vector3(0.0, hover_y, 0.0)
+			ring.rotation_degrees = Vector3(rng.randf_range(35.0, 72.0), rng.randf_range(0.0, 360.0), rng.randf_range(-25.0, 25.0))
+			ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			props_root.add_child(ring)
+
+			var star := MeshInstance3D.new()
+			star.mesh = _mesh_octa_shard
+			star.material_override = _prop_mat_secondary
+			star.scale = Vector3.ONE * (r_sc * 1.15)
+			star.position = base_pos + Vector3(0.0, hover_y, 0.0)
+			star.rotation_degrees = Vector3(0.0, rng.randf_range(0.0, 360.0), 0.0)
+			star.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			props_root.add_child(star)
+
+		BiomeThemeScript.BiomeId.VOLCANIC_CALDERA:
+			# Stepped cluster of 3 Hexagonal Basalt Columns + glowing Ember Shard
+			for c_i in range(3):
+				var col_inst := MeshInstance3D.new()
+				col_inst.mesh = _mesh_hex_pillar
+				col_inst.material_override = _prop_mat_primary
+				var h_sc: float = rng.randf_range(0.55, 1.35)
+				col_inst.scale = Vector3(rng.randf_range(0.75, 1.1), h_sc, rng.randf_range(0.75, 1.1))
+				var ang: float = float(c_i) * (TAU / 3.0) + rng.randf_range(-0.3, 0.3)
+				col_inst.position = base_pos + Vector3(cos(ang) * 0.72, h_sc * 0.65, sin(ang) * 0.72)
+				col_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				props_root.add_child(col_inst)
+
+			var ember := MeshInstance3D.new()
+			ember.mesh = _mesh_octa_shard
+			ember.material_override = _prop_mat_secondary
+			ember.scale = Vector3.ONE * 0.85
+			ember.position = base_pos + Vector3(0.0, rng.randf_range(1.9, 2.7), 0.0)
+			ember.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			props_root.add_child(ember)
+
+		BiomeThemeScript.BiomeId.ARCANE_ANOMALY:
+			# Corrupted Arcane Hexcore Polyhedron + Twin Counter-Tilted Cyan/Magenta Halo Rings
+			var anom_y: float = rng.randf_range(1.6, 3.1)
+			var core := MeshInstance3D.new()
+			core.mesh = _mesh_poly_core
+			core.material_override = _prop_mat_primary
+			var c_sc: float = rng.randf_range(0.8, 1.3)
+			core.scale = Vector3.ONE * c_sc
+			core.position = base_pos + Vector3(0.0, anom_y, 0.0)
+			core.rotation_degrees = Vector3(rng.randf_range(0.0, 180.0), rng.randf_range(0.0, 180.0), 0.0)
+			core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			props_root.add_child(core)
+
+			for r_i in range(2):
+				var h_ring := MeshInstance3D.new()
+				h_ring.mesh = _mesh_anomaly_ring
+				h_ring.material_override = _prop_mat_secondary if r_i == 0 else _prop_mat_primary
+				h_ring.scale = Vector3.ONE * (c_sc * (1.15 + float(r_i) * 0.32))
+				h_ring.position = base_pos + Vector3(0.0, anom_y, 0.0)
+				h_ring.rotation_degrees = Vector3(52.0 if r_i == 0 else -48.0, rng.randf_range(0.0, 360.0), 34.0 if r_i == 0 else -38.0)
+				h_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				props_root.add_child(h_ring)
 
 
 ## Returns world-space teleport waypoints ordered from Spawn -> Web Arenas -> Boss
@@ -180,6 +425,9 @@ func _cleanup() -> void:
 	if bridges_root and is_instance_valid(bridges_root):
 		bridges_root.queue_free()
 		bridges_root = null
+	if props_root and is_instance_valid(props_root):
+		props_root.queue_free()
+		props_root = null
 	if collision_body and is_instance_valid(collision_body):
 		collision_body.queue_free()
 		collision_body = null

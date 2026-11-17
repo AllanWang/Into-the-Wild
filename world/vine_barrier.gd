@@ -83,6 +83,16 @@ static func _ensure_static_assets() -> void:
 	_bud_unlocked_mat.albedo_color = Color(0.75, 1.0, 0.45)
 
 
+static func apply_biome_palette(dark_col: Color, moss_col: Color, bud_col: Color) -> void:
+	_ensure_static_assets()
+	if _vine_dark_mat:
+		_vine_dark_mat.albedo_color = dark_col
+	if _vine_moss_mat:
+		_vine_moss_mat.albedo_color = moss_col
+	if _bud_locked_mat:
+		_bud_locked_mat.albedo_color = bud_col
+
+
 func _ready() -> void:
 	_ensure_static_assets()
 	collision_layer = 1

@@ -36,6 +36,7 @@ var is_game_running: bool = false
 var active_port: int = 0
 var active_map_seed: int = 0
 var active_map_preset: int = 0
+var active_biome_id: int = 0
 var _is_hosting: bool = false
 
 func _ready() -> void:
@@ -147,6 +148,7 @@ func leave_game() -> void:
 		_is_hosting = false
 	active_port = 0
 	active_map_seed = 0
+	active_biome_id = 0
 	if peer:
 		peer.close()
 		peer = null
