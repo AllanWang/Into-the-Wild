@@ -13,6 +13,7 @@ signal dash_state_changed(
 	charge_duration: float
 )
 signal loadout_changed()
+signal item_replaced_for_drop(category: String, item_id: int, drop_origin: Vector3)
 
 ## Pre-allocated per-slot hit context passed to Projectile / CombatZoneEffect (zero per-shot allocation)
 class WeaponHitContext:
@@ -408,6 +409,17 @@ func _set_shard_at(group: int, idx: int, shard_id: int) -> void:
 			reserve_shards[idx] = shard_id
 
 
+var _last_world_interact_frame: int = -1
+
+
+func can_world_interact() -> bool:
+	return not ui_input_blocked and _last_world_interact_frame != Engine.get_process_frames()
+
+
+func consume_world_interact() -> void:
+	_last_world_interact_frame = Engine.get_process_frames()
+
+
 func equip_shard_at_socket(shard_id: int, weapon_slot: int, socket_idx: int) -> void:
 	var w_slot: int = clampi(weapon_slot, 0, 1)
 	var arr: Array = weapon_shards[w_slot] as Array
@@ -424,9 +436,12 @@ func equip_shard_at_socket(shard_id: int, weapon_slot: int, socket_idx: int) -> 
 			_rebuild_hit_contexts()
 			loadout_changed.emit()
 			return
+	var displaced_shard: int = int(arr[s_idx])
 	arr[s_idx] = shard_id
 	_rebuild_hit_contexts()
 	loadout_changed.emit()
+	if displaced_shard != CatalogScript.ShardId.NONE:
+		item_replaced_for_drop.emit("shard", displaced_shard, global_position)
 
 
 func equip_shard(shard_id: int, preferred_weapon_slot: int = 0) -> void:
@@ -451,18 +466,13 @@ func equip_shard(shard_id: int, preferred_weapon_slot: int = 0) -> void:
 			loadout_changed.emit()
 			return
 
-	# 3. Try Reserve tray
-	for r in range(reserve_shards.size()):
-		if reserve_shards[r] == CatalogScript.ShardId.NONE:
-			reserve_shards[r] = shard_id
-			_rebuild_hit_contexts()
-			loadout_changed.emit()
-			return
-
-	# 4. If all 10 sockets are full, replace last socket on preferred weapon
+	# 3. All 6 visible weapon sockets are full: replace last socket on preferred weapon and drop old shard
+	var displaced_shard: int = int(pref_arr[pref_arr.size() - 1])
 	pref_arr[pref_arr.size() - 1] = shard_id
 	_rebuild_hit_contexts()
 	loadout_changed.emit()
+	if displaced_shard != CatalogScript.ShardId.NONE:
+		item_replaced_for_drop.emit("shard", displaced_shard, global_position)
 
 
 func equip_weapon(slot_idx: int, new_weapon_id: int) -> void:
@@ -471,12 +481,15 @@ func equip_weapon(slot_idx: int, new_weapon_id: int) -> void:
 	if weapon_slots[other_idx] == new_weapon_id:
 		swap_weapons()
 		return
+	var old_weapon_id: int = weapon_slots[idx]
 	weapon_slots[idx] = new_weapon_id
 	_weapon_timers[idx] = 0.0
 	var w: Dictionary = CatalogScript.get_weapon(new_weapon_id)
 	_weapon_max_timers[idx] = float(w.get("cooldown", 1.0)) if bool(w.get("is_cooldown", false)) else float(w.get("interval", 0.25))
 	_rebuild_hit_contexts()
 	loadout_changed.emit()
+	if old_weapon_id != CatalogScript.WeaponId.NONE and old_weapon_id != new_weapon_id:
+		item_replaced_for_drop.emit("weapon", old_weapon_id, global_position)
 
 
 func equip_ability(slot_idx: int, new_ability_id: int) -> void:
@@ -485,19 +498,25 @@ func equip_ability(slot_idx: int, new_ability_id: int) -> void:
 	if ability_slots[other_idx] == new_ability_id and new_ability_id != CatalogScript.AbilityId.NONE:
 		swap_abilities()
 		return
+	var old_ability_id: int = ability_slots[idx]
 	ability_slots[idx] = new_ability_id
 	_ability_timers[idx] = 0.0
 	var ab: Dictionary = CatalogScript.get_ability(new_ability_id)
 	_ability_max_timers[idx] = maxf(0.5, float(ab.get("cooldown", 10.0)))
 	loadout_changed.emit()
+	if old_ability_id != CatalogScript.AbilityId.NONE and old_ability_id != new_ability_id:
+		item_replaced_for_drop.emit("ability", old_ability_id, global_position)
 
 
 func equip_artifact(new_artifact_id: int) -> void:
+	var old_artifact_id: int = artifact_id
 	artifact_id = new_artifact_id
 	_artifact_timer = 0.0
 	var art: Dictionary = CatalogScript.get_artifact(new_artifact_id)
 	_artifact_max_timer = maxf(1.0, float(art.get("cooldown", 25.0)))
 	loadout_changed.emit()
+	if old_artifact_id != CatalogScript.ArtifactId.NONE and old_artifact_id != new_artifact_id:
+		item_replaced_for_drop.emit("artifact", old_artifact_id, global_position)
 
 
 func apply_trait_upgrade(trait_id: int) -> void:

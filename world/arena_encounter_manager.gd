@@ -18,6 +18,7 @@ const BARRIER_SCENE: PackedScene = preload("res://world/vine_barrier.tscn")
 const PEDESTAL_SCENE: PackedScene = preload("res://world/reward_pedestal.tscn")
 const HEALING_WELL_SCENE: PackedScene = preload("res://world/healing_well.tscn")
 const StagePortalScript = preload("res://world/stage_portal.gd")
+const DroppedItemScript = preload("res://world/dropped_item.gd")
 
 enum RoomState {
 	UNVISITED,
@@ -32,6 +33,7 @@ signal encounter_progress_changed(area_idx: int, wave_idx: int, total_waves: int
 signal encounter_cleared(area_idx: int, area_name: String)
 signal encounters_reset()
 signal reward_pedestal_interacted(pedestal: Node3D, player_node: Node)
+signal dropped_item_interacted(drop_node: Node3D, player_node: Node)
 signal stage_portal_entered(player_node: Node)
 
 @export var players_container: Node3D
@@ -45,6 +47,8 @@ var _barrier_pool: NodePool = null
 var _pedestal_pool: NodePool = null
 var _well_pool: NodePool = null
 var _stage_portal: Node3D = null
+var _dropped_items: Array[Node3D] = []
+var _drop_angle_cursor: int = 0
 
 var _graph: PlainsGraph = null
 var _room_states: Dictionary = {}          # area_idx -> RoomState
@@ -121,6 +125,150 @@ func _setup_pools() -> void:
 	if _stage_portal.has_signal("portal_activated") and not _stage_portal.is_connected("portal_activated", _on_stage_portal_activated):
 		_stage_portal.connect("portal_activated", _on_stage_portal_activated)
 
+	for i in range(8):
+		_create_pooled_dropped_item(i)
+
+
+func _create_pooled_dropped_item(idx: int) -> Node3D:
+	var d_item: Node3D = DroppedItemScript.new() as Node3D
+	d_item.name = "DroppedItem_%d" % idx
+	add_child(d_item)
+	if d_item.has_signal("dropped_item_interacted") and not d_item.is_connected("dropped_item_interacted", _on_dropped_item_interacted):
+		d_item.connect("dropped_item_interacted", _on_dropped_item_interacted)
+	if d_item.has_method("deactivate"):
+		d_item.call("deactivate")
+	_dropped_items.append(d_item)
+	return d_item
+
+
+func _acquire_dropped_item() -> Node3D:
+	for d in _dropped_items:
+		if d != null and is_instance_valid(d) and d.has_method("is_available") and bool(d.call("is_available")):
+			return d
+	return _create_pooled_dropped_item(_dropped_items.size())
+
+
+func _on_dropped_item_interacted(drop_node: Node3D, player_node: Node) -> void:
+	dropped_item_interacted.emit(drop_node, player_node)
+
+
+func spawn_dropped_item(category: String, item_id: int, origin_pos: Vector3) -> Node3D:
+	if item_id <= 0 or category.is_empty():
+		return null
+	_setup_pools()
+	var drop_node: Node3D = _acquire_dropped_item()
+	if drop_node == null:
+		return null
+	var target_pos: Vector3 = _find_clear_drop_position(origin_pos)
+	if drop_node.has_method("activate_drop"):
+		drop_node.call("activate_drop", category, item_id, origin_pos, target_pos, players_container)
+	return drop_node
+
+
+func _find_clear_drop_position(origin_pos: Vector3) -> Vector3:
+	var origin_2d := Vector2(origin_pos.x, origin_pos.z)
+	var radii: Array[float] = [1.55, 2.25, 2.95]
+	var golden_step: float = 2.39996323
+	for r in radii:
+		for step_i in range(10):
+			var ang: float = float(_drop_angle_cursor + step_i) * golden_step
+			var dir := Vector2(cos(ang), sin(ang))
+			var cand_2d: Vector2 = origin_2d + dir * r
+			# Must stay on dry land with shoreline margin (and away from Spawn Sanctuary pond center)
+			if _raycast_nearest_shoreline(origin_2d, dir, r + 1.0) != null:
+				continue
+			if cand_2d.length_squared() < 18.0:
+				continue
+			if not _is_clear_of_interactables(cand_2d):
+				continue
+			_drop_angle_cursor = (_drop_angle_cursor + step_i + 1) % 64
+			return Vector3(cand_2d.x, 0.0, cand_2d.y)
+
+	# Fallback: step slightly south-east of player
+	var fallback_ang: float = float(_drop_angle_cursor) * golden_step
+	_drop_angle_cursor = (_drop_angle_cursor + 1) % 64
+	return Vector3(origin_2d.x + cos(fallback_ang) * 1.4, 0.0, origin_2d.y + sin(fallback_ang) * 1.4)
+
+
+func _is_clear_of_interactables(cand_2d: Vector2) -> bool:
+	if _pedestal_pool != null:
+		for ped_n in _pedestal_pool.get_children():
+			var ped3d: Node3D = ped_n as Node3D
+			if ped3d != null and ped3d.visible:
+				if Vector2(ped3d.global_position.x, ped3d.global_position.z).distance_squared_to(cand_2d) < 4.4:
+					return false
+	if _stage_portal != null and _stage_portal.visible:
+		if Vector2(_stage_portal.global_position.x, _stage_portal.global_position.z).distance_squared_to(cand_2d) < 6.2:
+			return false
+	if _well_pool != null:
+		for well_n in _well_pool.get_children():
+			var well3d: Node3D = well_n as Node3D
+			if well3d != null and well3d.visible:
+				if Vector2(well3d.global_position.x, well3d.global_position.z).distance_squared_to(cand_2d) < 4.4:
+					return false
+	for d_n in _dropped_items:
+		if d_n != null and is_instance_valid(d_n) and d_n.visible:
+			if Vector2(d_n.global_position.x, d_n.global_position.z).distance_squared_to(cand_2d) < 2.1:
+				return false
+	return true
+
+
+func is_nearest_interactable(candidate: Node3D, player_node: Node3D, max_radius: float) -> bool:
+	if candidate == null or player_node == null:
+		return false
+	var px: float = player_node.global_position.x
+	var pz: float = player_node.global_position.z
+	var cdx: float = px - candidate.global_position.x
+	var cdz: float = pz - candidate.global_position.z
+	var cand_d2: float = cdx * cdx + cdz * cdz
+	if cand_d2 > max_radius * max_radius:
+		return false
+
+	if _pedestal_pool != null:
+		for ped_n in _pedestal_pool.get_children():
+			var ped3d: Node3D = ped_n as Node3D
+			if ped3d == null or ped3d == candidate or not ped3d.visible:
+				continue
+			var dx: float = px - ped3d.global_position.x
+			var dz: float = pz - ped3d.global_position.z
+			var d2: float = dx * dx + dz * dz
+			if d2 <= 3.1 * 3.1 and d2 + 0.0001 < cand_d2:
+				return false
+
+	if _stage_portal != null and _stage_portal != candidate and _stage_portal.visible:
+		var pdx: float = px - _stage_portal.global_position.x
+		var pdz: float = pz - _stage_portal.global_position.z
+		var pd2: float = pdx * pdx + pdz * pdz
+		if pd2 <= 3.1 * 3.1 and pd2 + 0.0001 < cand_d2:
+			return false
+
+	for d_n in _dropped_items:
+		var d3d: Node3D = d_n as Node3D
+		if d3d == null or d3d == candidate or not is_instance_valid(d3d) or not d3d.visible:
+			continue
+		if bool(d3d.get("_consuming")) or float(d3d.get("_pickup_grace")) > 0.0:
+			continue
+		var ddx: float = px - d3d.global_position.x
+		var ddz: float = pz - d3d.global_position.z
+		var dd2: float = ddx * ddx + ddz * ddz
+		if dd2 <= 2.45 * 2.45 and dd2 + 0.0001 < cand_d2:
+			return false
+
+	if _well_pool != null and not is_encounter_active():
+		for well_n in _well_pool.get_children():
+			var well3d: Node3D = well_n as Node3D
+			if well3d == null or well3d == candidate or not well3d.visible:
+				continue
+			if int(well3d.get("_charges_left")) <= 0:
+				continue
+			var wdx: float = px - well3d.global_position.x
+			var wdz: float = pz - well3d.global_position.z
+			var wd2: float = wdx * wdx + wdz * wdz
+			if wd2 <= 2.9 * 2.9 and wd2 + 0.0001 < cand_d2:
+				return false
+
+	return true
+
 
 func _on_stage_portal_activated(player_node: Node) -> void:
 	stage_portal_entered.emit(player_node)
@@ -152,6 +300,10 @@ func setup_for_graph(graph: PlainsGraph, map_seed: int = 0) -> void:
 		_well_pool.release_all()
 	if _stage_portal and _stage_portal.has_method("deactivate"):
 		_stage_portal.call("deactivate")
+	for d_item in _dropped_items:
+		if d_item != null and is_instance_valid(d_item) and d_item.has_method("deactivate"):
+			d_item.call("deactivate")
+	_drop_angle_cursor = 0
 
 	_graph = graph
 	_arenas_cleared_count = 0

@@ -34,6 +34,7 @@ var _preview_back_btn: Button = null
 
 var _hud_bar: Control = null
 var _active_pedestal: Node3D = null
+var _active_ground_drop: Node3D = null
 var _active_player: Node = null
 var _current_cards: Array = []
 var _pending_spec: Dictionary = {}
@@ -199,8 +200,11 @@ func open_for_pedestal(pedestal: Node3D, player_node: Node) -> void:
 
 	_build_shell()
 	_active_pedestal = pedestal
+	_active_ground_drop = null
 	_active_player = player_node
 	_is_open = true
+	if _preview_back_btn:
+		_preview_back_btn.text = "← Back  [Esc]"
 
 	if _active_player.has_method("set_ui_input_blocked"):
 		_active_player.call("set_ui_input_blocked", true)
@@ -210,6 +214,48 @@ func open_for_pedestal(pedestal: Node3D, player_node: Node) -> void:
 		_current_cards = pedestal.call("get_or_roll_cards", player_node) as Array
 
 	_show_draft_cards_view()
+
+
+func open_for_ground_item(drop_node: Node3D, player_node: Node) -> void:
+	if drop_node == null or player_node == null or not drop_node.has_method("get_spec"):
+		return
+	if _hud_bar != null and _hud_bar.has_method("cancel_pickup_placement"):
+		_hud_bar.call("cancel_pickup_placement", false)
+
+	_build_shell()
+	_active_pedestal = null
+	_active_ground_drop = drop_node
+	_active_player = player_node
+	_current_cards = []
+
+	var spec: Dictionary = drop_node.call("get_spec") as Dictionary
+	var cat: String = str(spec.get("category", ""))
+	var item_id: int = int(spec.get("id", 0))
+	if item_id == 0:
+		close_draft()
+		return
+
+	if cat == "artifact":
+		_claim_and_close(func(p: Node) -> void:
+			if p.has_method("equip_artifact"):
+				p.call("equip_artifact", item_id)
+		)
+		return
+
+	if _preview_back_btn:
+		_preview_back_btn.text = "Cancel  [Esc]"
+
+	_pending_spec = spec.duplicate(true)
+	if _hud_bar != null and is_instance_valid(_hud_bar) and _hud_bar.has_method("begin_pickup_placement"):
+		_show_stationary_preview_for(_pending_spec)
+		_hud_bar.call(
+			"begin_pickup_placement",
+			_pending_spec,
+			Callable(self, "_on_hud_placement_committed"),
+			Callable(self, "_on_hud_placement_cancelled")
+		)
+	else:
+		_on_hud_placement_committed(0, -1)
 
 
 func _show_draft_cards_view() -> void:
@@ -323,16 +369,21 @@ func close_draft() -> void:
 	if _active_player != null and is_instance_valid(_active_player) and _active_player.has_method("set_ui_input_blocked"):
 		_active_player.call("set_ui_input_blocked", false)
 	_active_pedestal = null
+	_active_ground_drop = null
 	_active_player = null
 
 
 func _claim_and_close(action_cb: Callable) -> void:
 	var p: Node = _active_player
 	var ped: Node3D = _active_pedestal
-	if p != null and is_instance_valid(p):
-		action_cb.call(p)
+	var gdrop: Node3D = _active_ground_drop
+	# Consume ground drop BEFORE equipping so the newly freed ground spot can receive the swapped-out item cleanly!
+	if gdrop != null and is_instance_valid(gdrop) and gdrop.has_method("consume_drop"):
+		gdrop.call("consume_drop")
 	if ped != null and is_instance_valid(ped) and ped.has_method("consume_pedestal"):
 		ped.call("consume_pedestal")
+	if p != null and is_instance_valid(p):
+		action_cb.call(p)
 	close_draft()
 
 

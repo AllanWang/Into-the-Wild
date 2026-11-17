@@ -208,8 +208,14 @@ func _process(delta: float) -> void:
 			prompt_label.modulate = Color(0.42, 1.0, 0.72, 1.0)
 
 	if not is_full_hp and hc != null:
-		var blocked: bool = bool(near_player.get("ui_input_blocked")) if ("ui_input_blocked" in near_player) else false
-		if not blocked and Input.is_action_just_pressed("interact"):
+		var can_act: bool = true
+		if near_player.has_method("can_world_interact"):
+			can_act = bool(near_player.call("can_world_interact"))
+		elif "ui_input_blocked" in near_player:
+			can_act = not bool(near_player.get("ui_input_blocked"))
+		if can_act and Input.is_action_just_pressed("interact"):
+			if near_player.has_method("consume_world_interact"):
+				near_player.call("consume_world_interact")
 			var heal_amt: float = hc.max_health * HEAL_PCT
 			var gained: float = hc.heal(heal_amt)
 			if gained > 0.01:
@@ -245,5 +251,8 @@ func _find_local_player_in_range() -> Node3D:
 		var dx: float = p3d.global_position.x - global_position.x
 		var dz: float = p3d.global_position.z - global_position.z
 		if (dx * dx + dz * dz) <= r2:
+			if _encounter_mgr != null and is_instance_valid(_encounter_mgr) and _encounter_mgr.has_method("is_nearest_interactable"):
+				if not bool(_encounter_mgr.call("is_nearest_interactable", self, p3d, INTERACT_RADIUS)):
+					return null
 			return p3d
 	return null

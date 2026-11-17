@@ -92,6 +92,7 @@ func _ready() -> void:
 		encounter_manager.encounter_cleared.connect(_on_encounter_cleared)
 		encounter_manager.encounters_reset.connect(_on_encounters_reset)
 		encounter_manager.reward_pedestal_interacted.connect(_on_reward_pedestal_interacted)
+		encounter_manager.dropped_item_interacted.connect(_on_dropped_item_interacted)
 		encounter_manager.stage_portal_entered.connect(_on_stage_portal_entered)
 
 	if procedural_world:
@@ -358,6 +359,23 @@ func _wire_player_signals_and_hud(p_node: Node) -> void:
 		var cb := Callable(self, "_on_player_defeated")
 		if not p_node.is_connected("player_defeated", cb):
 			p_node.connect("player_defeated", cb)
+	if p_node.has_signal("item_replaced_for_drop"):
+		var drop_cb := Callable(self, "_on_player_item_replaced_for_drop")
+		if not p_node.is_connected("item_replaced_for_drop", drop_cb):
+			p_node.connect("item_replaced_for_drop", drop_cb)
+
+
+func _on_player_item_replaced_for_drop(category: String, item_id: int, drop_origin: Vector3) -> void:
+	if encounter_manager and encounter_manager.has_method("spawn_dropped_item"):
+		encounter_manager.call("spawn_dropped_item", category, item_id, drop_origin)
+
+
+func _on_dropped_item_interacted(drop_node: Node3D, player_node: Node) -> void:
+	if _tutorial_modal and _tutorial_modal.has_method("close_modal"):
+		_tutorial_modal.call("close_modal")
+	if _reward_draft_overlay and _reward_draft_overlay.has_method("open_for_ground_item"):
+		_reward_draft_overlay.call("open_for_ground_item", drop_node, player_node)
+
 
 
 func _bind_local_player_health_hud() -> void:
