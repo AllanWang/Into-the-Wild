@@ -33,6 +33,7 @@ var _client_peer: StreamPeerTCP = null
 var _debounce_timer: SceneTreeTimer = null
 var _stabilized: bool = false
 var host_is_embedded: bool = false
+var _no_focus_unlocked: bool = false
 
 func _init() -> void:
 	if not OS.is_debug_build():
@@ -51,38 +52,7 @@ func _detect_embedded_status() -> void:
 		print("[DebugTools] Detected embedded in editor via Engine.is_embedded_in_editor().")
 		return
 
-	var cmd_str: String = ""
-	if OS.get_name() == "Windows":
-		var out: Array = []
-		var pid: int = OS.get_process_id()
-		var pcmd: String = "(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine" % pid
-		var err: int = OS.execute("powershell", ["-NoProfile", "-Command", pcmd], out)
-		if err == OK and out.size() > 0:
-			cmd_str = out[0].strip_edges()
-	elif OS.get_name() == "Linux":
-		if FileAccess.file_exists("/proc/self/cmdline"):
-			var f = FileAccess.open("/proc/self/cmdline", FileAccess.READ)
-			if f:
-				cmd_str = f.get_as_text()
-				f.close()
-
-	if not cmd_str.is_empty():
-		if "--wid" in cmd_str:
-			is_embedded = true
-		
-		var regex_pos = RegEx.new()
-		regex_pos.compile("--position\\s+[\"']?(-?\\d+),(-?\\d+)[\"']?")
-		var match_pos = regex_pos.search(cmd_str)
-		if match_pos:
-			host_window_rect.position = Vector2i(match_pos.get_string(1).to_int(), match_pos.get_string(2).to_int())
-			
-		var regex_res = RegEx.new()
-		regex_res.compile("--resolution\\s+[\"']?(\\d+)x(\\d+)[\"']?")
-		var match_res = regex_res.search(cmd_str)
-		if match_res:
-			host_window_rect.size = Vector2i(match_res.get_string(1).to_int(), match_res.get_string(2).to_int())
-
-	# Fallback to standard command-line args if available
+	# Check standard command-line args if available
 	var args = OS.get_cmdline_args()
 	for i in range(args.size()):
 		var arg = args[i]
@@ -129,9 +99,9 @@ func _ready() -> void:
 	if not is_active:
 		return
 	if OS.has_feature("editor") and not is_embedded:
-		get_tree().create_timer(0.5).timeout.connect(func() -> void:
-			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, false)
-		)
+		set_process_input(true)
+	else:
+		set_process_input(false)
 	
 	if is_embedded:
 		print("[DebugTools] Instance is embedded in editor (--wid).")
@@ -159,6 +129,17 @@ func _ready() -> void:
 				apply_grid_layout(maxi(active_instance_count, instance_index + 1))
 				instance_count_updated.emit(maxi(active_instance_count, instance_index + 1))
 		)
+
+func _input(event: InputEvent) -> void:
+	if _no_focus_unlocked or not is_active or is_embedded or not OS.has_feature("editor"):
+		set_process_input(false)
+		return
+	if event is InputEventMouseButton and event.pressed and not event.has_meta(&"godot_ai_injected"):
+		_no_focus_unlocked = true
+		set_process_input(false)
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, false)
+		DisplayServer.window_move_to_foreground()
+
 
 func _process(_delta: float) -> void:
 	if not is_active:
