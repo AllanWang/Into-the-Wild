@@ -32,11 +32,11 @@ const RewardDraftOverlayScript = preload("res://ui/reward_draft_overlay.gd")
 var player_cam_offset: Vector3 = Vector3(-18.0, 18.0, 18.0)
 var overview_cam_pos: Vector3 = Vector3(-90.0, 90.0, 60.0)
 var is_overview_mode: bool = false
-var normal_cam_size: float = 11.0
+var normal_cam_size: float = 13.5
 var overview_cam_size: float = 110.0
 var current_spawn_pos: Vector3 = Vector3(0.0, 0.0, 6.8)
 const MIN_CAMERA_SIZE: float = 7.0
-const MAX_CAMERA_SIZE: float = 13.5
+const MAX_CAMERA_SIZE: float = 16.0
 const ZOOM_STEP: float = 0.75
 
 var _waypoints: Array[Dictionary] = []
@@ -90,6 +90,8 @@ func _ready() -> void:
 	if camera:
 		camera.near = 0.05
 		camera.far = 2500.0
+		if not is_overview_mode:
+			camera.size = normal_cam_size
 
 	if not generator.current_graph:
 		generator.generate_map(generator.map_seed, int(generator.preset_mode))

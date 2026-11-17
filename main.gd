@@ -31,9 +31,9 @@ var camera_offset: Vector3 = Vector3(-18.0, 18.0, 18.0)
 var is_overview: bool = false
 var overview_pos: Vector3 = Vector3(-90.0, 90.0, 60.0)
 var overview_size: float = 110.0
-var default_camera_size: float = 11.0
+var default_camera_size: float = 13.5
 const MIN_CAMERA_SIZE: float = 7.0
-const MAX_CAMERA_SIZE: float = 13.5
+const MAX_CAMERA_SIZE: float = 16.0
 const ZOOM_STEP: float = 0.75
 
 var _waypoints: Array[Dictionary] = []
@@ -106,6 +106,8 @@ func _ready() -> void:
 
 	if camera:
 		camera.far = 2500.0
+		if not is_overview:
+			camera.size = default_camera_size
 
 	if encounter_manager:
 		encounter_manager.players_container = players_container
