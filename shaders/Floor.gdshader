@@ -23,6 +23,7 @@ group_uniforms lighting;
 uniform int cuts : hint_range(1, 8) = 3;
 uniform float wrap : hint_range(-2.0f, 2.0f) = 0.0f;
 uniform float steepness : hint_range(1.0f, 8.0f) = 1.0f;
+uniform bool enable_cloud_shadows = true;
 
 group_uniforms water_bank;
 uniform vec3 water_pool_center = vec3(0.0, 0.0, 0.0);
@@ -76,9 +77,9 @@ void fragment() {
 	vec3 emissive = vec3(0.0);
 
 	if (biome_fx_mode == 1) {
-		// Glacial Frostfield: broad pale winter-slate ice sheets with subtle soft frost seams (high contrast for blue player!)
-		float seam = 1.0 - smoothstep(0.002, 0.012, abs(n2 - 0.52));
-		ALBEDO = mix(ALBEDO, fx_color1.rgb, seam * 0.24);
+		// Glacial Frostfield: bright sunlit snow drifts without cloud shadows, accented by delicate ice-crust seams
+		float seam = 1.0 - smoothstep(0.002, 0.011, abs(n2 - 0.52));
+		ALBEDO = mix(ALBEDO, fx_color1.rgb, seam * 0.28);
 		emissive = fx_color1.rgb * seam * fx_emission_strength;
 	} else if (biome_fx_mode == 2) {
 		// Astral Constellation: deep calm indigo velvet with delicate celestial threads & soft stars
@@ -142,7 +143,7 @@ void light() {
 	float diffuse_amount = NdotL + (ATTENUATION - 1.0) + wrap;
 	diffuse_amount *= steepness;
 
-	if (LIGHT_IS_DIRECTIONAL) {
+	if (LIGHT_IS_DIRECTIONAL && enable_cloud_shadows) {
 		vec3 vertex_world_pos = (MODEL_MATRIX * vec4(vertex_pos, 1.0)).xyz;
 		float light_value = get_cloud_noise(vertex_world_pos);
 		diffuse_amount = min(diffuse_amount, light_value);

@@ -12,6 +12,7 @@ const MapPresetConfigScript = preload("res://world/map_preset_config.gd")
 const GrassTileStamperScript = preload("res://world/grass_tile_stamper.gd")
 const BiomeThemeScript = preload("res://world/biome_theme.gd")
 const VineBarrierScript = preload("res://world/vine_barrier.gd")
+const SnowFootstepTrailScript = preload("res://world/snow_footstep_trail.gd")
 
 const CHUNK_SIZE: float = 40.0
 
@@ -39,6 +40,7 @@ var collision_body: StaticBody3D = null
 var skirt_instance: MeshInstance3D = null
 var water_instance: MeshInstance3D = null
 var pond_instance: MeshInstance3D = null
+var snow_trail: Node3D = null
 
 # Runtime state
 var current_graph: PlainsGraph = null
@@ -130,6 +132,11 @@ func _ensure_stamper() -> void:
 	if _prop_mat_secondary == null:
 		_prop_mat_secondary = StandardMaterial3D.new()
 		_prop_mat_secondary.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if snow_trail == null or not is_instance_valid(snow_trail):
+		snow_trail = SnowFootstepTrailScript.new()
+		snow_trail.name = "SnowFootstepTrail"
+		snow_trail.call("setup", self)
+		add_child(snow_trail)
 
 
 ## Generates or regenerates the entire Shape of Dreams web world with coordinated Biome styling
@@ -225,6 +232,10 @@ func apply_biome_materials(biome_id: int) -> void:
 		floor_material.set_shader_parameter("fx_color2", b["fx_c2"])
 		floor_material.set_shader_parameter("fx_color3", b["fx_c3"])
 		floor_material.set_shader_parameter("fx_emission_strength", float(b["fx_emit"]))
+		floor_material.set_shader_parameter("enable_cloud_shadows", bool(b.get("cloud_shadows", true)))
+
+	if snow_trail and is_instance_valid(snow_trail):
+		snow_trail.call("set_snow_enabled", current_biome_id == BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD)
 
 	if grass_material:
 		grass_material.set_shader_parameter("albedo1", b["floor_a1"])
