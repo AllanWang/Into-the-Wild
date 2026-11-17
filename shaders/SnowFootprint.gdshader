@@ -1,9 +1,9 @@
 shader_type spatial;
 render_mode unshaded, depth_draw_never, cull_disabled, shadows_disabled, ambient_light_disabled, fog_disabled;
 
-uniform vec4 groove_color : source_color = vec4(0.14, 0.20, 0.32, 1.0);
-uniform vec4 edge_color : source_color = vec4(0.62, 0.75, 0.90, 1.0);
-uniform float segment_opacity : hint_range(0.0, 0.5) = 0.065;
+uniform vec4 groove_color : source_color = vec4(0.28, 0.40, 0.58, 1.0);
+uniform vec4 edge_color : source_color = vec4(0.90, 0.96, 1.0, 1.0);
+uniform float segment_opacity : hint_range(0.0, 0.5) = 0.075;
 
 instance uniform float fade_alpha : hint_range(0.0, 1.0) = 1.0;
 

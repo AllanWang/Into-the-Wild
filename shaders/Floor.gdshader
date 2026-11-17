@@ -140,10 +140,14 @@ void fragment() {
 	vec3 emissive = vec3(0.0);
 
 	if (biome_fx_mode == 1) {
-		// Glacial Frostfield: calm Arctic Twilight slate-snow without cloud shadows, accented by soft frost seams
-		float seam = 1.0 - smoothstep(0.002, 0.011, abs(n2 - 0.52));
-		ALBEDO = mix(ALBEDO, fx_color1.rgb, seam * 0.16);
-		emissive = fx_color1.rgb * seam * fx_emission_strength;
+		// Glacial Frostfield: luminous sculpted winter snowdrifts, subtle subsurface glacier veins & crisp frost ridges
+		float drift_band = smoothstep(0.36, 0.68, sin(vertex_world.x * 0.16 + vertex_world.z * 0.11 + n3 * 3.2) * 0.5 + 0.5);
+		ALBEDO = mix(ALBEDO * 0.94, ALBEDO * 1.06, drift_band);
+		float glacier_vein = 1.0 - smoothstep(0.002, 0.015, abs(n3 - 0.50));
+		float frost_ridge = 1.0 - smoothstep(0.002, 0.011, abs(n2 - 0.52));
+		ALBEDO = mix(ALBEDO, fx_color2.rgb, glacier_vein * 0.20);
+		ALBEDO = mix(ALBEDO, fx_color1.rgb, frost_ridge * 0.26);
+		emissive = (fx_color1.rgb * frost_ridge * 0.65 + fx_color2.rgb * glacier_vein * 0.35) * fx_emission_strength;
 	} else if (biome_fx_mode == 2) {
 		// Astral Constellation: deep indigo velvet with unbroken fading star-to-star threads & shooting stars
 		vec2 uv_star = vertex_world.xz * 0.21;

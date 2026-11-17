@@ -22,6 +22,7 @@ var pool: Node = null
 
 var inner_rune_mesh: MeshInstance3D = null
 var focus_ring_mesh: MeshInstance3D = null
+var outer_frame_mesh: MeshInstance3D = null
 
 var _mode: int = ZoneMode.DELAYED_BLAST
 var _radius: float = 2.8
@@ -43,6 +44,7 @@ var _slow_tick_timer: float = 0.0
 var _active: bool = false
 
 static var _shared_torus: TorusMesh = null
+static var _shared_outer_frame: TorusMesh = null
 static var _shared_diamond_rune: TorusMesh = null
 static var _shared_disc: CylinderMesh = null
 static var _shared_pillar: CylinderMesh = null
@@ -50,6 +52,7 @@ static var _shared_whip_fill: ArrayMesh = null
 static var _shared_whip_rim: ArrayMesh = null
 static var _ring_mats: Dictionary = {}
 static var _fill_mats: Dictionary = {}
+static var _frame_mats: Dictionary = {}
 
 
 static func _build_sector_mesh(inner_r: float, outer_r: float, half_angle_deg: float, segs: int) -> ArrayMesh:
@@ -86,6 +89,12 @@ static func _ensure_shared() -> void:
 	_shared_torus.rings = 28
 	_shared_torus.ring_segments = 8
 
+	_shared_outer_frame = TorusMesh.new()
+	_shared_outer_frame.inner_radius = 0.995
+	_shared_outer_frame.outer_radius = 1.045
+	_shared_outer_frame.rings = 28
+	_shared_outer_frame.ring_segments = 8
+
 	# Crisp 4-point celestial diamond rune for Friendly / Player AoEs!
 	_shared_diamond_rune = TorusMesh.new()
 	_shared_diamond_rune.inner_radius = 0.86
@@ -112,24 +121,30 @@ static func _ensure_shared() -> void:
 static func _get_palette_mats(key: String, col: Color) -> Array[StandardMaterial3D]:
 	_ensure_shared()
 	if _ring_mats.has(key):
-		return [_ring_mats[key] as StandardMaterial3D, _fill_mats[key] as StandardMaterial3D]
+		return [_ring_mats[key] as StandardMaterial3D, _fill_mats[key] as StandardMaterial3D, _frame_mats[key] as StandardMaterial3D]
 
 	var r_mat := StandardMaterial3D.new()
 	r_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	r_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	r_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	r_mat.albedo_color = Color(col.r, col.g, col.b, 0.92)
+	r_mat.albedo_color = Color(col.r, col.g, col.b, 0.95)
 
 	var f_mat := StandardMaterial3D.new()
 	f_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	f_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	f_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	f_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	f_mat.albedo_color = Color(col.r, col.g, col.b, 0.18)
+	f_mat.albedo_color = Color(col.r * 0.48, col.g * 0.72, col.b * 0.96, 0.24)
+
+	var frame_mat := StandardMaterial3D.new()
+	frame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	frame_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	frame_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	frame_mat.albedo_color = Color(col.r * 0.14, col.g * 0.26, col.b * 0.48, 0.82)
 
 	_ring_mats[key] = r_mat
 	_fill_mats[key] = f_mat
-	return [r_mat, f_mat]
+	_frame_mats[key] = frame_mat
+	return [r_mat, f_mat, frame_mat]
 
 
 func _ensure_player_fx_nodes() -> void:
@@ -148,6 +163,13 @@ func _ensure_player_fx_nodes() -> void:
 		focus_ring_mesh.position = Vector3(0.0, 0.025, 0.0)
 		focus_ring_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(focus_ring_mesh)
+	if outer_frame_mesh == null:
+		outer_frame_mesh = MeshInstance3D.new()
+		outer_frame_mesh.name = "OuterFrameMesh"
+		outer_frame_mesh.mesh = _shared_outer_frame
+		outer_frame_mesh.position = Vector3(0.0, 0.018, 0.0)
+		outer_frame_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(outer_frame_mesh)
 
 
 func _ready() -> void:
@@ -221,6 +243,9 @@ func activate_zone(
 		focus_ring_mesh.material_override = mats[0]
 		focus_ring_mesh.visible = (not is_whip) and (_mode != ZoneMode.INSTANT_BLAST)
 		focus_ring_mesh.scale = Vector3.ONE if _mode == ZoneMode.DELAYED_BLAST else Vector3(0.42, 1.0, 0.42)
+	if outer_frame_mesh:
+		outer_frame_mesh.material_override = mats[2]
+		outer_frame_mesh.visible = not is_whip
 
 	if is_inside_tree():
 		global_position = Vector3(p_pos.x, 0.06, p_pos.z)
@@ -273,6 +298,8 @@ func deactivate() -> void:
 		inner_rune_mesh.visible = false
 	if focus_ring_mesh:
 		focus_ring_mesh.visible = false
+	if outer_frame_mesh:
+		outer_frame_mesh.visible = false
 
 
 func on_pool_release() -> void:
