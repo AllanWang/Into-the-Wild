@@ -140,9 +140,9 @@ void fragment() {
 	vec3 emissive = vec3(0.0);
 
 	if (biome_fx_mode == 1) {
-		// Glacial Frostfield: bright sunlit snow drifts without cloud shadows, accented by delicate ice-crust seams
+		// Glacial Frostfield: calm Arctic Twilight slate-snow without cloud shadows, accented by soft frost seams
 		float seam = 1.0 - smoothstep(0.002, 0.011, abs(n2 - 0.52));
-		ALBEDO = mix(ALBEDO, fx_color1.rgb, seam * 0.28);
+		ALBEDO = mix(ALBEDO, fx_color1.rgb, seam * 0.16);
 		emissive = fx_color1.rgb * seam * fx_emission_strength;
 	} else if (biome_fx_mode == 2) {
 		// Astral Constellation: deep indigo velvet with unbroken fading star-to-star threads & shooting stars

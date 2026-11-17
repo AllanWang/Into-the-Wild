@@ -1,24 +1,27 @@
 shader_type spatial;
 render_mode unshaded, depth_draw_never, cull_disabled, shadows_disabled, ambient_light_disabled, fog_disabled;
 
-uniform vec4 print_color : source_color = vec4(0.32, 0.54, 0.78, 1.0);
-uniform vec4 rim_color : source_color = vec4(0.96, 0.99, 1.0, 1.0);
-uniform float base_opacity : hint_range(0.0, 1.0) = 0.42;
+uniform vec4 groove_color : source_color = vec4(0.14, 0.20, 0.32, 1.0);
+uniform vec4 edge_color : source_color = vec4(0.62, 0.75, 0.90, 1.0);
+uniform float segment_opacity : hint_range(0.0, 0.5) = 0.065;
 
 instance uniform float fade_alpha : hint_range(0.0, 1.0) = 1.0;
 
 void fragment() {
 	vec2 p = (UV - vec2(0.5)) * 2.0;
-	float taper = 1.0 - 0.10 * p.y;
-	vec2 q = vec2(p.x / max(0.55, taper), p.y);
-	vec2 seg_p = vec2(q.x, q.y - clamp(q.y, -0.32, 0.32));
-	float d = length(seg_p) / 0.62;
+	float ax = abs(p.x);
+	float ay = abs(p.y);
+	if (ax > 0.98 || ay > 0.98) {
+		discard;
+	}
+	// Smooth longitudinal feathering so closely spaced stamps merge into one continuous track with zero steps!
+	float along = cos(ay * 1.5707963);
+	along = along * along;
+	float trough = 1.0 - smoothstep(0.38, 0.84, ax);
+	float berm = smoothstep(0.66, 0.84, ax) * (1.0 - smoothstep(0.84, 0.98, ax));
 
-	float inner = 1.0 - smoothstep(0.25, 1.0, d);
-	float rim = smoothstep(0.70, 0.92, d) * (1.0 - smoothstep(0.92, 1.16, d));
-
-	vec3 col = mix(print_color.rgb, rim_color.rgb, rim * 0.30);
-	float alpha = (inner * base_opacity + rim * base_opacity * 0.22) * clamp(fade_alpha, 0.0, 1.0);
+	vec3 col = mix(groove_color.rgb, edge_color.rgb, berm * 0.45);
+	float alpha = (trough * segment_opacity + berm * segment_opacity * 0.35) * along * clamp(fade_alpha, 0.0, 1.0);
 	ALBEDO = col;
 	ALPHA = clamp(alpha, 0.0, 1.0);
 }

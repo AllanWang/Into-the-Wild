@@ -1,17 +1,17 @@
 class_name SnowFootstepTrail
 extends Node3D
 
-## Lightweight pooled snow footstep trail for Glacial Frostfield.
-## Stamps faint, soft alternating snow impressions behind moving players
-## and gently fades them back into the bright snowfield.
+## Lightweight pooled snow glide trail for Glacial Frostfield.
+## Stamped densely behind the sliding box player so overlapping feathered quads
+## merge into one faint, continuous trough without individual footsteps.
 
 const SNOW_SHADER: Shader = preload("res://shaders/SnowFootprint.gdshader")
 
-const MAX_PRINTS: int = 56
-const PRINT_LIFETIME: float = 11.5
-const WALK_STEP_DIST: float = 0.38
-const DASH_STEP_DIST: float = 0.26
-const LATERAL_FOOT_OFFSET: float = 0.15
+const MAX_PRINTS: int = 96
+const PRINT_LIFETIME: float = 9.5
+const WALK_STEP_DIST: float = 0.14
+const DASH_STEP_DIST: float = 0.14
+const LATERAL_FOOT_OFFSET: float = 0.0
 const PRINT_Y: float = 0.04
 
 var _world: Node3D = null
@@ -132,8 +132,7 @@ func _sample_players() -> void:
 		if not _player_state.has(pid):
 			_player_state[pid] = {
 				"last_pos": pos2,
-				"accum": 0.0,
-				"side": 1.0
+				"accum": 0.0
 			}
 			continue
 
@@ -154,17 +153,15 @@ func _sample_players() -> void:
 		var dashing: bool = bool(p3d.get("is_dashing")) if "is_dashing" in p3d else false
 		var thresh: float = DASH_STEP_DIST if dashing else WALK_STEP_DIST
 		var dir2: Vector2 = diff / dist
-		var right2 := Vector2(dir2.y, -dir2.x)
+		var cur_step_pt: Vector2 = prev2
 
 		while accum >= thresh:
 			accum -= thresh
-			var side: float = float(st["side"])
-			st["side"] = -side
-			var lat: float = (side * 0.05) if dashing else (side * LATERAL_FOOT_OFFSET)
-			var stamp2: Vector2 = pos2 - dir2 * 0.12 + right2 * lat
+			cur_step_pt += dir2 * thresh
+			var stamp2: Vector2 = cur_step_pt - dir2 * 0.08
 			if _is_dry_snow(stamp2):
-				var w: float = 0.54 if dashing else 0.44
-				var l: float = 0.86 if dashing else 0.64
+				var w: float = 0.58 if dashing else 0.52
+				var l: float = 0.66 if dashing else 0.52
 				_stamp_print(stamp2, dir2, w, l)
 
 		st["accum"] = accum
