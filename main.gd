@@ -8,6 +8,13 @@ const RewardDraftOverlayScript = preload("res://ui/reward_draft_overlay.gd")
 const TutorialModalScript = preload("res://ui/tutorial_modal.gd")
 const PortalConfirmModalScript = preload("res://ui/portal_confirm_modal.gd")
 const PauseMenuModalScript = preload("res://ui/pause_menu_modal.gd")
+const ProjectileScript = preload("res://player/projectile.gd")
+const ArchetypeScript = preload("res://enemies/enemy_archetype_data.gd")
+const CombatZoneScript = preload("res://world/combat_zone_effect.gd")
+const Trail3DScript = preload("res://scripts/trail_3d.gd")
+const ENEMY_HAZARD_SHADER: Shader = preload("res://shaders/EnemyHazard.gdshader")
+const OVERHEAD_BAR_SHADER: Shader = preload("res://shaders/OverheadBar.gdshader")
+const CONTACT_SHADOW_SHADER: Shader = preload("res://shaders/ContactShadow.gdshader")
 
 @onready var procedural_world: ProceduralWorld = $ProceduralWorld
 @onready var encounter_manager: ArenaEncounterManager = get_node_or_null("ArenaEncounterManager") as ArenaEncounterManager
@@ -52,6 +59,12 @@ var _pause_menu_modal: Control = null
 var _biome_button: Button = null
 var _camera_shake_trauma: float = 0.0
 var _shake_phase: float = 0.0
+var _web_quality_idx: int = 0
+var _web_curtain_rect: ColorRect = null
+var _web_curtain_tween: Tween = null
+var _portal_transition_busy: bool = false
+var _god_mode_enabled: bool = false
+var _god_mode_button: Button = null
 
 
 func add_camera_shake(trauma: float) -> void:
@@ -67,6 +80,7 @@ func add_camera_shake(trauma: float) -> void:
 
 func _ready() -> void:
 	add_to_group("world_camera_shake")
+	_setup_web_transition_curtain()
 	var is_emb: bool = Engine.is_embedded_in_editor() or ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
 	if not OS.has_feature("web") and not is_emb and not EngineDebugger.is_active():
 		DisplayServer.window_move_to_foreground()
@@ -92,6 +106,9 @@ func _ready() -> void:
 	_configure_button(preset_button, _on_preset_pressed)
 	_configure_button(regen_button, _on_regen_pressed)
 
+	if OS.is_debug_build() and ("--god-mode" in OS.get_cmdline_args() or "--god-mode" in OS.get_cmdline_user_args()):
+		_god_mode_enabled = true
+
 	if regen_button and regen_button.get_parent():
 		var dbg_row: Node = regen_button.get_parent()
 		_biome_button = Button.new()
@@ -103,11 +120,22 @@ func _ready() -> void:
 		dbg_row.move_child(_biome_button, regen_button.get_index())
 		_configure_button(_biome_button, _on_biome_pressed)
 
+		_god_mode_button = Button.new()
+		_god_mode_button.name = "GodModeButton"
+		_god_mode_button.custom_minimum_size = Vector2(142.0, 30.0)
+		_god_mode_button.focus_mode = Control.FOCUS_NONE
+		_god_mode_button.text = "God Mode: ON [F2]" if _god_mode_enabled else "God Mode: OFF [F2]"
+		dbg_row.add_child(_god_mode_button)
+		_configure_button(_god_mode_button, _on_god_mode_pressed)
+
 	if cam_button:
 		cam_button.text = "Player Cam" if is_overview else "Overview Cam"
 
 	if debug_overlay:
 		debug_overlay.visible = OS.is_debug_build()
+		if OS.is_debug_build() and encounter_banner:
+			encounter_banner.offset_top = 80.0
+			encounter_banner.offset_bottom = 114.0
 
 	for lbl in [stats_label, info_label]:
 		if lbl:
@@ -155,6 +183,9 @@ func _ready() -> void:
 		camera.size = overview_size
 		camera.global_position = overview_pos
 		camera.reset_physics_interpolation()
+
+	if OS.has_feature("web"):
+		_run_web_shader_prewarm()
 
 
 func _configure_button(btn: Button, callback: Callable) -> void:
@@ -210,6 +241,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _pause_menu_modal and bool(_pause_menu_modal.call("is_open")):
 				return
 			_on_tutorial_pressed()
+			get_viewport().set_input_as_handled()
+			return
+		if ke.keycode == KEY_F2 and OS.is_debug_build():
+			_on_god_mode_pressed()
 			get_viewport().set_input_as_handled()
 			return
 	if is_overview:
@@ -343,6 +378,17 @@ func _on_stage_portal_entered(player_node: Node) -> void:
 
 
 func _traverse_stage_portal() -> void:
+	var use_curtain: bool = OS.has_feature("web") and _web_curtain_rect != null
+	if use_curtain:
+		if _portal_transition_busy:
+			return
+		_portal_transition_busy = true
+		_show_web_curtain_instant()
+		await get_tree().process_frame
+		if not is_inside_tree():
+			_portal_transition_busy = false
+			return
+
 	var next_biome: int = 0
 	if procedural_world:
 		next_biome = (procedural_world.current_biome_id + 1) % BiomeThemeScript.get_biome_count()
@@ -357,6 +403,12 @@ func _traverse_stage_portal() -> void:
 		encounter_banner.text = "Rift Traversed — Entered %s (Seed %d)" % [b_name, procedural_world.current_seed]
 		encounter_banner.visible = true
 		_banner_fade_timer = 4.0
+
+	if use_curtain:
+		await get_tree().process_frame
+		if is_inside_tree():
+			_fade_out_web_curtain(0.20)
+		_portal_transition_busy = false
 
 
 func _on_encounters_reset() -> void:
@@ -623,12 +675,16 @@ func _setup_pause_menu_modal() -> void:
 	if _pause_menu_modal.has_method("set_online_lobby_available"):
 		_pause_menu_modal.call("set_online_lobby_available", NetworkManager.supports_online_multiplayer())
 	_pause_menu_modal.connect("tutorial_requested", _on_tutorial_pressed)
+	_pause_menu_modal.connect("web_quality_cycle_requested", _on_web_quality_cycle_requested)
 	_pause_menu_modal.connect("main_menu_requested", _on_leave_pressed)
 	_pause_menu_modal.connect("debug_biome_requested", _on_biome_pressed)
 	_pause_menu_modal.connect("debug_preset_requested", _on_preset_pressed)
 	_pause_menu_modal.connect("debug_regen_requested", _on_regen_pressed)
 	_pause_menu_modal.connect("debug_teleport_requested", _on_teleport_pressed)
 	_pause_menu_modal.connect("debug_overview_requested", _on_cam_button_pressed)
+	_pause_menu_modal.connect("debug_god_mode_requested", _on_god_mode_pressed)
+	if _pause_menu_modal.has_method("set_debug_god_mode_label"):
+		_pause_menu_modal.call("set_debug_god_mode_label", _god_mode_enabled)
 
 
 func _setup_game_over_overlay() -> void:
@@ -718,6 +774,7 @@ func spawn_players() -> void:
 		_wire_player_signals_and_hud(solo_player)
 		_local_player = solo_player as CharacterBody3D
 		_bind_local_player_health_hud()
+		_apply_god_mode_to_players()
 		if camera and not is_overview:
 			camera.global_position = _spawn_pos + camera_offset
 			camera.reset_physics_interpolation()
@@ -746,6 +803,7 @@ func spawn_players() -> void:
 	var my_id: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
 	_local_player = players_container.get_node_or_null(str(my_id)) as CharacterBody3D
 	_bind_local_player_health_hud()
+	_apply_god_mode_to_players()
 	if _local_player and camera and not is_overview:
 		camera.global_position = _local_player.global_position + camera_offset
 		camera.reset_physics_interpolation()
@@ -770,6 +828,7 @@ func _on_player_connected(peer_id: int, info: Dictionary) -> void:
 		players_container.add_child(player_instance)
 		player_instance.call("setup", peer_id, info)
 		_wire_player_signals_and_hud(player_instance)
+	_apply_god_mode_to_players()
 	_update_hud()
 	if _pause_menu_modal and bool(_pause_menu_modal.call("is_open")):
 		_pause_menu_modal.call("refresh_pause_mode", _is_solo_session())
@@ -831,6 +890,179 @@ func _on_teleport_pressed() -> void:
 		if "is_dashing" in local_player:
 			local_player.set("is_dashing", false)
 		local_player.global_position = target_pos
+		local_player.reset_physics_interpolation()
 	if is_overview:
 		overview_mode = false
 	_update_teleport_button_label()
+
+
+func _on_god_mode_pressed() -> void:
+	if not OS.is_debug_build():
+		return
+	_god_mode_enabled = not _god_mode_enabled
+	_apply_god_mode_to_players()
+
+
+func _apply_god_mode_to_players() -> void:
+	if _god_mode_button:
+		_god_mode_button.text = "God Mode: ON [F2]" if _god_mode_enabled else "God Mode: OFF [F2]"
+	if _pause_menu_modal and _pause_menu_modal.has_method("set_debug_god_mode_label"):
+		_pause_menu_modal.call("set_debug_god_mode_label", _god_mode_enabled)
+	if players_container == null:
+		return
+	for ch in players_container.get_children():
+		if ch != null and ch.has_method("set_debug_god_mode"):
+			ch.call("set_debug_god_mode", _god_mode_enabled)
+
+
+func _setup_web_transition_curtain() -> void:
+	if not OS.has_feature("web") or _web_curtain_rect != null:
+		return
+	var curtain_layer := CanvasLayer.new()
+	curtain_layer.name = "WebTransitionLayer"
+	curtain_layer.layer = 100
+	curtain_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(curtain_layer)
+
+	_web_curtain_rect = ColorRect.new()
+	_web_curtain_rect.name = "WebTransitionCurtain"
+	_web_curtain_rect.color = Color(0.035, 0.05, 0.085, 1.0)
+	_web_curtain_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_web_curtain_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_web_curtain_rect.modulate.a = 1.0
+	_web_curtain_rect.visible = true
+	curtain_layer.add_child(_web_curtain_rect)
+
+
+func _show_web_curtain_instant() -> void:
+	if _web_curtain_rect == null:
+		return
+	if _web_curtain_tween != null and is_instance_valid(_web_curtain_tween):
+		_web_curtain_tween.kill()
+		_web_curtain_tween = null
+	_web_curtain_rect.modulate.a = 1.0
+	_web_curtain_rect.visible = true
+
+
+func _fade_out_web_curtain(duration_s: float) -> void:
+	if _web_curtain_rect == null:
+		return
+	if _web_curtain_tween != null and is_instance_valid(_web_curtain_tween):
+		_web_curtain_tween.kill()
+	_web_curtain_tween = create_tween()
+	_web_curtain_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	_web_curtain_tween.tween_property(_web_curtain_rect, "modulate:a", 0.0, duration_s)
+	_web_curtain_tween.finished.connect(func() -> void:
+		if _web_curtain_rect != null and is_instance_valid(_web_curtain_rect):
+			_web_curtain_rect.visible = false
+	)
+
+
+func _on_web_quality_cycle_requested() -> void:
+	var vp: Viewport = get_viewport()
+	if vp == null:
+		return
+	_web_quality_idx = (_web_quality_idx + 1) % 3
+	var label_text: String = "Graphics: Crisp (2x AA)"
+	match _web_quality_idx:
+		0:
+			vp.scaling_3d_scale = 1.0
+			vp.msaa_3d = Viewport.MSAA_2X
+			label_text = "Graphics: Crisp (2x AA)"
+		1:
+			# Disable MSAA before downscaling 3D in WebGL2 GL Compatibility.
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.scaling_3d_scale = 0.80
+			label_text = "Graphics: Balanced (80% 3D)"
+		2:
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.scaling_3d_scale = 0.65
+			label_text = "Graphics: Performance (65% 3D)"
+	if _pause_menu_modal and _pause_menu_modal.has_method("set_web_quality_label"):
+		_pause_menu_modal.call("set_web_quality_label", label_text)
+
+
+func _add_warmup_mesh(parent: Node3D, mesh_res: Mesh, mat: Material) -> void:
+	if mesh_res == null or mat == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh_res
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+
+
+func _run_web_shader_prewarm() -> void:
+	if camera == null or not is_inside_tree():
+		_fade_out_web_curtain(0.18)
+		return
+
+	var warmup_root := Node3D.new()
+	warmup_root.name = "_WebShaderWarmup"
+	warmup_root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	warmup_root.scale = Vector3.ONE * 0.002
+	add_child(warmup_root)
+	warmup_root.global_position = camera.global_position - camera.global_transform.basis.z * 2.0
+
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	var plane := PlaneMesh.new()
+	plane.size = Vector2.ONE
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.25
+	sphere.height = 0.5
+	sphere.radial_segments = 8
+	sphere.rings = 4
+
+	# 1. Projectile unshaded+emission material
+	_add_warmup_mesh(warmup_root, sphere, ProjectileScript._get_tint_mat(Color(1.0, 0.88, 0.42)))
+
+	# 2. Additive vertex-color trail strip (Trail3D / LightningArcEffect)
+	var imm := ImmediateMesh.new()
+	imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	imm.surface_set_color(Color.WHITE)
+	imm.surface_add_vertex(Vector3.ZERO)
+	imm.surface_set_color(Color.WHITE)
+	imm.surface_add_vertex(Vector3(0.1, 0.0, 0.0))
+	imm.surface_set_color(Color.WHITE)
+	imm.surface_add_vertex(Vector3(0.0, 0.1, 0.0))
+	imm.surface_end()
+	_add_warmup_mesh(warmup_root, imm, Trail3DScript.get_shared_trail_material())
+
+	# 3. CombatZoneEffect alpha ring/fill/frame palette materials
+	var zone_mats: Array[StandardMaterial3D] = CombatZoneScript._get_palette_mats("warmup", Color(0.4, 0.85, 1.0))
+	for zm in zone_mats:
+		_add_warmup_mesh(warmup_root, quad, zm)
+
+	# 4. EnemyHazard.gdshader
+	var hazard_mat := ShaderMaterial.new()
+	hazard_mat.shader = ENEMY_HAZARD_SHADER
+	_add_warmup_mesh(warmup_root, plane, hazard_mat)
+
+	# 5. OverheadBar.gdshader
+	var bar_mat := ShaderMaterial.new()
+	bar_mat.shader = OVERHEAD_BAR_SHADER
+	_add_warmup_mesh(warmup_root, quad, bar_mat)
+
+	# 6. ContactShadow.gdshader
+	var shadow_mat := ShaderMaterial.new()
+	shadow_mat.shader = CONTACT_SHADOW_SHADER
+	_add_warmup_mesh(warmup_root, plane, shadow_mat)
+
+	# 7. EnemyArchetypeData toon/unshaded/status materials
+	var base_arch: EnemyArchetypeData = ArchetypeScript.get_archetype(0)
+	if base_arch:
+		_add_warmup_mesh(warmup_root, sphere, base_arch.body_material)
+		_add_warmup_mesh(warmup_root, sphere, base_arch.trim_material)
+	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_hit_flash_material())
+	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_status_frost_material())
+	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_status_burn_material())
+	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_status_poison_material())
+
+	await get_tree().process_frame
+	if is_inside_tree():
+		await get_tree().process_frame
+	if is_instance_valid(warmup_root):
+		warmup_root.queue_free()
+	if is_inside_tree():
+		_fade_out_web_curtain(0.22)

@@ -156,6 +156,7 @@ func get_built_biome_id() -> int:
 
 
 func _ready() -> void:
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_ensure_static_assets()
 	collision_layer = 1
 	collision_mask = 0

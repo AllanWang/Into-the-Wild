@@ -97,6 +97,7 @@ static func _ensure_shared() -> void:
 
 
 func _ready() -> void:
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_ensure_nodes()
 	if not _active:
 		visible = false

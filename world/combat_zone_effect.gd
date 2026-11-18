@@ -283,6 +283,7 @@ func _ensure_player_fx_nodes() -> void:
 
 
 func _ready() -> void:
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_ensure_player_fx_nodes()
 	if ring_mesh:
 		ring_mesh.mesh = _shared_torus
@@ -447,7 +448,8 @@ func _process(delta: float) -> void:
 	_elapsed += delta
 
 	if _follow_target != null and is_instance_valid(_follow_target):
-		global_position = Vector3(_follow_target.global_position.x, 0.05, _follow_target.global_position.z)
+		var follow_pos: Vector3 = _follow_target.get_global_transform_interpolated().origin
+		global_position = Vector3(follow_pos.x, 0.05, follow_pos.z)
 
 	if inner_rune_mesh and inner_rune_mesh.visible:
 		inner_rune_mesh.rotation.y += delta * 2.8

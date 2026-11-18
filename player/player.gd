@@ -48,6 +48,7 @@ const RESERVE_SHARD_COUNT: int = 4
 
 const PROJECTILE_SCENE: PackedScene = preload("res://player/projectile.tscn")
 const OVERHEAD_BAR_SHADER: Shader = preload("res://shaders/OverheadBar.gdshader")
+const CONTACT_SHADOW_SHADER: Shader = preload("res://shaders/ContactShadow.gdshader")
 const OVERHEAD_HP_WIDTH: float = 0.78
 
 enum HudSlot {
@@ -134,10 +135,13 @@ var _has_pointer_pos: bool = false
 var _last_pointer_pos: Vector2 = Vector2.ZERO
 var is_dashing: bool = false
 var dash_grants_invulnerability: bool = false
+var debug_god_mode: bool = false
 
 static var _shared_visor_mat: StandardMaterial3D = null
 static var _shared_hp_quad: QuadMesh = null
 static var _shared_hp_bar_mat: ShaderMaterial = null
+static var _shared_shadow_plane: PlaneMesh = null
+static var _shared_shadow_mat: ShaderMaterial = null
 
 
 static func _ensure_shared_visuals() -> void:
@@ -155,6 +159,18 @@ static func _ensure_shared_visuals() -> void:
 	_shared_hp_bar_mat.set_shader_parameter("fill_color", Color(0.941, 0.294, 0.263, 0.96))
 	_shared_hp_bar_mat.set_shader_parameter("bg_color", Color(0.043, 0.063, 0.098, 0.76))
 	_shared_hp_bar_mat.set_shader_parameter("border_color", Color(0.918, 0.894, 0.843, 0.36))
+
+	_shared_shadow_plane = PlaneMesh.new()
+	_shared_shadow_plane.size = Vector2(1.0, 1.0)
+
+	_shared_shadow_mat = ShaderMaterial.new()
+	_shared_shadow_mat.render_priority = -1
+	_shared_shadow_mat.shader = CONTACT_SHADOW_SHADER
+
+
+static func get_contact_shadow_material() -> ShaderMaterial:
+	_ensure_shared_visuals()
+	return _shared_shadow_mat
 
 
 func _ready() -> void:
@@ -178,6 +194,16 @@ func _ready() -> void:
 
 	if visor:
 		visor.material_override = _shared_visor_mat
+
+	if OS.has_feature("web"):
+		var shadow_inst := MeshInstance3D.new()
+		shadow_inst.name = "ContactShadow"
+		shadow_inst.mesh = _shared_shadow_plane
+		shadow_inst.material_override = _shared_shadow_mat
+		shadow_inst.position = Vector3(0.0, 0.025, 0.0)
+		shadow_inst.scale = Vector3(0.92, 1.0, 0.92)
+		shadow_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(shadow_inst)
 
 	if hp_bg_mesh:
 		hp_bg_mesh.visible = false
@@ -666,7 +692,15 @@ func restore_full_health() -> void:
 	loadout_changed.emit()
 
 
+func set_debug_god_mode(enabled: bool) -> void:
+	debug_god_mode = enabled
+	if debug_god_mode and health_comp != null and not health_comp.is_dead:
+		health_comp.heal(health_comp.max_health)
+
+
 func try_apply_contact_damage(amount: float, hit_dir: Vector3 = Vector3.ZERO) -> bool:
+	if debug_god_mode:
+		return false
 	if amount <= 0.0:
 		return false
 	if _invuln_timer > 0.0:
@@ -686,6 +720,8 @@ func try_apply_contact_damage(amount: float, hit_dir: Vector3 = Vector3.ZERO) ->
 
 @rpc("any_peer", "call_local", "reliable")
 func _rpc_receive_contact_damage(amount: float, hit_dir: Vector3) -> void:
+	if debug_god_mode:
+		return
 	_invuln_timer = CONTACT_INVULN_DURATION
 	if health_comp and not health_comp.is_dead:
 		health_comp.take_damage(amount, hit_dir)
@@ -750,31 +786,25 @@ func _process(delta: float) -> void:
 		else:
 			_body_mat.albedo_color = _base_color
 
-	if visual_root and is_multiplayer_authority():
+	if is_multiplayer_authority():
 		var focused_aim: bool = OS.has_feature("web") or DisplayServer.window_is_focused() or (DebugTools == null or DebugTools.active_instance_count <= 1)
 		var allow_aim: bool = (not ui_input_blocked) and (not _alt_inspect_active) and focused_aim
+		var interp_pos: Vector3 = get_global_transform_interpolated().origin
 		var cam: Camera3D = get_viewport().get_camera_3d()
 		if cam and allow_aim:
 			var mouse_pos: Vector2 = _last_pointer_pos if (OS.has_feature("web") and _has_pointer_pos) else get_viewport().get_mouse_position()
 			var ray_origin: Vector3 = cam.project_ray_origin(mouse_pos)
 			var ray_normal: Vector3 = cam.project_ray_normal(mouse_pos)
-			var ground_plane := Plane(Vector3.UP, global_position.y)
+			var ground_plane := Plane(Vector3.UP, interp_pos.y)
 			var hit_pos: Variant = ground_plane.intersects_ray(ray_origin, ray_normal)
 			if hit_pos != null:
 				_aim_ground_pos = hit_pos as Vector3
-				var look_vec: Vector3 = _aim_ground_pos - global_position
+				var look_vec: Vector3 = _aim_ground_pos - interp_pos
 				look_vec.y = 0.0
 				if look_vec.length_squared() > 0.04:
 					_aim_dir = look_vec.normalized()
 		else:
-			_aim_ground_pos = global_position + _aim_dir * 5.0
-
-		if _aim_dir.length() > 0.1:
-			_target_rotation_y = atan2(_aim_dir.x, _aim_dir.z)
-			visual_root.rotation.y = lerp_angle(visual_root.rotation.y, _target_rotation_y, 25.0 * delta)
-
-	if visual_root:
-		visual_root.scale = visual_root.scale.lerp(Vector3.ONE, 12.0 * delta)
+			_aim_ground_pos = interp_pos + _aim_dir * 5.0
 
 
 func _physics_process(delta: float) -> void:
@@ -791,6 +821,9 @@ func _physics_process(delta: float) -> void:
 		_temp_shield_timer = maxf(0.0, _temp_shield_timer - delta)
 		if _temp_shield_timer <= 0.0 and health_comp and health_comp.current_shield > 0.0:
 			health_comp.set_shield(0.0)
+
+	if visual_root:
+		visual_root.scale = visual_root.scale.lerp(Vector3.ONE, clampf(12.0 * delta, 0.0, 1.0))
 
 	if not is_multiplayer_authority():
 		return
@@ -886,6 +919,10 @@ func _physics_process(delta: float) -> void:
 
 	if _move_dir.length() > 1.0:
 		_move_dir = _move_dir.normalized()
+
+	if visual_root and _aim_dir.length() > 0.1:
+		_target_rotation_y = atan2(_aim_dir.x, _aim_dir.z)
+		visual_root.rotation.y = lerp_angle(visual_root.rotation.y, _target_rotation_y, clampf(25.0 * delta, 0.0, 1.0))
 
 	var cur_move_speed: float = float(stats_comp.get("move_speed")) if stats_comp != null else BASE_SPEED
 	var cur_dash_speed: float = BASE_DASH_SPEED * (cur_move_speed / BASE_SPEED)

@@ -8,6 +8,7 @@ This project is a Godot 4 action roguelike with dynamic multi-instance grid layo
 
 | Document / Skill | Purpose |
 | :--- | :--- |
+| [`AGENTS.md`](file:///c:/Users/user7/PA/Into-the-Wild/AGENTS.md) | Always-on workspace rule: auto-commit & push verified major changes on `main` to trigger GitHub Pages Web deployment. |
 | [`.agents/SETUP.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/SETUP.md) | Fresh-device & cross-agent bootstrap guide: `addons/godot_ai` installation, Godot `projects.cfg` linking, and MCP setup. |
 | [`.agents/GODOT_RULES.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/GODOT_RULES.md) | Godot 4 syntax rules, static typing guidelines, signal bus & component patterns. |
 | [`.agents/TESTING_AND_SETUP.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/TESTING_AND_SETUP.md) | Headless test execution, local Godot binary path, and multi-instance grid launch scripts. |

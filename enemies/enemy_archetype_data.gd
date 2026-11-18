@@ -35,6 +35,7 @@ var body_shape: SphereShape3D = null
 var hurtbox_shape: SphereShape3D = null
 
 const OVERHEAD_BAR_SHADER: Shader = preload("res://shaders/OverheadBar.gdshader")
+const CONTACT_SHADOW_SHADER: Shader = preload("res://shaders/ContactShadow.gdshader")
 
 static var _cache: Dictionary = {}
 static var _unit_sphere_mesh: SphereMesh = null
@@ -53,6 +54,8 @@ static var _status_burn_mat: StandardMaterial3D = null
 static var _status_frost_mat: StandardMaterial3D = null
 static var _hp_bar_material: ShaderMaterial = null
 static var _hp_quad_mesh: QuadMesh = null
+static var _contact_shadow_mesh: PlaneMesh = null
+static var _contact_shadow_mat: ShaderMaterial = null
 
 
 static func is_boss_archetype(id: int) -> bool:
@@ -151,6 +154,13 @@ static func _ensure_cache() -> void:
 
 	_hp_quad_mesh = QuadMesh.new()
 	_hp_quad_mesh.size = Vector2(1.0, 1.0)
+
+	_contact_shadow_mesh = PlaneMesh.new()
+	_contact_shadow_mesh.size = Vector2(1.0, 1.0)
+
+	_contact_shadow_mat = ShaderMaterial.new()
+	_contact_shadow_mat.render_priority = -1
+	_contact_shadow_mat.shader = CONTACT_SHADOW_SHADER
 
 	_cache[ArchetypeId.CHASER] = _build_entry(
 		ArchetypeId.CHASER, "Crimson Wisp",
@@ -355,3 +365,13 @@ static func get_status_burn_material() -> StandardMaterial3D:
 static func get_status_frost_material() -> StandardMaterial3D:
 	_ensure_cache()
 	return _status_frost_mat
+
+
+static func get_contact_shadow_mesh() -> PlaneMesh:
+	_ensure_cache()
+	return _contact_shadow_mesh
+
+
+static func get_contact_shadow_material() -> ShaderMaterial:
+	_ensure_cache()
+	return _contact_shadow_mat

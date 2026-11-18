@@ -225,6 +225,7 @@ func activate_orb(
 
 	scale = Vector3.ONE
 	rotation = Vector3.ZERO
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_INHERIT
 	if is_inside_tree():
 		global_position = p_start
 		look_at(global_position + _dir, Vector3.UP)
@@ -264,6 +265,7 @@ func activate_sightline(
 
 	scale = Vector3.ONE
 	rotation = Vector3.ZERO
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	if is_inside_tree():
 		global_position = Vector3(p_origin.x, 0.0, p_origin.z)
 		look_at(global_position + _dir, Vector3.UP)
@@ -332,6 +334,7 @@ func activate_ground_hazard(
 
 	_layout_spike_ring()
 
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	if is_inside_tree():
 		global_position = _target_pos
 		reset_physics_interpolation()

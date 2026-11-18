@@ -8,12 +8,14 @@ extends Control
 
 signal resume_requested()
 signal tutorial_requested()
+signal web_quality_cycle_requested()
 signal main_menu_requested()
 signal debug_biome_requested()
 signal debug_preset_requested()
 signal debug_regen_requested()
 signal debug_teleport_requested()
 signal debug_overview_requested()
+signal debug_god_mode_requested()
 
 const COL_BACKDROP := Color(0.016, 0.024, 0.044, 0.72)
 const COL_PANEL_BG := Color(0.040, 0.056, 0.092, 0.96)
@@ -34,6 +36,8 @@ var _status_badge_lbl: Label = null
 var _title_lbl: Label = null
 var _debug_toggle_btn: Button = null
 var _debug_drawer: PanelContainer = null
+var _debug_god_btn: Button = null
+var _web_quality_btn: Button = null
 var _menu_btn: Button = null
 
 var _bound_player: Node = null
@@ -61,6 +65,16 @@ func set_online_lobby_available(available: bool) -> void:
 		_menu_btn.text = "Main Menu" if _online_lobby_available else "Restart Run"
 
 
+func set_web_quality_label(label_text: String) -> void:
+	if _web_quality_btn:
+		_web_quality_btn.text = label_text
+
+
+func set_debug_god_mode_label(enabled: bool) -> void:
+	if _debug_god_btn:
+		_debug_god_btn.text = "God Mode: ON  [F2]" if enabled else "God Mode: OFF  [F2]"
+
+
 func is_open() -> bool:
 	return _is_open
 
@@ -73,7 +87,7 @@ func open_menu(player_node: Node, is_solo: bool) -> void:
 	if _debug_drawer:
 		_debug_drawer.visible = false
 	if _debug_toggle_btn:
-		_debug_toggle_btn.text = "Debug Tools ▾"
+		_debug_toggle_btn.text = "Debug Tools  [+]"
 	refresh_pause_mode(is_solo)
 
 
@@ -115,7 +129,7 @@ func close_menu() -> void:
 	if _debug_drawer:
 		_debug_drawer.visible = false
 	if _debug_toggle_btn:
-		_debug_toggle_btn.text = "Debug Tools ▾"
+		_debug_toggle_btn.text = "Debug Tools  [+]"
 	if is_inside_tree() and get_tree() != null and get_tree().paused:
 		get_tree().paused = false
 	if _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("set_ui_input_blocked"):
@@ -218,7 +232,14 @@ func _build_ui() -> void:
 	)
 	vb.add_child(tutorial_btn)
 
-	_debug_toggle_btn = _make_menu_button("DebugToggleButton", "Debug Tools ▾", false, false)
+	_web_quality_btn = _make_menu_button("WebQualityButton", "Graphics: Crisp (2x AA)", false, false)
+	_web_quality_btn.visible = OS.has_feature("web")
+	_web_quality_btn.pressed.connect(func() -> void:
+		web_quality_cycle_requested.emit()
+	)
+	vb.add_child(_web_quality_btn)
+
+	_debug_toggle_btn = _make_menu_button("DebugToggleButton", "Debug Tools  [+]", false, false)
 	_debug_toggle_btn.visible = OS.is_debug_build()
 	_debug_toggle_btn.pressed.connect(_on_debug_toggle_pressed)
 	vb.add_child(_debug_toggle_btn)
@@ -258,6 +279,12 @@ func _build_ui() -> void:
 	_add_debug_action(d_grid, "DebugRegenButton", "New Map Seed", debug_regen_requested)
 	_add_debug_action(d_grid, "DebugTeleportButton", "Teleport Next Room", debug_teleport_requested)
 	_add_debug_action(d_grid, "DebugOverviewButton", "Toggle Overview Cam", debug_overview_requested)
+	_debug_god_btn = _make_menu_button("DebugGodModeButton", "God Mode: OFF  [F2]", false, false, 32.0, 12)
+	_debug_god_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_debug_god_btn.pressed.connect(func() -> void:
+		debug_god_mode_requested.emit()
+	)
+	d_grid.add_child(_debug_god_btn)
 
 	_menu_btn = _make_menu_button("MainMenuButton", "Main Menu" if _online_lobby_available else "Restart Run", false, true)
 	_menu_btn.pressed.connect(func() -> void:
@@ -307,7 +334,7 @@ func _on_debug_toggle_pressed() -> void:
 		return
 	_debug_drawer.visible = not _debug_drawer.visible
 	if _debug_toggle_btn:
-		_debug_toggle_btn.text = "Debug Tools ▴" if _debug_drawer.visible else "Debug Tools ▾"
+		_debug_toggle_btn.text = "Debug Tools  [-]" if _debug_drawer.visible else "Debug Tools  [+]"
 
 
 func _make_menu_button(

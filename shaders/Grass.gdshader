@@ -38,6 +38,7 @@ uniform float accent_height2 : hint_range(0.0, 1.0, 0.001) = 0.5;
 uniform float accent_scale2 : hint_range(0.0, 2.0, 0.001) = 1.0;
 
 group_uniforms biome_tip_fx;
+uniform bool web_fast_mode = false;
 uniform float blade_density : hint_range(0.0, 1.0, 0.01) = 1.0;
 uniform float blade_scale : hint_range(0.2, 1.5, 0.01) = 1.0;
 uniform vec4 tip_emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -176,15 +177,22 @@ void vertex() {
 		time += phase;
 		time = round(time * framerate) / framerate;
 	}
-	vec2 wind_noise_direction1 = rotate_vec2(wind_noise_direction, noise_diverge_angle);
-	vec2 wind_noise_direction2 = rotate_vec2(wind_noise_direction, -noise_diverge_angle);
-	vec2 wind_noise_time_direction1 = time * wind_noise_speed * normalize(wind_noise_direction1);
-	vec2 wind_noise_time_direction2 = time * wind_noise_speed * normalize(wind_noise_direction2);
-	float wind_noise_sample1 = texture(wind_noise, object_origin.xz * wind_noise_scale + wind_noise_time_direction1).r;
-	float wind_noise_sample2 = texture(wind_noise, object_origin.xz * (wind_noise_scale * 0.8) + (wind_noise_time_direction2 * 0.89 * PI / 3.0)).r;
-	wind_noise_sample = (wind_noise_sample1 * wind_noise_sample2);
-	wind_noise_sample = clamp(wind_noise_sample + wind_noise_threshold, 0.0, 1.0);
-	wind_noise_sample = (wind_noise_sample - 0.5) * 2.0;
+	if (web_fast_mode) {
+		float w_phase1 = dot(object_origin.xz, vec2(0.21, 0.34)) - time * 1.65;
+		float w_phase2 = dot(object_origin.xz, vec2(-0.16, 0.27)) - time * 1.15;
+		float w_wave = (sin(w_phase1) * 0.55 + cos(w_phase2) * 0.45) * 0.25 + 0.25;
+		wind_noise_sample = (clamp(w_wave + wind_noise_threshold, 0.0, 1.0) - 0.5) * 2.0;
+	} else {
+		vec2 wind_noise_direction1 = rotate_vec2(wind_noise_direction, noise_diverge_angle);
+		vec2 wind_noise_direction2 = rotate_vec2(wind_noise_direction, -noise_diverge_angle);
+		vec2 wind_noise_time_direction1 = time * wind_noise_speed * normalize(wind_noise_direction1);
+		vec2 wind_noise_time_direction2 = time * wind_noise_speed * normalize(wind_noise_direction2);
+		float wind_noise_sample1 = texture(wind_noise, object_origin.xz * wind_noise_scale + wind_noise_time_direction1).r;
+		float wind_noise_sample2 = texture(wind_noise, object_origin.xz * (wind_noise_scale * 0.8) + (wind_noise_time_direction2 * 0.89 * PI / 3.0)).r;
+		wind_noise_sample = (wind_noise_sample1 * wind_noise_sample2);
+		wind_noise_sample = clamp(wind_noise_sample + wind_noise_threshold, 0.0, 1.0);
+		wind_noise_sample = (wind_noise_sample - 0.5) * 2.0;
+	}
 
 	float world_sway = wind_noise_sample * radians(world_sway_angle);
 	vec3 wind_world_axis = (vec4(wind_noise_direction.y, 0.0, -wind_noise_direction.x, 1.0) * INV_VIEW_MATRIX).xyz;
@@ -245,11 +253,12 @@ void vertex() {
 		MODEL_MATRIX[3]
 	);
 
-	if (water_pool_radius > 0.0) {
-		float pool_angle = atan(object_origin.z - water_pool_center.z, object_origin.x - water_pool_center.x);
+	vec2 pool_diff_v = object_origin.xz - water_pool_center.xz;
+	if (water_pool_radius > 0.0 && dot(pool_diff_v, pool_diff_v) < 12.25) {
+		float pool_angle = atan(pool_diff_v.y, pool_diff_v.x);
 		float pool_distort = sin(pool_angle * 2.0) * 0.45 + cos(pool_angle * 3.0 + 0.8) * 0.3 + sin(pool_angle * 5.0) * 0.15;
 		float dynamic_bound = 2.45 + pool_distort;
-		if (distance(object_origin.xz, water_pool_center.xz) < dynamic_bound) {
+		if (dot(pool_diff_v, pool_diff_v) < dynamic_bound * dynamic_bound) {
 			VERTEX = vec3(0.0);
 		}
 	}
@@ -306,11 +315,12 @@ void fragment() {
 
 	LIGHT_VERTEX = model_origin;
 	ALPHA = albedo_tex.a;
-	if (water_pool_radius > 0.0) {
-		float pool_angle = atan(object_origin.z - water_pool_center.z, object_origin.x - water_pool_center.x);
+	vec2 pool_diff_f = object_origin.xz - water_pool_center.xz;
+	if (water_pool_radius > 0.0 && dot(pool_diff_f, pool_diff_f) < 12.25) {
+		float pool_angle = atan(pool_diff_f.y, pool_diff_f.x);
 		float pool_distort = sin(pool_angle * 2.0) * 0.45 + cos(pool_angle * 3.0 + 0.8) * 0.3 + sin(pool_angle * 5.0) * 0.15;
 		float dynamic_bound = 2.45 + pool_distort;
-		if (distance(object_origin.xz, water_pool_center.xz) < dynamic_bound) {
+		if (dot(pool_diff_f, pool_diff_f) < dynamic_bound * dynamic_bound) {
 			ALPHA = 0.0;
 		}
 	}
@@ -328,7 +338,7 @@ void light() {
 	float diffuse_amount = NdotL + (ATTENUATION - 1.0) + wrap;
 	diffuse_amount *= steepness;
 
-	if (LIGHT_IS_DIRECTIONAL) {
+	if (LIGHT_IS_DIRECTIONAL && !web_fast_mode) {
 		vec3 vertex_world_pos = (INV_VIEW_MATRIX * vec4(model_origin, 1.0)).xyz;
 		float light_value = get_cloud_noise(vertex_world_pos);
 		diffuse_amount = min(diffuse_amount, light_value);

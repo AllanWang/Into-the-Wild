@@ -14,6 +14,8 @@ const POST_SHADER: Shader = preload("res://shaders/GameOverPost.gdshader")
 var _post_rect: ColorRect = null
 var _post_mat: ShaderMaterial = null
 var _dialog_card: Control = null
+var _card_margin: MarginContainer = null
+var _divider_spacer: Control = null
 var _restart_new_btn: Button = null
 var _retry_sanctuary_btn: Button = null
 var _lobby_btn: Button = null
@@ -67,22 +69,23 @@ func _build_ui_if_needed() -> void:
 
 	_dialog_card = _DialogPanel.new()
 	_dialog_card.name = "DialogCard"
+	(_dialog_card as _DialogPanel).owner_overlay = self
 	_dialog_card.custom_minimum_size = Vector2(390.0, 272.0)
 	center_wrap.add_child(_dialog_card)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_right", 32)
-	margin.add_theme_constant_override("margin_top", 28)
-	margin.add_theme_constant_override("margin_bottom", 26)
-	_dialog_card.add_child(margin)
+	_card_margin = MarginContainer.new()
+	_card_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_card_margin.add_theme_constant_override("margin_left", 32)
+	_card_margin.add_theme_constant_override("margin_right", 32)
+	_card_margin.add_theme_constant_override("margin_top", 28)
+	_card_margin.add_theme_constant_override("margin_bottom", 26)
+	_dialog_card.add_child(_card_margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.name = "VBox"
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_theme_constant_override("separation", 10)
-	margin.add_child(vbox)
+	_card_margin.add_child(vbox)
 
 	var title_lbl := Label.new()
 	title_lbl.name = "TitleLabel"
@@ -102,9 +105,15 @@ func _build_ui_if_needed() -> void:
 	sub_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
 	vbox.add_child(sub_lbl)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0.0, 8.0)
-	vbox.add_child(spacer)
+	_divider_spacer = Control.new()
+	_divider_spacer.custom_minimum_size = Vector2(0.0, 14.0)
+	vbox.add_child(_divider_spacer)
+	vbox.sort_children.connect(func() -> void:
+		if _dialog_card:
+			if _card_margin:
+				_dialog_card.custom_minimum_size = Vector2(390.0, maxf(272.0, _card_margin.get_combined_minimum_size().y + 6.0))
+			_dialog_card.queue_redraw()
+	)
 
 	_restart_new_btn = _make_dialog_button("RestartNewButton", "Restart Run  (New Map)")
 	_restart_new_btn.pressed.connect(func() -> void: restart_new_map_requested.emit())
@@ -161,6 +170,10 @@ func set_online_lobby_available(available: bool) -> void:
 	_online_lobby_available = available
 	if _lobby_btn:
 		_lobby_btn.visible = _online_lobby_available
+	if _dialog_card:
+		if _card_margin:
+			_dialog_card.custom_minimum_size = Vector2(390.0, maxf(272.0, _card_margin.get_combined_minimum_size().y + 6.0))
+		_dialog_card.queue_redraw()
 
 
 func show_game_over() -> void:
@@ -206,6 +219,7 @@ func _process(delta: float) -> void:
 class _DialogPanel:
 	extends Control
 
+	var owner_overlay: GameOverOverlay = null
 	var _diamond_pts := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 	var _diamond_closed := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 
@@ -218,6 +232,10 @@ class _DialogPanel:
 
 		# Subtle divider rule with center crimson 45-degree diamond crest beneath subtitle
 		var line_y: float = 96.0
+		if owner_overlay != null and owner_overlay._divider_spacer != null and is_instance_valid(owner_overlay._divider_spacer):
+			var sp: Control = owner_overlay._divider_spacer
+			if sp.size.y > 0.5:
+				line_y = (sp.global_position.y - global_position.y) + sp.size.y * 0.5
 		var mid_x: float = s.x * 0.5
 		draw_line(Vector2(36.0, line_y), Vector2(mid_x - 12.0, line_y), GameOverOverlay.COL_IVORY_LINE, 1.0, true)
 		draw_line(Vector2(mid_x + 12.0, line_y), Vector2(s.x - 36.0, line_y), GameOverOverlay.COL_IVORY_LINE, 1.0, true)

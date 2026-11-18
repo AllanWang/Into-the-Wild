@@ -38,6 +38,7 @@ var _role_prop_a: MeshInstance3D = null
 var _role_prop_b: MeshInstance3D = null
 var _ward_shell_mesh: MeshInstance3D = null
 var _burrow_ring_inst: MeshInstance3D = null
+var _contact_shadow_inst: MeshInstance3D = null
 
 var _archetype: EnemyArchetypeData = null
 var _players_root: Node3D = null
@@ -87,6 +88,7 @@ var _dot_accum: float = 0.0
 
 
 func _ready() -> void:
+	set_process(false)
 	wall_min_slide_angle = 0.0
 	collision_layer = 4
 	collision_mask = 5 # Collide with Layer 1 (World & VineBarriers) + Layer 3 (Other Enemies)
@@ -142,6 +144,16 @@ func _ready() -> void:
 		_burrow_ring_inst.visible = false
 		add_child(_burrow_ring_inst)
 
+	if OS.has_feature("web") and _contact_shadow_inst == null:
+		_contact_shadow_inst = MeshInstance3D.new()
+		_contact_shadow_inst.name = "ContactShadow"
+		_contact_shadow_inst.mesh = ArchetypeScript.get_contact_shadow_mesh()
+		_contact_shadow_inst.material_override = ArchetypeScript.get_contact_shadow_material()
+		_contact_shadow_inst.position = Vector3(0.0, 0.024, 0.0)
+		_contact_shadow_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_contact_shadow_inst.visible = false
+		add_child(_contact_shadow_inst)
+
 	if hurtbox_comp and health_comp:
 		hurtbox_comp.health_component = health_comp
 	if health_comp:
@@ -195,6 +207,8 @@ func _reset_statuses() -> void:
 		_ward_shell_mesh.visible = false
 	if _burrow_ring_inst:
 		_burrow_ring_inst.visible = false
+	if _contact_shadow_inst:
+		_contact_shadow_inst.visible = false
 	if visual_root:
 		visual_root.visible = true
 		visual_root.rotation = Vector3.ZERO
@@ -242,6 +256,10 @@ func activate(
 		visual_root.scale = Vector3.ONE * (_base_radius * 0.2)
 		visual_root.rotation = Vector3.ZERO
 
+	if _contact_shadow_inst:
+		_contact_shadow_inst.scale = Vector3(_base_radius * 2.45, 1.0, _base_radius * 2.45)
+		_contact_shadow_inst.visible = true
+
 	var is_boss: bool = ArchetypeScript.is_boss_archetype(_archetype.archetype_id)
 	if hp_bar_root:
 		hp_bar_root.position = Vector3(0.0, _base_radius * 2.0 + 0.45, 0.0)
@@ -275,7 +293,6 @@ func activate(
 		position = p_spawn_pos
 
 	visible = true
-	set_process(true)
 	set_physics_process(true)
 
 
@@ -487,6 +504,8 @@ func deactivate() -> void:
 	set_physics_process(false)
 	visible = false
 	velocity = Vector3.ZERO
+	if _contact_shadow_inst:
+		_contact_shadow_inst.visible = false
 
 	if body_col_shape:
 		body_col_shape.set_deferred("disabled", true)
@@ -646,6 +665,8 @@ func _enter_burrow(tunnel_dir: Vector3) -> void:
 		body_col_shape.set_deferred("disabled", true)
 	if _burrow_ring_inst:
 		_burrow_ring_inst.visible = true
+	if _contact_shadow_inst:
+		_contact_shadow_inst.visible = false
 
 
 func _enter_burrow_emerge_warning() -> void:
@@ -672,6 +693,8 @@ func _complete_burrow_emerge() -> void:
 		visual_root.rotation.x = 0.0
 		visual_root.position = Vector3(0.0, _base_radius + 0.06, 0.0)
 		visual_root.scale = Vector3(_base_radius * 0.75, _base_radius * 1.45, _base_radius * 0.75)
+	if _contact_shadow_inst:
+		_contact_shadow_inst.visible = true
 	if health_comp and hp_bar_root and health_comp.current_health < health_comp.max_health:
 		hp_bar_root.visible = true
 	if _biome_trait_id == 1 and (not multiplayer.has_multiplayer_peer() or multiplayer.is_server()):
@@ -689,7 +712,7 @@ func _complete_burrow_emerge() -> void:
 		)
 
 
-func _process(delta: float) -> void:
+func _step_visual_pose(delta: float) -> void:
 	if _is_dying:
 		_death_timer -= delta
 		if visual_root:
@@ -851,6 +874,8 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_step_visual_pose(delta)
+
 	if not _is_active_unit or _is_dying or _archetype == null:
 		return
 
@@ -1846,6 +1871,8 @@ func _on_died() -> void:
 		hp_bar_root.visible = false
 	if _burrow_ring_inst:
 		_burrow_ring_inst.visible = false
+	if _contact_shadow_inst:
+		_contact_shadow_inst.visible = false
 	if sphere_mesh_inst:
 		sphere_mesh_inst.material_override = ArchetypeScript.get_hit_flash_material()
 	if visual_root:

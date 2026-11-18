@@ -1,10 +1,10 @@
 shader_type canvas_item;
 
-uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
 uniform float effect_amount : hint_range(0.0, 1.0) = 0.0;
 
 void fragment() {
-	vec3 scene_col = textureLod(screen_tex, SCREEN_UV, 0.0).rgb;
+	vec3 scene_col = texture(screen_tex, SCREEN_UV).rgb;
 	float luma = dot(scene_col, vec3(0.299, 0.587, 0.114));
 	vec3 gray = vec3(luma);
 

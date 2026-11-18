@@ -262,6 +262,7 @@ func apply_biome_materials(biome_id: int) -> void:
 		snow_trail.call("set_snow_enabled", current_biome_id == BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD)
 
 	if grass_material:
+		grass_material.set_shader_parameter("web_fast_mode", OS.has_feature("web"))
 		grass_material.set_shader_parameter("albedo1", b["floor_a1"])
 		grass_material.set_shader_parameter("albedo2", b["floor_a2"])
 		grass_material.set_shader_parameter("albedo3", b["floor_a3"])
