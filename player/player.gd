@@ -129,6 +129,7 @@ var _invuln_timer: float = 0.0
 var _hit_flash_timer: float = 0.0
 var _base_color: Color = Color(0.25, 0.6, 1.0)
 var _body_mat: StandardMaterial3D = null
+var _hp_bar_mat: ShaderMaterial = null
 var is_dashing: bool = false
 var dash_grants_invulnerability: bool = false
 
@@ -181,9 +182,11 @@ func _ready() -> void:
 
 	if hp_fill_mesh:
 		hp_fill_mesh.mesh = _shared_hp_quad
-		hp_fill_mesh.material_override = _shared_hp_bar_mat
+		_hp_bar_mat = _shared_hp_bar_mat.duplicate() as ShaderMaterial
+		hp_fill_mesh.material_override = _hp_bar_mat
 		hp_fill_mesh.scale = Vector3(OVERHEAD_HP_WIDTH, 0.065, 1.0)
-		hp_fill_mesh.set_instance_shader_parameter("fill_ratio", 1.0)
+		if _hp_bar_mat:
+			_hp_bar_mat.set_shader_parameter("fill_ratio", 1.0)
 
 	if health_comp:
 		var init_hp: float = float(stats_comp.get("max_hp")) if stats_comp != null else max_health
@@ -650,8 +653,8 @@ func restore_full_health() -> void:
 		stats_comp.call("clear_temporary_buffs")
 	if _body_mat:
 		_body_mat.albedo_color = _base_color
-	if hp_fill_mesh:
-		hp_fill_mesh.set_instance_shader_parameter("fill_ratio", 1.0)
+	if _hp_bar_mat:
+		_hp_bar_mat.set_shader_parameter("fill_ratio", 1.0)
 	if health_comp:
 		if stats_comp:
 			health_comp.max_health = float(stats_comp.get("max_hp"))
@@ -687,9 +690,9 @@ func _rpc_receive_contact_damage(amount: float, hit_dir: Vector3) -> void:
 
 
 func _on_health_changed(current_hp: float, p_max_hp: float) -> void:
-	if hp_fill_mesh:
+	if _hp_bar_mat:
 		var ratio: float = clampf(current_hp / maxf(1.0, p_max_hp), 0.0, 1.0)
-		hp_fill_mesh.set_instance_shader_parameter("fill_ratio", ratio)
+		_hp_bar_mat.set_shader_parameter("fill_ratio", ratio)
 
 
 func _on_damaged(_amount: float, _hit_dir: Vector3) -> void:
@@ -875,7 +878,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			_dash_dir = _aim_dir
 
-		_play_dash_effects.rpc(_dash_dir)
+		_dispatch_dash_effects(_dash_dir)
 		dash_notify = true
 
 	if dash_notify:
@@ -960,7 +963,7 @@ func _fire_weapon_slot(slot_idx: int) -> void:
 
 	match wid:
 		CatalogScript.WeaponId.PULSE_REPEATER:
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 0, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 0, tint, slot_idx)
 
 		CatalogScript.WeaponId.SCATTER_PRISM:
 			var pellets: int = int(w.get("pellets", 5))
@@ -968,25 +971,25 @@ func _fire_weapon_slot(slot_idx: int) -> void:
 			for p in range(pellets):
 				var frac: float = (float(p) / float(maxi(1, pellets - 1))) * 2.0 - 1.0 if pellets > 1 else 0.0
 				var p_dir: Vector3 = _aim_dir.rotated(Vector3.UP, frac * half_rad)
-				_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, p_dir, spd, rng, hit_dmg, proc_c, 0, tint, slot_idx)
+				_dispatch_combat_proj(auth_id, muzzle_pos, p_dir, spd, rng, hit_dmg, proc_c, 0, tint, slot_idx)
 			if visual_root:
 				visual_root.scale = Vector3(1.08, 0.94, 0.92)
 
 		CatalogScript.WeaponId.ARCANE_CHAKRAM:
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 2, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 2, tint, slot_idx)
 
 		CatalogScript.WeaponId.RAIL_LANCE:
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 1, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 1, tint, slot_idx)
 			if visual_root:
 				visual_root.scale = Vector3(0.88, 1.05, 1.16)
 
 		CatalogScript.WeaponId.NOVA_MORTAR:
 			var target_pt: Vector3 = _get_clamped_aim_point(rng)
 			var rad: float = float(w.get("aoe_radius", 2.8))
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, target_pt, rad, hit_dmg, 0.50, "mortar", tint, 0.0, false, 0.0, slot_idx)
+			_dispatch_zone(ZoneScript.ZoneMode.DELAYED_BLAST, target_pt, rad, hit_dmg, 0.50, "mortar", tint, 0.0, false, 0.0, slot_idx)
 
 		CatalogScript.WeaponId.CHAIN_LASH:
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.WHIP_ARC, global_position, rng, hit_dmg, 0.24, "whip", tint, 0.0, true, 0.0, slot_idx, _aim_dir)
+			_dispatch_zone(ZoneScript.ZoneMode.WHIP_ARC, global_position, rng, hit_dmg, 0.24, "whip", tint, 0.0, true, 0.0, slot_idx, _aim_dir)
 			if visual_root:
 				visual_root.scale = Vector3(1.14, 0.92, 0.94)
 
@@ -996,10 +999,10 @@ func _fire_weapon_slot(slot_idx: int) -> void:
 			for p_i in range(pod_count):
 				var frac_p: float = (float(p_i) / float(maxi(1, pod_count - 1))) * 2.0 - 1.0 if pod_count > 1 else 0.0
 				var m_dir: Vector3 = _aim_dir.rotated(Vector3.UP, frac_p * pod_half)
-				_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, m_dir, spd, rng, hit_dmg, proc_c, 4, tint, slot_idx)
+				_dispatch_combat_proj(auth_id, muzzle_pos, m_dir, spd, rng, hit_dmg, proc_c, 4, tint, slot_idx)
 
 		CatalogScript.WeaponId.SIEGE_CANNON:
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 5, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 5, tint, slot_idx)
 			if visual_root:
 				visual_root.scale = Vector3(0.84, 1.08, 1.22)
 
@@ -1007,17 +1010,17 @@ func _fire_weapon_slot(slot_idx: int) -> void:
 			var tip_pt: Vector3 = _get_clamped_aim_point(rng)
 			var line_dist: float = maxf(2.0, Vector2(tip_pt.x - global_position.x, tip_pt.z - global_position.z).length())
 			var line_dmg: float = hit_dmg * 0.52
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, line_dist, line_dmg, 0.75, 1, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, line_dist, line_dmg, 0.75, 1, tint, slot_idx)
 			var slam_rad: float = float(w.get("aoe_radius", 2.3))
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, tip_pt, slam_rad, hit_dmg, 0.36, "flail", tint, 0.0, false, 0.0, slot_idx)
+			_dispatch_zone(ZoneScript.ZoneMode.DELAYED_BLAST, tip_pt, slam_rad, hit_dmg, 0.36, "flail", tint, 0.0, false, 0.0, slot_idx)
 			if visual_root:
 				visual_root.scale = Vector3(0.90, 1.06, 1.14)
 
 		CatalogScript.WeaponId.CLUSTER_SEEKER:
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 6, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 6, tint, slot_idx)
 
 		CatalogScript.WeaponId.GAUSS_SNIPER:
-			_rpc_spawn_combat_proj.rpc(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 7, tint, slot_idx)
+			_dispatch_combat_proj(auth_id, muzzle_pos, _aim_dir, spd, rng, hit_dmg, proc_c, 7, tint, slot_idx)
 			if visual_root:
 				visual_root.scale = Vector3(0.86, 1.04, 1.18)
 
@@ -1042,27 +1045,27 @@ func _cast_ability_slot(slot_idx: int) -> void:
 	match ab_id:
 		CatalogScript.AbilityId.AEGIS_BARRIER:
 			grant_temporary_shield(25.0 + 2.0 * ap_val, 6.0)
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.SELF_WARD, global_position, 2.2, 0.0, 0.45, "aegis", col, 0.0, true, 0.0, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.SELF_WARD, global_position, 2.2, 0.0, 0.45, "aegis", col, 0.0, true, 0.0, -1)
 
 		CatalogScript.AbilityId.STARFALL_STRIKE:
 			var pt: Vector3 = _get_clamped_aim_point(13.5)
 			var dmg: float = 30.0 + 2.5 * ap_val
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, pt, 3.0, dmg, 0.51, "starfall", col, 0.0, false, 0.0, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.DELAYED_BLAST, pt, 3.0, dmg, 0.51, "starfall", col, 0.0, false, 0.0, -1)
 
 		CatalogScript.AbilityId.FROST_NOVA:
 			var pt_f: Vector3 = _get_clamped_aim_point(12.0)
 			var dmg_f: float = 18.0 + 1.5 * ap_val
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.STASIS_FIELD, pt_f, 3.8, dmg_f, 3.5, "frost_nova", col, 0.55, false, 0.0, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.STASIS_FIELD, pt_f, 3.8, dmg_f, 3.5, "frost_nova", col, 0.55, false, 0.0, -1)
 
 		CatalogScript.AbilityId.TEMPO_SURGE:
 			if stats_comp and stats_comp.has_method("apply_temporary_overdrive"):
 				stats_comp.call("apply_temporary_overdrive", 0.45, 0.25, 4.5)
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.SELF_WARD, global_position, 2.4, 0.0, 0.45, "surge", col, 0.0, true, 0.0, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.SELF_WARD, global_position, 2.4, 0.0, 0.45, "surge", col, 0.0, true, 0.0, -1)
 
 		CatalogScript.AbilityId.SOUL_SIPHON:
 			var pt_s: Vector3 = _get_clamped_aim_point(12.5)
 			var dmg_s: float = 24.0 + 2.0 * ap_val
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, pt_s, 3.6, dmg_s, 0.44, "siphon", col, 0.0, false, 0.35, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.DELAYED_BLAST, pt_s, 3.6, dmg_s, 0.44, "siphon", col, 0.0, false, 0.35, -1)
 
 	loadout_changed.emit()
 
@@ -1085,12 +1088,12 @@ func _cast_artifact() -> void:
 		CatalogScript.ArtifactId.SOLAR_CONVERGENCE:
 			var pt: Vector3 = _get_clamped_aim_point(14.0)
 			var pulse_dmg: float = 45.0 + 3.5 * ap_val
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.SOLAR_PILLAR, pt, 3.8, pulse_dmg, 1.55, "solar", col, 0.0, false, 0.0, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.SOLAR_PILLAR, pt, 3.8, pulse_dmg, 1.55, "solar", col, 0.0, false, 0.0, -1)
 
 		CatalogScript.ArtifactId.CHRONOSPHERE:
 			grant_temporary_shield(40.0 + 1.5 * ap_val, 6.0)
 			var init_dmg: float = 15.0 + 1.0 * ap_val
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.STASIS_FIELD, global_position, 7.5, init_dmg, 5.0, "chrono", col, 0.80, false, 0.0, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.STASIS_FIELD, global_position, 7.5, init_dmg, 5.0, "chrono", col, 0.80, false, 0.0, -1)
 
 		CatalogScript.ArtifactId.SEEKER_BARRAGE:
 			var missile_dmg: float = 14.0 + 0.8 * ad_val + 0.8 * ap_val
@@ -1099,7 +1102,7 @@ func _cast_artifact() -> void:
 			for m in range(10):
 				var ang: float = float(m) * (TAU / 10.0)
 				var m_dir := Vector3(cos(ang), 0.0, sin(ang))
-				_rpc_spawn_combat_proj.rpc(
+				_dispatch_combat_proj(
 					auth_id,
 					center_launch + m_dir * 0.30,
 					m_dir,
@@ -1115,9 +1118,62 @@ func _cast_artifact() -> void:
 		CatalogScript.ArtifactId.SANGUINE_HARVEST:
 			var pt_h: Vector3 = _get_clamped_aim_point(13.5)
 			var pulse_h: float = 32.0 + 2.5 * ap_val
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.SOLAR_PILLAR, pt_h, 4.0, pulse_h, 1.55, "harvest", col, 0.0, false, 0.25, -1)
+			_dispatch_zone(ZoneScript.ZoneMode.SOLAR_PILLAR, pt_h, 4.0, pulse_h, 1.55, "harvest", col, 0.0, false, 0.25, -1)
 
 	loadout_changed.emit()
+
+
+func _dispatch_dash_effects(p_dash_dir: Vector3) -> void:
+	if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+		_play_dash_effects.rpc(p_dash_dir)
+	else:
+		_play_dash_effects(p_dash_dir)
+
+
+func _dispatch_combat_proj(
+	p_shooter_id: int,
+	p_pos: Vector3,
+	p_dir: Vector3,
+	p_speed: float,
+	p_range: float,
+	p_dmg: float,
+	p_proc: float,
+	p_mode: int,
+	p_tint: Color,
+	p_slot_idx: int = -1
+) -> void:
+	if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+		_rpc_spawn_combat_proj.rpc(
+			p_shooter_id, p_pos, p_dir, p_speed, p_range, p_dmg, p_proc, p_mode, p_tint, p_slot_idx
+		)
+	else:
+		_rpc_spawn_combat_proj(
+			p_shooter_id, p_pos, p_dir, p_speed, p_range, p_dmg, p_proc, p_mode, p_tint, p_slot_idx
+		)
+
+
+func _dispatch_zone(
+	p_mode: int,
+	p_pos: Vector3,
+	p_radius: float,
+	p_dmg: float,
+	p_duration: float,
+	p_key: String,
+	p_col: Color,
+	p_slow: float,
+	p_follow_self: bool,
+	p_leech: float = 0.0,
+	p_slot_idx: int = -1,
+	p_aim_dir: Vector3 = Vector3.FORWARD
+) -> void:
+	if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+		_rpc_spawn_zone.rpc(
+			p_mode, p_pos, p_radius, p_dmg, p_duration, p_key, p_col, p_slow, p_follow_self, p_leech, p_slot_idx, p_aim_dir
+		)
+	else:
+		_rpc_spawn_zone(
+			p_mode, p_pos, p_radius, p_dmg, p_duration, p_key, p_col, p_slow, p_follow_self, p_leech, p_slot_idx, p_aim_dir
+		)
 
 
 @rpc("call_local", "reliable")

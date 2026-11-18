@@ -57,6 +57,7 @@ var _stagger_timer: float = 0.0
 var _burst_window_dmg: float = 0.0
 var _biome_trait_id: int = 0
 var _biome_special_used: bool = false
+var _hp_bar_mat: ShaderMaterial = null
 
 # Ability / AI state machine timers (zero allocation)
 var _ability_cd: float = 2.0
@@ -96,7 +97,8 @@ func _ready() -> void:
 		hp_bg_mesh.visible = false
 	if hp_fill_mesh:
 		hp_fill_mesh.mesh = ArchetypeScript.get_hp_quad_mesh()
-		hp_fill_mesh.material_override = ArchetypeScript.get_hp_bar_material()
+		_hp_bar_mat = ArchetypeScript.get_hp_bar_material().duplicate() as ShaderMaterial
+		hp_fill_mesh.material_override = _hp_bar_mat
 
 	if visual_root and _trim_ring_a == null:
 		_trim_ring_a = MeshInstance3D.new()
@@ -246,10 +248,11 @@ func activate(
 		var bar_w: float = clampf(_base_radius * 2.3, 0.75, 2.1)
 		if hp_fill_mesh:
 			hp_fill_mesh.scale = Vector3(bar_w, 0.13 if is_boss else 0.10, 1.0)
-			hp_fill_mesh.set_instance_shader_parameter("fill_ratio", 1.0)
-			hp_fill_mesh.set_instance_shader_parameter("armor_ratio", 0.0)
-			hp_fill_mesh.set_instance_shader_parameter("stock_pips", 1.0)
-			hp_fill_mesh.set_instance_shader_parameter("impervious_ratio", 0.0)
+		if _hp_bar_mat:
+			_hp_bar_mat.set_shader_parameter("fill_ratio", 1.0)
+			_hp_bar_mat.set_shader_parameter("armor_ratio", 0.0)
+			_hp_bar_mat.set_shader_parameter("stock_pips", 1.0)
+			_hp_bar_mat.set_shader_parameter("impervious_ratio", 0.0)
 		hp_bar_root.visible = is_boss
 
 	if health_comp:
@@ -431,10 +434,11 @@ func configure_elite_or_boss(
 		var bar_w: float = clampf(_base_radius * (2.5 if (p_is_elite and p_bars > 1) else 2.3), 0.78, 2.3)
 		if hp_fill_mesh:
 			hp_fill_mesh.scale = Vector3(bar_w, 0.13 if (is_boss or p_is_elite) else 0.10, 1.0)
-			hp_fill_mesh.set_instance_shader_parameter("fill_ratio", 1.0)
-			hp_fill_mesh.set_instance_shader_parameter("armor_ratio", 1.0 if p_armor > 0.01 else 0.0)
-			hp_fill_mesh.set_instance_shader_parameter("stock_pips", float(maxi(1, p_bars)))
-			hp_fill_mesh.set_instance_shader_parameter("impervious_ratio", 0.0)
+		if _hp_bar_mat:
+			_hp_bar_mat.set_shader_parameter("fill_ratio", 1.0)
+			_hp_bar_mat.set_shader_parameter("armor_ratio", 1.0 if p_armor > 0.01 else 0.0)
+			_hp_bar_mat.set_shader_parameter("stock_pips", float(maxi(1, p_bars)))
+			_hp_bar_mat.set_shader_parameter("impervious_ratio", 0.0)
 		hp_bar_root.visible = is_boss or p_is_elite or p_armor > 0.01
 	_refresh_ward_shell()
 
@@ -1714,8 +1718,8 @@ func _on_health_changed(current_hp: float, max_hp: float) -> void:
 	if hp_bar_root == null or _archetype == null:
 		return
 	var ratio: float = clampf(current_hp / maxf(1.0, max_hp), 0.0, 1.0)
-	if hp_fill_mesh:
-		hp_fill_mesh.set_instance_shader_parameter("fill_ratio", ratio)
+	if _hp_bar_mat:
+		_hp_bar_mat.set_shader_parameter("fill_ratio", ratio)
 	if current_hp < max_hp and current_hp > 0.0 and _burrow_state != 1:
 		hp_bar_root.visible = true
 
@@ -1738,9 +1742,9 @@ func _on_health_changed(current_hp: float, max_hp: float) -> void:
 
 
 func _on_armor_changed(cur_arm: float, max_arm: float) -> void:
-	if hp_fill_mesh:
+	if _hp_bar_mat:
 		var a_ratio: float = clampf(cur_arm / maxf(1.0, max_arm), 0.0, 1.0) if cur_arm > 0.01 else 0.0
-		hp_fill_mesh.set_instance_shader_parameter("armor_ratio", a_ratio)
+		_hp_bar_mat.set_shader_parameter("armor_ratio", a_ratio)
 	if hp_bar_root and _burrow_state != 1 and cur_arm > 0.01:
 		hp_bar_root.visible = true
 	_refresh_ward_shell()
@@ -1775,9 +1779,9 @@ func _on_bar_broken(remaining_bars: int, total_bars: int, _bar_max_hp: float) ->
 	_external_slow_timer = 0.0
 	_refresh_body_material()
 
-	if hp_fill_mesh:
-		hp_fill_mesh.set_instance_shader_parameter("stock_pips", float(maxi(1, remaining_bars)))
-		hp_fill_mesh.set_instance_shader_parameter("fill_ratio", 1.0)
+	if _hp_bar_mat:
+		_hp_bar_mat.set_shader_parameter("stock_pips", float(maxi(1, remaining_bars)))
+		_hp_bar_mat.set_shader_parameter("fill_ratio", 1.0)
 
 	if _archetype == null:
 		return
@@ -1818,8 +1822,8 @@ func _on_bar_broken(remaining_bars: int, total_bars: int, _bar_max_hp: float) ->
 
 
 func _on_phase_gate_changed(is_imp: bool, _remaining_bars: int) -> void:
-	if hp_fill_mesh:
-		hp_fill_mesh.set_instance_shader_parameter("impervious_ratio", 1.0 if is_imp else 0.0)
+	if _hp_bar_mat:
+		_hp_bar_mat.set_shader_parameter("impervious_ratio", 1.0 if is_imp else 0.0)
 	_refresh_ward_shell()
 
 

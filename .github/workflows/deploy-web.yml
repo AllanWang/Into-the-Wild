@@ -1,0 +1,92 @@
+name: Deploy Web Build to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.7.2"
+  GODOT_RELEASE: "4.7.2-stable"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Cache Godot binary and Web export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/godot-bin
+            ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-web-${{ runner.os }}-${{ env.GODOT_RELEASE }}-v1
+
+      - name: Install Godot & Web Export Templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/godot-bin"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+          curl -fSL --retry 3 -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
+          unzip -q -o /tmp/godot.zip -d "$HOME/.cache/godot-bin"
+          mv -f "$HOME/.cache/godot-bin/Godot_v${GODOT_RELEASE}_linux.x86_64" "$HOME/.cache/godot-bin/godot"
+          chmod +x "$HOME/.cache/godot-bin/godot"
+          rm -f /tmp/godot.zip
+
+          curl -fSL --retry 3 -o /tmp/templates.tpz \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          unzip -q -j -o /tmp/templates.tpz "templates/version.txt" "templates/web_nothreads_*" \
+            -d "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          rm -f /tmp/templates.tpz
+
+      - name: Import Resources & Export Static Web Bundle
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$HOME/.local/share"
+          mkdir -p build/web
+
+          "$HOME/.cache/godot-bin/godot" --headless --version
+          timeout 180 "$HOME/.cache/godot-bin/godot" --headless --import
+          timeout 180 "$HOME/.cache/godot-bin/godot" --headless --export-release "Web" "build/web/index.html"
+
+          test -f build/web/index.html
+          test -f build/web/index.js
+          test -f build/web/index.wasm
+          test -f build/web/index.pck
+          ls -lh build/web
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -5,10 +5,10 @@ uniform vec4 fill_color : source_color = vec4(0.95, 0.28, 0.32, 0.96);
 uniform vec4 bg_color : source_color = vec4(0.05, 0.07, 0.11, 0.86);
 uniform vec4 border_color : source_color = vec4(0.92, 0.89, 0.84, 0.38);
 
-instance uniform float fill_ratio : hint_range(0.0, 1.0) = 1.0;
-instance uniform float armor_ratio : hint_range(0.0, 1.0) = 0.0;
-instance uniform float stock_pips : hint_range(1.0, 5.0) = 1.0;
-instance uniform float impervious_ratio : hint_range(0.0, 1.0) = 0.0;
+uniform float fill_ratio : hint_range(0.0, 1.0) = 1.0;
+uniform float armor_ratio : hint_range(0.0, 1.0) = 0.0;
+uniform float stock_pips : hint_range(1.0, 5.0) = 1.0;
+uniform float impervious_ratio : hint_range(0.0, 1.0) = 0.0;
 
 void vertex() {
 	// Camera-facing billboard preserving per-instance X/Y scale (MODEL_MATRIX[0]/[1] lengths)

@@ -20,6 +20,7 @@ var _lobby_btn: Button = null
 
 var _fade_t: float = 0.0
 var _is_showing: bool = false
+var _online_lobby_available: bool = true
 
 const FADE_DURATION: float = 0.55
 
@@ -114,6 +115,7 @@ func _build_ui_if_needed() -> void:
 	vbox.add_child(_retry_sanctuary_btn)
 
 	_lobby_btn = _make_dialog_button("ReturnLobbyButton", "Return to Lobby")
+	_lobby_btn.visible = _online_lobby_available
 	_lobby_btn.pressed.connect(func() -> void: return_to_lobby_requested.emit())
 	vbox.add_child(_lobby_btn)
 
@@ -153,6 +155,12 @@ func _make_dialog_button(p_name: String, p_text: String) -> Button:
 	btn.add_theme_color_override("font_color", COL_IVORY_TEXT)
 	btn.add_theme_color_override("font_hover_color", Color(1.0, 0.95, 0.78, 1.0))
 	return btn
+
+
+func set_online_lobby_available(available: bool) -> void:
+	_online_lobby_available = available
+	if _lobby_btn:
+		_lobby_btn.visible = _online_lobby_available
 
 
 func show_game_over() -> void:

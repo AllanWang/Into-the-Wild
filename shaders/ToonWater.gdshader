@@ -44,8 +44,6 @@ uniform bool infinite_water = false;
 uniform float edge_distortion_strength : hint_range(0.0, 1.5, 0.05) = 0.65;
 uniform float edge_distortion_frequency : hint_range(0.1, 5.0, 0.1) = 1.2;
 
-uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
-
 varying vec3 vertex_world;
 varying vec2 uv_local;
 

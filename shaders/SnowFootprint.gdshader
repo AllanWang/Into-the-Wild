@@ -5,7 +5,7 @@ uniform vec4 groove_color : source_color = vec4(0.28, 0.40, 0.58, 1.0);
 uniform vec4 edge_color : source_color = vec4(0.90, 0.96, 1.0, 1.0);
 uniform float segment_opacity : hint_range(0.0, 0.5) = 0.075;
 
-instance uniform float fade_alpha : hint_range(0.0, 1.0) = 1.0;
+uniform float fade_alpha : hint_range(0.0, 1.0) = 1.0;
 
 void fragment() {
 	vec2 p = (UV - vec2(0.5)) * 2.0;

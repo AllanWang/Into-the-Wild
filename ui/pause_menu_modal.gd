@@ -30,10 +30,12 @@ var _status_badge_lbl: Label = null
 var _title_lbl: Label = null
 var _debug_toggle_btn: Button = null
 var _debug_drawer: PanelContainer = null
+var _menu_btn: Button = null
 
 var _bound_player: Node = null
 var _is_open: bool = false
 var _is_solo_paused: bool = false
+var _online_lobby_available: bool = true
 
 
 func _ready() -> void:
@@ -47,6 +49,12 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if is_inside_tree() and get_tree() != null and get_tree().paused:
 		get_tree().paused = false
+
+
+func set_online_lobby_available(available: bool) -> void:
+	_online_lobby_available = available
+	if _menu_btn:
+		_menu_btn.text = "Main Menu" if _online_lobby_available else "Restart Run"
 
 
 func is_open() -> bool:
@@ -247,12 +255,12 @@ func _build_ui() -> void:
 	_add_debug_action(d_grid, "DebugTeleportButton", "Teleport Next Room", debug_teleport_requested)
 	_add_debug_action(d_grid, "DebugOverviewButton", "Toggle Overview Cam", debug_overview_requested)
 
-	var menu_btn := _make_menu_button("MainMenuButton", "Main Menu", false, true)
-	menu_btn.pressed.connect(func() -> void:
+	_menu_btn = _make_menu_button("MainMenuButton", "Main Menu" if _online_lobby_available else "Restart Run", false, true)
+	_menu_btn.pressed.connect(func() -> void:
 		close_menu()
 		main_menu_requested.emit()
 	)
-	vb.add_child(menu_btn)
+	vb.add_child(_menu_btn)
 
 
 func _add_debug_action(parent: Control, btn_name: String, label_text: String, sig: Signal) -> void:

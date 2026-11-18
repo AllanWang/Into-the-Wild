@@ -1,5 +1,8 @@
 extends Node
 
+const ENetProviderScript = preload("res://network/enet_transport_provider.gd")
+const OfflineProviderScript = preload("res://network/offline_transport_provider.gd")
+
 signal player_connected(peer_id: int, player_info: Dictionary)
 signal player_disconnected(peer_id: int)
 signal player_list_updated
@@ -14,7 +17,6 @@ const MAX_CLIENTS: int = 8
 const PORT_SCAN_ATTEMPTS: int = 20
 const PORT_RANGE_START: int = 7000
 const PORT_RANGE_SIZE: int = 5000
-const HOST_PORT_FILE: String = "res://.godot/host_port"
 
 const PLAYER_COLORS: Array[Color] = [
 	Color(0.25, 0.6, 1.0),   # Blue (Host)
@@ -27,7 +29,7 @@ const PLAYER_COLORS: Array[Color] = [
 	Color(0.9, 0.4, 0.65),  # Pink
 ]
 
-var peer: ENetMultiplayerPeer = null
+var peer: MultiplayerPeer = null
 var players: Dictionary = {}
 var local_player_name: String = "Player"
 var clients_ready: Dictionary = {}
@@ -38,18 +40,47 @@ var active_map_seed: int = 0
 var active_map_preset: int = 0
 var active_biome_id: int = 0
 var _is_hosting: bool = false
+var _provider: RefCounted = null
 
 func _ready() -> void:
+	_ensure_provider()
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
+func _ensure_provider() -> RefCounted:
+	if _provider != null:
+		return _provider
+	var use_offline: bool = (
+		OS.has_feature("web")
+		or ("--offline-provider" in OS.get_cmdline_args())
+		or ("--offline-provider" in OS.get_cmdline_user_args())
+	)
+	if use_offline:
+		_provider = OfflineProviderScript.new()
+	else:
+		_provider = ENetProviderScript.new()
+	return _provider
+
+func set_transport_provider(p_provider: RefCounted) -> void:
+	if _provider == p_provider:
+		return
+	leave_game()
+	_provider = p_provider
+
+func get_transport_provider() -> RefCounted:
+	return _ensure_provider()
+
+func supports_online_multiplayer() -> bool:
+	return bool(_ensure_provider().call("supports_online_multiplayer"))
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
 		if _is_hosting:
-			_remove_host_port_file()
+			if _provider != null:
+				_provider.call("on_host_stopped")
 			_is_hosting = false
 
 ## Returns a deterministic base port (7000-11999) calculated from the workspace directory path.
@@ -58,58 +89,32 @@ func get_workspace_default_port() -> int:
 	var offset: int = abs(project_dir.hash()) % PORT_RANGE_SIZE
 	return PORT_RANGE_START + offset
 
-## Returns the active host port if written to .godot/host_port, otherwise falls back to workspace default.
+## Returns the active host port from the transport provider, otherwise falls back to workspace default.
 func get_discovered_host_port() -> int:
-	if FileAccess.file_exists(HOST_PORT_FILE):
-		var f: FileAccess = FileAccess.open(HOST_PORT_FILE, FileAccess.READ)
-		if f:
-			var txt: String = f.get_as_text().strip_edges()
-			f.close()
-			var p: int = txt.to_int()
-			if p > 0:
-				return p
-	return get_workspace_default_port()
-
-func _write_host_port_file(port: int) -> void:
-	var godot_dir: String = ProjectSettings.globalize_path("res://.godot")
-	if not DirAccess.dir_exists_absolute(godot_dir):
-		DirAccess.make_dir_absolute(godot_dir)
-	var f: FileAccess = FileAccess.open(HOST_PORT_FILE, FileAccess.WRITE)
-	if f:
-		f.store_string(str(port))
-		f.close()
-
-func _remove_host_port_file() -> void:
-	if FileAccess.file_exists(HOST_PORT_FILE):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(HOST_PORT_FILE))
+	var prov: RefCounted = _ensure_provider()
+	var default_port: int = get_workspace_default_port()
+	return int(prov.call("get_discovered_port", default_port))
 
 func host_game(port: int = 0, player_name: String = "Host") -> Error:
 	leave_game()
 	local_player_name = player_name
-	
-	var starting_port: int = port if port > 0 else get_workspace_default_port()
-	var error: Error = FAILED
-	var bound_port: int = 0
-	
-	for attempt in range(PORT_SCAN_ATTEMPTS):
-		var test_port: int = starting_port + attempt
-		peer = ENetMultiplayerPeer.new()
-		error = peer.create_server(test_port, MAX_CLIENTS)
-		if error == OK:
-			bound_port = test_port
-			break
+
+	var prov: RefCounted = _ensure_provider()
+	var default_port: int = get_workspace_default_port()
+	var res: Dictionary = prov.call("create_host_peer", port, default_port, MAX_CLIENTS, PORT_SCAN_ATTEMPTS) as Dictionary
+	var error: Error = res.get("error", FAILED) as Error
+	var created_peer: MultiplayerPeer = res.get("peer", null) as MultiplayerPeer
+	if error != OK or created_peer == null:
 		peer = null
-		
-	if error != OK or bound_port == 0:
-		peer = null
-		return error
-		
-	active_port = bound_port
+		return error if error != OK else FAILED
+
+	peer = created_peer
+	active_port = int(res.get("bound_port", 0))
 	_is_hosting = true
 	if is_inside_tree() and multiplayer:
 		multiplayer.multiplayer_peer = peer
-	_write_host_port_file(bound_port)
-	
+	prov.call("on_host_started", active_port)
+
 	# Register host locally
 	var host_info = {
 		"name": local_player_name,
@@ -129,22 +134,29 @@ func start_single_player(player_name: String = "SoloPlayer") -> Error:
 func join_game(address: String = "127.0.0.1", port: int = 0, player_name: String = "Client") -> Error:
 	leave_game()
 	local_player_name = player_name
-	
+
+	var prov: RefCounted = _ensure_provider()
+	if not bool(prov.call("supports_online_multiplayer")):
+		return ERR_UNAVAILABLE
+
 	var target_port: int = port if port > 0 else get_discovered_host_port()
-	peer = ENetMultiplayerPeer.new()
-	var error = peer.create_client(address, target_port)
-	if error != OK:
+	var res: Dictionary = prov.call("create_client_peer", address, target_port) as Dictionary
+	var error: Error = res.get("error", FAILED) as Error
+	var created_peer: MultiplayerPeer = res.get("peer", null) as MultiplayerPeer
+	if error != OK or created_peer == null:
 		peer = null
-		return error
-		
-	active_port = target_port
+		return error if error != OK else FAILED
+
+	peer = created_peer
+	active_port = int(res.get("port", target_port))
 	if is_inside_tree() and multiplayer:
 		multiplayer.multiplayer_peer = peer
 	return OK
 
 func leave_game() -> void:
 	if _is_hosting:
-		_remove_host_port_file()
+		var prov: RefCounted = _ensure_provider()
+		prov.call("on_host_stopped")
 		_is_hosting = false
 	active_port = 0
 	active_map_seed = 0
@@ -153,7 +165,7 @@ func leave_game() -> void:
 		peer.close()
 		peer = null
 	if is_inside_tree() and multiplayer:
-		multiplayer.multiplayer_peer = null
+		multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	players.clear()
 	clients_ready.clear()
 	is_match_ready = false
@@ -170,7 +182,10 @@ func start_game() -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.randomize()
 		active_map_seed = int(rng.seed & 0x7FFFFFFF)
-	_load_game_scene.rpc(active_map_seed, active_map_preset)
+	if multiplayer.has_multiplayer_peer():
+		_load_game_scene.rpc(active_map_seed, active_map_preset)
+	else:
+		_load_game_scene(active_map_seed, active_map_preset)
 
 @rpc("call_local", "reliable")
 func _load_game_scene(p_seed: int = 0, p_preset: int = 0) -> void:
@@ -273,4 +288,4 @@ func get_player_count() -> int:
 func is_host() -> bool:
 	if not peer or not is_inside_tree() or not multiplayer:
 		return false
-	return multiplayer.is_server() if multiplayer.has_multiplayer_peer() else false
+	return multiplayer.is_server()

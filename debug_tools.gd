@@ -36,7 +36,7 @@ var host_is_embedded: bool = false
 var _no_focus_unlocked: bool = false
 
 func _init() -> void:
-	if not OS.is_debug_build():
+	if OS.has_feature("web") or not OS.is_debug_build():
 		return
 	is_active = true
 	_detect_embedded_status()

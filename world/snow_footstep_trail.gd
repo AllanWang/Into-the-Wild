@@ -22,6 +22,7 @@ var _active_count: int = 0
 var _ages: PackedFloat32Array = PackedFloat32Array()
 var _active: PackedByteArray = PackedByteArray()
 var _meshes: Array[MeshInstance3D] = []
+var _mats: Array[ShaderMaterial] = []
 var _player_state: Dictionary = {}
 
 static var _shared_plane: PlaneMesh = null
@@ -43,14 +44,17 @@ func _ready() -> void:
 	_ages.resize(MAX_PRINTS)
 	_active.resize(MAX_PRINTS)
 	_meshes.resize(MAX_PRINTS)
+	_mats.resize(MAX_PRINTS)
 	for i in range(MAX_PRINTS):
 		var mi := MeshInstance3D.new()
+		var mat := _shared_mat.duplicate() as ShaderMaterial
 		mi.mesh = _shared_plane
-		mi.material_override = _shared_mat
+		mi.material_override = mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.visible = false
 		add_child(mi)
 		_meshes[i] = mi
+		_mats[i] = mat
 		_ages[i] = 0.0
 		_active[i] = 0
 	visible = _snow_enabled
@@ -108,8 +112,9 @@ func _process(delta: float) -> void:
 			_ages[i] = next_age
 			var ratio: float = next_age / PRINT_LIFETIME
 			var fade: float = 1.0 - smoothstep(0.18, 1.0, ratio)
-			if mi != null:
-				mi.set_instance_shader_parameter("fade_alpha", fade)
+			var mat: ShaderMaterial = _mats[i] if i < _mats.size() else null
+			if mat != null:
+				mat.set_shader_parameter("fade_alpha", fade)
 			alive_now += 1
 	_active_count = alive_now
 
@@ -198,5 +203,7 @@ func _stamp_print(pos2: Vector2, dir2: Vector2, width: float, length: float) -> 
 	_active[idx] = 1
 	_ages[idx] = 0.0
 	mi.transform = Transform3D(step_basis, Vector3(pos2.x, PRINT_Y, pos2.y))
-	mi.set_instance_shader_parameter("fade_alpha", 1.0)
+	var mat: ShaderMaterial = _mats[idx] if idx < _mats.size() else null
+	if mat != null:
+		mat.set_shader_parameter("fade_alpha", 1.0)
 	mi.visible = true

@@ -68,11 +68,19 @@ func add_camera_shake(trauma: float) -> void:
 func _ready() -> void:
 	add_to_group("world_camera_shake")
 	var is_emb: bool = Engine.is_embedded_in_editor() or ("--wid" in OS.get_cmdline_args()) or (DebugTools != null and DebugTools.is_embedded)
-	if not is_emb and not EngineDebugger.is_active():
+	if not OS.has_feature("web") and not is_emb and not EngineDebugger.is_active():
 		DisplayServer.window_move_to_foreground()
 
 	if not NetworkManager.peer:
 		NetworkManager.host_game(0, "SoloPlayer")
+		NetworkManager.is_game_running = true
+
+	var online_supported: bool = NetworkManager.supports_online_multiplayer()
+	if not online_supported:
+		if leave_button:
+			leave_button.visible = false
+		if info_label:
+			info_label.visible = OS.is_debug_build()
 
 	NetworkManager.player_connected.connect(_on_player_connected)
 	NetworkManager.player_disconnected.connect(_on_player_disconnected)
@@ -609,6 +617,8 @@ func _setup_pause_menu_modal() -> void:
 	_pause_menu_modal = PauseMenuModalScript.new() as Control
 	_pause_menu_modal.name = "PauseMenuModal"
 	pause_layer.add_child(_pause_menu_modal)
+	if _pause_menu_modal.has_method("set_online_lobby_available"):
+		_pause_menu_modal.call("set_online_lobby_available", NetworkManager.supports_online_multiplayer())
 	_pause_menu_modal.connect("tutorial_requested", _on_tutorial_pressed)
 	_pause_menu_modal.connect("main_menu_requested", _on_leave_pressed)
 	_pause_menu_modal.connect("debug_biome_requested", _on_biome_pressed)
@@ -629,6 +639,8 @@ func _setup_game_over_overlay() -> void:
 	_game_over_overlay = GameOverOverlayScript.new() as Control
 	_game_over_overlay.name = "GameOverOverlay"
 	layer.add_child(_game_over_overlay)
+	if _game_over_overlay.has_method("set_online_lobby_available"):
+		_game_over_overlay.call("set_online_lobby_available", NetworkManager.supports_online_multiplayer())
 
 	_game_over_overlay.connect("restart_new_map_requested", _on_game_over_restart_new_map)
 	_game_over_overlay.connect("retry_sanctuary_requested", _on_game_over_retry_sanctuary)
@@ -774,11 +786,16 @@ func _on_server_disconnected() -> void:
 		_pause_menu_modal.call("close_menu")
 	if get_tree() and get_tree().paused:
 		get_tree().paused = false
+	if not NetworkManager.supports_online_multiplayer():
+		return
 	if get_tree() and get_tree().current_scene and get_tree().current_scene.scene_file_path != "res://ui/lobby.tscn":
 		get_tree().change_scene_to_file("res://ui/lobby.tscn")
 
 
 func _on_leave_pressed() -> void:
+	if not NetworkManager.supports_online_multiplayer():
+		_on_game_over_restart_new_map()
+		return
 	if _pause_menu_modal and _pause_menu_modal.has_method("close_menu"):
 		_pause_menu_modal.call("close_menu")
 	if get_tree() and get_tree().paused:
