@@ -114,6 +114,9 @@ func _ready() -> void:
 			lbl.add_theme_constant_override("outline_size", 4)
 			lbl.add_theme_color_override("font_outline_color", Color(0.05, 0.08, 0.12, 0.9))
 
+	if OS.has_feature("web") and dir_light:
+		dir_light.shadow_enabled = false
+
 	if camera:
 		camera.far = 2500.0
 		if not is_overview:

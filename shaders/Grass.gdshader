@@ -2,7 +2,7 @@
 // Made by Dylearn — Extended with Painterly Tip Glow, Biome Density & Arcane Iridescence
 
 shader_type spatial;
-render_mode depth_prepass_alpha, depth_draw_opaque;
+render_mode depth_draw_opaque;
 
 #include "res://shaders/clouds.gdshaderinc"
 
@@ -74,6 +74,7 @@ uniform float player_displacement_angle_x : hint_range(0.0, 360.0, 0.1) = 45.0;
 uniform float radius_exponent : hint_range(0.0, 10.0, 0.001) = 1.0;
 const int character_count = 64;
 uniform vec4[character_count] character_positions;
+uniform int active_character_count = 0;
 
 group_uniforms lighting;
 uniform int cuts : hint_range(1, 8) = 3;
@@ -194,19 +195,23 @@ void vertex() {
 
 	float character_displacement_x = 0.0;
 	float character_displacement_y = 0.0;
-	for (int i=0; i < character_count; i++) {
-		float distance = length(character_positions[i].xyz - object_origin) / character_positions[i].w;
-		float displacement_strength = pow(1.0 - distance, radius_exponent);
-
-		if (displacement_strength > 0.0) {
-			displacement_strength = clamp(displacement_strength, 0.0, 1.0);
-			vec3 character_to_grass = object_origin - character_positions[i].xyz;
-			float view_y_dot = dot(normalize(CAMERA_DIRECTION_WORLD.xz), normalize(character_to_grass.xz));
-			vec3 perpendicular_camera_direction_world = vec3(CAMERA_DIRECTION_WORLD.z, 0.0, -CAMERA_DIRECTION_WORLD.x);
-			float view_x_dot = dot(normalize(perpendicular_camera_direction_world.xz), normalize(character_to_grass.xz));
-
-			character_displacement_x += displacement_strength * view_x_dot;
-			character_displacement_y += displacement_strength * view_y_dot;
+	if (character_displacement && active_character_count > 0) {
+		vec2 cam_fwd_xz = normalize(CAMERA_DIRECTION_WORLD.xz);
+		vec2 cam_perp_xz = vec2(cam_fwd_xz.y, -cam_fwd_xz.x);
+		for (int i = 0; i < character_count; i++) {
+			if (i >= active_character_count) {
+				break;
+			}
+			float r = character_positions[i].w;
+			vec2 diff_xz = object_origin.xz - character_positions[i].xz;
+			float d2 = dot(diff_xz, diff_xz);
+			if (r > 0.001 && d2 < r * r && d2 > 0.000001) {
+				float dist_norm = sqrt(d2) / r;
+				float displacement_strength = pow(clamp(1.0 - dist_norm, 0.0, 1.0), radius_exponent);
+				vec2 dir_xz = diff_xz * inversesqrt(d2);
+				character_displacement_x += displacement_strength * dot(cam_perp_xz, dir_xz);
+				character_displacement_y += displacement_strength * dot(cam_fwd_xz, dir_xz);
+			}
 		}
 	}
 	character_displacement_x = clamp(character_displacement_x, -1.0, 1.0);

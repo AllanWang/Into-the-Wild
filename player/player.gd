@@ -130,6 +130,8 @@ var _hit_flash_timer: float = 0.0
 var _base_color: Color = Color(0.25, 0.6, 1.0)
 var _body_mat: StandardMaterial3D = null
 var _hp_bar_mat: ShaderMaterial = null
+var _has_pointer_pos: bool = false
+var _last_pointer_pos: Vector2 = Vector2.ZERO
 var is_dashing: bool = false
 var dash_grants_invulnerability: bool = false
 
@@ -711,6 +713,30 @@ func _on_died() -> void:
 	player_defeated.emit(my_peer)
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if not is_multiplayer_authority():
+		return
+	if health_comp and health_comp.is_dead:
+		return
+	if event is InputEventMouse:
+		var me := event as InputEventMouse
+		_last_pointer_pos = me.position
+		_has_pointer_pos = true
+		var mod_ev := event as InputEventWithModifiers
+		var alt_now: bool = mod_ev != null and mod_ev.alt_pressed
+		if not alt_now:
+			_alt_inspect_active = false
+			if Input.is_action_pressed("inspect_loadout"):
+				Input.action_release("inspect_loadout")
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.pressed and not alt_now and not ui_input_blocked and _ui_unblock_grace <= 0.0:
+				if mb.button_index == MOUSE_BUTTON_LEFT:
+					_weapon_buffers[0] = INPUT_BUFFER_WINDOW
+				elif mb.button_index == MOUSE_BUTTON_RIGHT:
+					_weapon_buffers[1] = INPUT_BUFFER_WINDOW
+
+
 func _process(delta: float) -> void:
 	if health_comp and health_comp.is_dead:
 		return
@@ -725,12 +751,11 @@ func _process(delta: float) -> void:
 			_body_mat.albedo_color = _base_color
 
 	if visual_root and is_multiplayer_authority():
-		var allow_aim: bool = (not ui_input_blocked) and (not _alt_inspect_active) and (
-			DisplayServer.window_is_focused() or (DebugTools == null or DebugTools.active_instance_count <= 1)
-		)
+		var focused_aim: bool = OS.has_feature("web") or DisplayServer.window_is_focused() or (DebugTools == null or DebugTools.active_instance_count <= 1)
+		var allow_aim: bool = (not ui_input_blocked) and (not _alt_inspect_active) and focused_aim
 		var cam: Camera3D = get_viewport().get_camera_3d()
 		if cam and allow_aim:
-			var mouse_pos: Vector2 = get_viewport().get_mouse_position()
+			var mouse_pos: Vector2 = _last_pointer_pos if (OS.has_feature("web") and _has_pointer_pos) else get_viewport().get_mouse_position()
 			var ray_origin: Vector3 = cam.project_ray_origin(mouse_pos)
 			var ray_normal: Vector3 = cam.project_ray_normal(mouse_pos)
 			var ground_plane := Plane(Vector3.UP, global_position.y)
@@ -812,8 +837,8 @@ func _physics_process(delta: float) -> void:
 	if _artifact_buffer > 0.0:
 		_artifact_buffer = maxf(0.0, _artifact_buffer - delta)
 
-	var focused: bool = DisplayServer.window_is_focused() or (DebugTools == null or DebugTools.active_instance_count <= 1)
-	var alt_held_now: bool = _alt_inspect_active or Input.is_action_pressed("inspect_loadout") or Input.is_key_pressed(KEY_ALT) or Input.is_physical_key_pressed(KEY_ALT)
+	var focused: bool = OS.has_feature("web") or DisplayServer.window_is_focused() or (DebugTools == null or DebugTools.active_instance_count <= 1)
+	var alt_held_now: bool = _alt_inspect_active or Input.is_action_pressed("inspect_loadout") or ((not OS.has_feature("web")) and (Input.is_key_pressed(KEY_ALT) or Input.is_physical_key_pressed(KEY_ALT)))
 	if alt_held_now:
 		_weapon_buffers[0] = 0.0
 		_weapon_buffers[1] = 0.0

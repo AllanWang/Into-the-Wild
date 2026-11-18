@@ -266,7 +266,10 @@ func apply_biome_materials(biome_id: int) -> void:
 		grass_material.set_shader_parameter("albedo2", b["floor_a2"])
 		grass_material.set_shader_parameter("albedo3", b["floor_a3"])
 		grass_material.set_shader_parameter("blade_density", float(b["blade_density"]))
-		grass_material.set_shader_parameter("blade_scale", float(b["blade_scale"]))
+		var b_scale: float = float(b["blade_scale"])
+		if OS.has_feature("web"):
+			b_scale *= 1.16
+		grass_material.set_shader_parameter("blade_scale", b_scale)
 		grass_material.set_shader_parameter("accent_albedo1", b["grass_acc1"])
 		grass_material.set_shader_parameter("accent_albedo2", b["grass_acc2"])
 		grass_material.set_shader_parameter("tip_emission_color", b["tip_col"])

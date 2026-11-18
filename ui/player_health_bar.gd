@@ -195,6 +195,8 @@ func _is_alt_pressed() -> bool:
 	if _bound_player != null and is_instance_valid(_bound_player) and ("ui_input_blocked" in _bound_player):
 		if bool(_bound_player.get("ui_input_blocked")):
 			return false
+	if OS.has_feature("web"):
+		return Input.is_action_pressed("inspect_loadout")
 	return (
 		Input.is_action_pressed("inspect_loadout")
 		or Input.is_key_pressed(KEY_ALT)
@@ -318,6 +320,13 @@ func _init_socket_table() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouse:
 		_last_canvas_mouse = (event as InputEventMouse).position
+		var mod_ev := event as InputEventWithModifiers
+		if mod_ev != null and not mod_ev.alt_pressed:
+			if Input.is_action_pressed("inspect_loadout"):
+				Input.action_release("inspect_loadout")
+			if _alt_held:
+				_alt_held = false
+				_sync_mode_transitions()
 
 	var player_ui_blocked: bool = false
 	if _bound_player != null and is_instance_valid(_bound_player) and ("ui_input_blocked" in _bound_player):

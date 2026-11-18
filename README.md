@@ -2,7 +2,7 @@
 
 ## Overview
 
-A stylized 2.5D isometric action roguelike built in **Godot 4.7** featuring 5 painterly biomes (*Verdant Meadow*, *Glacial Frostfield*, *Astral Constellation*, *Volcanic Caldera*, and *Arcane Anomaly*), procedural arena & bridge webs, dual-weapon + slottable shard + ability/artifact combat, *Hades*-inspired armored elites and multi-phase bosses, zero-header WebAssembly solo play, and desktop co-op multiplayer via `ENetMultiplayerPeer`.
+A stylized 2.5D isometric action roguelike built in **Godot 4.7**, taking inspiration from ***Hades***, ***Shape of Dreams***, ***Windblown***, and ***Risk of Rain 2***. Features distinct painterly biomes, procedural arena and bridge webs, dual-weapon + slottable shard + ability/artifact combat, armored elites and multi-phase bosses, zero-header WebAssembly solo play, and desktop co-op multiplayer via `ENetMultiplayerPeer`.
 
 - **Live Web Game (Solo):** https://allanwang.github.io/Into-the-Wild/
 - **GitHub Repository:** https://github.com/AllanWang/Into-the-Wild

@@ -46,22 +46,33 @@ func _update_grass() -> void:
 	character_positions.fill(Vector4.ZERO)
 	
 	var characters = get_tree().get_nodes_in_group("characters")
-	for i in range(min(characters.size(), MAX_CHARACTERS)):
-		var character = characters[i]
-		var size: float = character.grass_displacement_size if "grass_displacement_size" in character else 0.6
-		var pos: Vector3 = character.global_transform.origin
-		character_positions[i] = Vector4(pos.x, pos.y, pos.z, size)
-	
+	var active_count: int = 0
+	for character in characters:
+		if active_count >= MAX_CHARACTERS:
+			break
+		if character is Node3D and (character as Node3D).is_visible_in_tree():
+			var size: float = character.grass_displacement_size if "grass_displacement_size" in character else 0.6
+			var pos: Vector3 = (character as Node3D).global_transform.origin
+			character_positions[active_count] = Vector4(pos.x, pos.y, pos.z, size)
+			active_count += 1
+
+	var mat: ShaderMaterial = null
 	if grass and grass.material_override is ShaderMaterial:
-		grass.material_override.set_shader_parameter("character_positions", character_positions)
+		mat = grass.material_override as ShaderMaterial
 	elif grass and grass.material_override:
+		grass.material_override.set("shader_parameter/active_character_count", active_count)
 		grass.material_override.set("shader_parameter/character_positions", character_positions)
+		return
 	else:
 		var grass_nodes = get_tree().get_nodes_in_group("grass")
 		for g in grass_nodes:
 			if g is GeometryInstance3D and g.material_override is ShaderMaterial:
-				g.material_override.set_shader_parameter("character_positions", character_positions)
+				mat = g.material_override as ShaderMaterial
 				break
+
+	if mat:
+		mat.set_shader_parameter("active_character_count", active_count)
+		mat.set_shader_parameter("character_positions", character_positions)
 
 func _is_pos_in_pond(pos: Vector3) -> bool:
 	# Organic pond equation matching ToonWater.gdshader

@@ -32,7 +32,8 @@ func initialize(source_mm: MultiMesh) -> void:
 	active_count = mini(active_count, total_instances)
 	active_count = mini(active_count, floori(float(raw_buf.size()) / float(FLOATS_PER_INSTANCE)))
 
-	for i in range(active_count):
+	var step: int = 2 if OS.has_feature("web") else 1
+	for i in range(0, active_count, step):
 		var base: int = i * FLOATS_PER_INSTANCE
 		var ox: float = raw_buf[base + 3]
 		var oz: float = raw_buf[base + 11]
