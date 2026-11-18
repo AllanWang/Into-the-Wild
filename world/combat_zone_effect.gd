@@ -23,6 +23,9 @@ var pool: Node = null
 var inner_rune_mesh: MeshInstance3D = null
 var focus_ring_mesh: MeshInstance3D = null
 var outer_frame_mesh: MeshInstance3D = null
+var whip_pivot: Node3D = null
+var whip_cord_mesh: MeshInstance3D = null
+var whip_wake_mesh: MeshInstance3D = null
 
 var _mode: int = ZoneMode.DELAYED_BLAST
 var _radius: float = 2.8
@@ -50,18 +53,28 @@ static var _shared_disc: CylinderMesh = null
 static var _shared_pillar: CylinderMesh = null
 static var _shared_whip_fill: ArrayMesh = null
 static var _shared_whip_rim: ArrayMesh = null
+static var _shared_whip_cord: ArrayMesh = null
+static var _shared_whip_wake: ArrayMesh = null
 static var _ring_mats: Dictionary = {}
 static var _fill_mats: Dictionary = {}
 static var _frame_mats: Dictionary = {}
+static var _whip_mats: Dictionary = {}
 
 
-static func _build_sector_mesh(inner_r: float, outer_r: float, half_angle_deg: float, segs: int) -> ArrayMesh:
+static func _build_sector_range_mesh(
+	inner_r: float,
+	outer_r: float,
+	start_angle_deg: float,
+	end_angle_deg: float,
+	segs: int
+) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var half_rad: float = deg_to_rad(half_angle_deg)
+	var start_rad: float = deg_to_rad(start_angle_deg)
+	var end_rad: float = deg_to_rad(end_angle_deg)
 	for i in range(segs):
-		var a0: float = lerpf(-half_rad, half_rad, float(i) / float(segs))
-		var a1: float = lerpf(-half_rad, half_rad, float(i + 1) / float(segs))
+		var a0: float = lerpf(start_rad, end_rad, float(i) / float(segs))
+		var a1: float = lerpf(start_rad, end_rad, float(i + 1) / float(segs))
 		var d0 := Vector3(sin(a0), 0.0, -cos(a0))
 		var d1 := Vector3(sin(a1), 0.0, -cos(a1))
 		var p00: Vector3 = d0 * inner_r
@@ -76,6 +89,55 @@ static func _build_sector_mesh(inner_r: float, outer_r: float, half_angle_deg: f
 		st.add_vertex(p00)
 		st.add_vertex(p11)
 		st.add_vertex(p10)
+	return st.commit()
+
+
+static func _build_sector_mesh(inner_r: float, outer_r: float, half_angle_deg: float, segs: int) -> ArrayMesh:
+	return _build_sector_range_mesh(inner_r, outer_r, -half_angle_deg, half_angle_deg, segs)
+
+
+## Builds an articulated curved whip ribbon extending continuously from near the caster's
+## center (r = 0.02, y = 0.30) to the outer tip (r = 1.0, y = 0.03) with a slight trailing S-lag.
+static func _build_whip_cord_mesh(segs: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var pts: Array[Vector3] = []
+	var half_ws: Array[float] = []
+	for i in range(segs + 1):
+		var frac: float = float(i) / float(segs)
+		var r: float = lerpf(0.02, 1.0, frac)
+		var lag_rad: float = -0.18 * sin(frac * PI)
+		var y_h: float = lerpf(0.30, 0.03, pow(frac, 0.72))
+		pts.append(Vector3(sin(lag_rad) * r, y_h, -cos(lag_rad) * r))
+		var hw: float = 0.012 + 0.004 * frac
+		if frac >= 0.68 and frac <= 0.94:
+			var tip_t: float = sin(((frac - 0.68) / 0.26) * PI)
+			hw += 0.013 * tip_t
+		elif frac > 0.94:
+			hw = lerpf(0.016, 0.003, (frac - 0.94) / 0.06)
+		half_ws.append(hw)
+
+	for i in range(segs):
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[i + 1]
+		var fwd: Vector3 = b - a
+		fwd.y = 0.0
+		var side := Vector3.RIGHT
+		if fwd.length_squared() > 0.00001:
+			fwd = fwd.normalized()
+			side = Vector3(-fwd.z, 0.0, fwd.x)
+		var a0: Vector3 = a - side * half_ws[i]
+		var a1: Vector3 = a + side * half_ws[i]
+		var b0: Vector3 = b - side * half_ws[i + 1]
+		var b1: Vector3 = b + side * half_ws[i + 1]
+		st.set_normal(Vector3.UP)
+		st.add_vertex(a0)
+		st.add_vertex(b0)
+		st.add_vertex(b1)
+		st.set_normal(Vector3.UP)
+		st.add_vertex(a0)
+		st.add_vertex(b1)
+		st.add_vertex(a1)
 	return st.commit()
 
 
@@ -114,8 +176,10 @@ static func _ensure_shared() -> void:
 	_shared_pillar.height = 9.0
 	_shared_pillar.radial_segments = 16
 
-	_shared_whip_fill = _build_sector_mesh(0.24, 1.0, 58.0, 20)
-	_shared_whip_rim = _build_sector_mesh(0.72, 1.0, 58.0, 20)
+	_shared_whip_fill = _build_sector_mesh(0.03, 1.0, 58.0, 20)
+	_shared_whip_rim = _build_sector_mesh(0.70, 1.0, 58.0, 20)
+	_shared_whip_cord = _build_whip_cord_mesh(18)
+	_shared_whip_wake = _build_sector_range_mesh(0.03, 1.0, -42.0, 0.0, 14)
 
 
 static func _get_palette_mats(key: String, col: Color) -> Array[StandardMaterial3D]:
@@ -147,6 +211,34 @@ static func _get_palette_mats(key: String, col: Color) -> Array[StandardMaterial
 	return [r_mat, f_mat, frame_mat]
 
 
+static func _get_whip_mats(key: String, col: Color) -> Array[StandardMaterial3D]:
+	_ensure_shared()
+	if _whip_mats.has(key):
+		return _whip_mats[key] as Array[StandardMaterial3D]
+
+	var cord_mat := StandardMaterial3D.new()
+	cord_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cord_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	cord_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	cord_mat.albedo_color = col.lightened(0.28)
+
+	var wake_mat := StandardMaterial3D.new()
+	wake_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	wake_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	wake_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	wake_mat.albedo_color = Color(col.r, col.g, col.b, 0.42)
+
+	var rim_mat := StandardMaterial3D.new()
+	rim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rim_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rim_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	rim_mat.albedo_color = Color(col.r, col.g, col.b, 0.34)
+
+	var arr: Array[StandardMaterial3D] = [cord_mat, wake_mat, rim_mat]
+	_whip_mats[key] = arr
+	return arr
+
+
 func _ensure_player_fx_nodes() -> void:
 	_ensure_shared()
 	if inner_rune_mesh == null:
@@ -170,6 +262,24 @@ func _ensure_player_fx_nodes() -> void:
 		outer_frame_mesh.position = Vector3(0.0, 0.018, 0.0)
 		outer_frame_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(outer_frame_mesh)
+	if whip_pivot == null:
+		whip_pivot = Node3D.new()
+		whip_pivot.name = "WhipPivot"
+		whip_pivot.visible = false
+		add_child(whip_pivot)
+
+		whip_cord_mesh = MeshInstance3D.new()
+		whip_cord_mesh.name = "WhipCordMesh"
+		whip_cord_mesh.mesh = _shared_whip_cord
+		whip_cord_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		whip_pivot.add_child(whip_cord_mesh)
+
+		whip_wake_mesh = MeshInstance3D.new()
+		whip_wake_mesh.name = "WhipWakeMesh"
+		whip_wake_mesh.mesh = _shared_whip_wake
+		whip_wake_mesh.position = Vector3(0.0, 0.012, 0.0)
+		whip_wake_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		whip_pivot.add_child(whip_wake_mesh)
 
 
 func _ready() -> void:
@@ -221,9 +331,10 @@ func activate_zone(
 
 	var is_whip: bool = (_mode == ZoneMode.WHIP_ARC)
 	var mats: Array[StandardMaterial3D] = _get_palette_mats(p_color_key, p_color)
+	var w_mats: Array[StandardMaterial3D] = _get_whip_mats(p_color_key, p_color) if is_whip else ([] as Array[StandardMaterial3D])
 	if ring_mesh:
 		ring_mesh.mesh = (_shared_whip_rim as Mesh) if is_whip else (_shared_torus as Mesh)
-		ring_mesh.material_override = mats[0]
+		ring_mesh.material_override = w_mats[2] if is_whip else mats[0]
 		ring_mesh.visible = true
 	if disc_mesh:
 		disc_mesh.mesh = (_shared_whip_fill as Mesh) if is_whip else (_shared_disc as Mesh)
@@ -246,6 +357,16 @@ func activate_zone(
 	if outer_frame_mesh:
 		outer_frame_mesh.material_override = mats[2]
 		outer_frame_mesh.visible = not is_whip
+	if whip_pivot:
+		whip_pivot.visible = is_whip
+		if is_whip:
+			whip_pivot.rotation = Vector3(0.0, deg_to_rad(58.0), 0.0)
+			if whip_cord_mesh:
+				whip_cord_mesh.material_override = w_mats[0]
+			if whip_wake_mesh:
+				whip_wake_mesh.material_override = w_mats[1]
+				whip_wake_mesh.visible = false
+				whip_wake_mesh.scale = Vector3(0.02, 1.0, 1.0)
 
 	if is_inside_tree():
 		global_position = Vector3(p_pos.x, 0.06, p_pos.z)
@@ -254,6 +375,8 @@ func activate_zone(
 		reset_physics_interpolation()
 	else:
 		position = Vector3(p_pos.x, 0.06, p_pos.z)
+		if is_whip:
+			rotation.y = atan2(-_aim_dir.x, -_aim_dir.z)
 
 	if _mode == ZoneMode.SOLAR_PILLAR:
 		_pulses_left = 3
@@ -268,7 +391,7 @@ func activate_zone(
 		scale = Vector3(_radius * 0.25, 1.0, _radius * 0.25)
 	elif _mode == ZoneMode.WHIP_ARC:
 		_proc_coeff = 0.85
-		scale = Vector3(_radius * 0.65, 1.0, _radius * 0.65)
+		scale = Vector3(_radius * 0.82, 1.0, _radius * 0.82)
 		_apply_whip_cleave(_damage)
 	elif _mode == ZoneMode.INSTANT_BLAST:
 		scale = Vector3(_radius * 0.38, 1.0, _radius * 0.38)
@@ -300,6 +423,9 @@ func deactivate() -> void:
 		focus_ring_mesh.visible = false
 	if outer_frame_mesh:
 		outer_frame_mesh.visible = false
+	if whip_pivot:
+		whip_pivot.visible = false
+		whip_pivot.rotation = Vector3.ZERO
 
 
 func on_pool_release() -> void:
@@ -405,11 +531,17 @@ func _process(delta: float) -> void:
 
 		ZoneMode.WHIP_ARC:
 			var tw: float = clampf(_elapsed / _duration, 0.0, 1.0)
-			var snap_t: float = 1.0 - pow(1.0 - tw, 3.0)
-			var cur_s: float = lerpf(_radius * 0.65, _radius, snap_t)
+			var r_t: float = clampf(tw / 0.22, 0.0, 1.0)
+			var cur_s: float = lerpf(_radius * 0.82, _radius, r_t)
 			scale = Vector3(cur_s, 1.0, cur_s)
-			if disc_mesh:
-				disc_mesh.scale = Vector3(1.0, 1.0, 1.0 - tw * 0.35)
+			var sweep_t: float = 1.0 - pow(1.0 - tw, 2.35)
+			if whip_pivot:
+				# Decreasing Y rotation sweeps -Z clockwise from left (-58 deg) to right (+58 deg)
+				whip_pivot.rotation.y = deg_to_rad(lerpf(58.0, -58.0, sweep_t))
+			if whip_wake_mesh:
+				var wake_span: float = (116.0 * sweep_t) / 42.0
+				whip_wake_mesh.visible = sweep_t >= 0.02
+				whip_wake_mesh.scale = Vector3(clampf(wake_span, 0.02, 1.0), 1.0, 1.0)
 			if _elapsed >= _duration:
 				_release_self()
 

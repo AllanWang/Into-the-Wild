@@ -986,7 +986,7 @@ func _fire_weapon_slot(slot_idx: int) -> void:
 			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.DELAYED_BLAST, target_pt, rad, hit_dmg, 0.50, "mortar", tint, 0.0, false, 0.0, slot_idx)
 
 		CatalogScript.WeaponId.CHAIN_LASH:
-			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.WHIP_ARC, global_position, rng, hit_dmg, 0.20, "whip", tint, 0.0, true, 0.0, slot_idx, _aim_dir)
+			_rpc_spawn_zone.rpc(ZoneScript.ZoneMode.WHIP_ARC, global_position, rng, hit_dmg, 0.24, "whip", tint, 0.0, true, 0.0, slot_idx, _aim_dir)
 			if visual_root:
 				visual_root.scale = Vector3(1.14, 0.92, 0.94)
 
