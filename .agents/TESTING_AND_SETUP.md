@@ -91,9 +91,10 @@ When running multiple AI agent conversations or git worktrees concurrently, netw
      4. Note on Windows: If the conversation session process still holds an open directory handle on the empty worktree folder, Git cleanly deregisters the worktree and deletes the branch, and the empty directory is cleaned up when the session handle releases.
 
 ## 5. Godot AI MCP Server Setup (`hi-godot/godot-ai`)
-- **Plugin Location**: `addons/godot_ai/` (v4.3.0)
-- **Editor Plugin Setting**: Enabled in `project.godot` under `[editor_plugins]`.
-- **MCP Client Transport**: `uvx --from godot-ai==4.3.0 godot-ai attach --port 8000 --ws-port 9500`
+- **Plugin Location**: `addons/godot_ai/` (`.gitignore`d third-party v4.4.2+ addon; requires **Godot 4.7+**).
+- **Fresh-Clone / Cross-Device Bootstrap**: See [`.agents/SETUP.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/SETUP.md) or run `.agents/skills/setup-godot-ai-mcp/scripts/setup.ps1` to download `addons/godot_ai/`, link `projects.cfg`, and configure `mcp_config.json`.
+- **Editor Plugin Setting**: Enabled in `project.godot` under `[editor_plugins]` and `[autoload]` (`_mcp_game_helper`); CI Web exports strip both automatically so builds succeed without the local addon.
+- **MCP Client Transport**: `uvx --from godot-ai==4.4.2 godot-ai attach --port 8000 --ws-port 9500` (auto-managed per release).
 - **Configuration File**: Automatically recognized by Antigravity at `~/.gemini/config/mcp_config.json`.
 - When the Godot editor is running with this project open, the Godot AI editor plugin starts the internal WebSocket bridge on port 9500 and the MCP server exposes over 120+ live editor operations (node hierarchy, inspector properties, runtime scene tree, etc.).
 

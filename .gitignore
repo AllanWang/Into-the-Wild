@@ -2,3 +2,7 @@
 .godot/
 /android/
 /build/
+
+# Local AI / MCP editor plugin (installed per-device via .agents/SETUP.md)
+/addons/godot_ai/
+/addons/.godot_ai_update/

@@ -62,6 +62,9 @@ jobs:
           export XDG_DATA_HOME="$HOME/.local/share"
           mkdir -p build/web
 
+          # Strip local-only godot_ai editor plugin & autoload (gitignored in repo)
+          sed -i '/^_mcp_game_helper=/d; /addons\/godot_ai\/plugin\.cfg/d' project.godot
+
           "$HOME/.cache/godot-bin/godot" --headless --version
           timeout 180 "$HOME/.cache/godot-bin/godot" --headless --import
           timeout 180 "$HOME/.cache/godot-bin/godot" --headless --export-release "Web" "build/web/index.html"

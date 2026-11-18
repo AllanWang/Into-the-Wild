@@ -8,10 +8,10 @@ description: >-
 
 # Setup Godot AI MCP Skill
 
-This skill provides an automated workflow to bootstrap or update the [`hi-godot/godot-ai`](https://github.com/hi-godot/godot-ai) MCP plugin in any Godot 4 project.
+This skill provides an automated workflow to bootstrap or update the [`hi-godot/godot-ai`](https://github.com/hi-godot/godot-ai) MCP plugin in any Godot 4.7+ project. See [`.agents/SETUP.md`](../../../SETUP.md) for full cross-platform agent instructions (macOS/Linux, Godot linking, and CI standalone stripping).
 
 ## Why this is required
-In Godot, editor plugins must physically exist inside the project's `res://addons/<plugin_name>/` directory (containing `plugin.cfg`) for the engine to load them. The `godot-ai` plugin creates an in-editor WebSocket bridge (port `9500`) that connects to a local Python MCP server (`godot-ai attach`), giving AI agents live inspection of scenes, nodes, properties, and runtime logs.
+In Godot, editor plugins must physically exist inside the project's `res://addons/<plugin_name>/` directory (containing `plugin.cfg`) for the engine to load them. Because `addons/godot_ai/` is `.gitignore`d in this repository, every fresh clone or workstation must install it locally. The `godot-ai` plugin creates an in-editor WebSocket bridge (port `9500`) that connects to a local Python MCP server (`godot-ai attach`), giving AI agents live inspection of scenes, nodes, properties, and runtime logs.
 
 ---
 
@@ -23,9 +23,9 @@ Run the included PowerShell script from the repository root:
 powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scripts/setup.ps1
 ```
 
-To install a specific version:
+Optional parameters:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scripts/setup.ps1 -Version "4.3.0"
+powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scripts/setup.ps1 -Version "4.4.2" -GodotBin "C:\Path\To\godot.exe"
 ```
 
 ---
@@ -37,14 +37,10 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scrip
    - Downloads `godot-ai-v4-plugin.zip` to `$env:TEMP` and unpacks it.
 2. **Addon Directory Installation**:
    - Copies `addons/godot_ai` into the project root `addons/godot_ai`.
-3. **Editor Plugin Enablement**:
-   - Ensures `project.godot` contains:
-     ```ini
-     [editor_plugins]
-     enabled=PackedStringArray("res://addons/godot_ai/plugin.cfg")
-     ```
+3. **Editor Plugin & Autoload Enablement**:
+   - Ensures `project.godot` contains `[editor_plugins]` (`res://addons/godot_ai/plugin.cfg`) and `[autoload]` (`_mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"`).
 4. **Client MCP Configuration**:
-   - Configures the MCP stdio attach command in `~/.gemini/config/mcp_config.json` (and `~/.gemini/antigravity/mcp_config.json`):
+   - Configures the MCP stdio attach command in `~/.gemini/config/mcp_config.json` (and `~/.gemini/antigravity/mcp_config.json`, creating `~/.gemini/config/mcp_config.json` on fresh machines if missing):
      ```json
      "godot-ai": {
        "command": "uvx",
@@ -61,8 +57,11 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/setup-godot-ai-mcp/scrip
        "disabled": false
      }
      ```
-5. **Headless Verification (Initial Setup / CI Only)**:
-   - Executes `godot.exe --headless --path "." --quit` solely as a one-time sanity check during initial bootstrap or in headless CI pipelines to confirm scripts compile without syntax or cyclic errors.
+5. **Godot Binary Discovery & Project Manager Linking (`projects.cfg`)**:
+   - Resolves Godot 4.7+ from `-GodotBin`, `$env:GODOT_BIN`, `PATH`, Steam (`libraryfolders.vdf`), Winget, or Scoop.
+   - Registers the normalized repository path with `favorite=true` in Godot's `projects.cfg` (`<GodotDir>\editor_data\projects.cfg` for Steam/self-contained installs and/or `%APPDATA%\Godot\projects.cfg`).
+6. **Headless Verification (Initial Setup / CI Only)**:
+   - Executes `godot.exe --headless --path "." --quit` solely as a one-time sanity check during initial bootstrap or in headless CI pipelines to confirm imports and script compilation succeed.
 
 ---
 
