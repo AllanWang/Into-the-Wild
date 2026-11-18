@@ -811,6 +811,7 @@ func _spawn_pooled_enemy(
 
 	var spec: Dictionary = _pending_enemy_specs.get(p_enemy_id, {}) as Dictionary
 	_pending_enemy_specs.erase(p_enemy_id)
+	var biome_trait: int = int(spec.get("biome", _current_biome_id))
 	if not spec.is_empty():
 		var bars: int = int(spec.get("bars", 1))
 		var bar_hp: float = float(spec.get("bar_hp", 0.0))
@@ -821,6 +822,7 @@ func _spawn_pooled_enemy(
 			enemy.configure_elite_or_boss(bar_hp, bars, armor, gate_s, is_el)
 		elif bar_hp > 0.0 and enemy.health_comp != null:
 			enemy.health_comp.setup_max_health(bar_hp)
+	enemy.set_biome_trait(biome_trait)
 
 	if ArchetypeScript.is_boss_archetype(p_arch_id) and _boss_hud != null and is_instance_valid(_boss_hud):
 		var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(p_arch_id)

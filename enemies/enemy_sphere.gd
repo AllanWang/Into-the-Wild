@@ -49,12 +49,14 @@ var _suppress_hit_flash: bool = false
 var _bob_phase: float = 0.0
 var _base_radius: float = 0.38
 
-# Hades-style multi-bar, armor & phase-shift state
+# Hades-style multi-bar, armor, phase-shift & biome minion state
 var _is_elite_unit: bool = false
 var _boss_phase: int = 1
 var _frenzy_mult: float = 1.0
 var _stagger_timer: float = 0.0
 var _burst_window_dmg: float = 0.0
+var _biome_trait_id: int = 0
+var _biome_special_used: bool = false
 
 # Ability / AI state machine timers (zero allocation)
 var _ability_cd: float = 2.0
@@ -185,6 +187,8 @@ func _reset_statuses() -> void:
 	_frenzy_mult = 1.0
 	_stagger_timer = 0.0
 	_burst_window_dmg = 0.0
+	_biome_trait_id = 0
+	_biome_special_used = false
 	if _ward_shell_mesh:
 		_ward_shell_mesh.visible = false
 	if _burrow_ring_inst:
@@ -448,6 +452,24 @@ func _refresh_ward_shell() -> void:
 		_ward_shell_mesh.visible = false
 
 
+## Attaches biome-specific minion modifiers for non-boss enemies across the 5 biomes.
+func set_biome_trait(p_biome_id: int) -> void:
+	_biome_trait_id = p_biome_id
+	_biome_special_used = false
+	if _archetype == null or ArchetypeScript.is_boss_archetype(_archetype.archetype_id):
+		return
+	var aid: int = _archetype.archetype_id
+	if _biome_trait_id == 4 and health_comp != null:
+		# Arcane Anomaly specialists spawn with an 18% Arcane Ward Shield.
+		if (
+			aid == ArchetypeScript.ArchetypeId.DASHER
+			or aid == ArchetypeScript.ArchetypeId.BURROWER
+			or aid == ArchetypeScript.ArchetypeId.MIRE_LOBBER
+			or aid == ArchetypeScript.ArchetypeId.OCULAR_SNIPER
+		):
+			health_comp.set_shield(health_comp.max_health * 0.18)
+
+
 func deactivate() -> void:
 	_is_active_unit = false
 	_is_dying = false
@@ -648,6 +670,19 @@ func _complete_burrow_emerge() -> void:
 		visual_root.scale = Vector3(_base_radius * 0.75, _base_radius * 1.45, _base_radius * 0.75)
 	if health_comp and hp_bar_root and health_comp.current_health < health_comp.max_health:
 		hp_bar_root.visible = true
+	if _biome_trait_id == 1 and (not multiplayer.has_multiplayer_peer() or multiplayer.is_server()):
+		_rpc_enemy_ground_hazard(
+			HazardScript.HazardMode.GROUND_QUAKE,
+			global_position,
+			global_position,
+			2.1,
+			0.0,
+			7.0,
+			0.45,
+			0.24,
+			Color(0.42, 0.90, 1.0),
+			0.12
+		)
 
 
 func _process(delta: float) -> void:
@@ -870,7 +905,17 @@ func _physics_process(delta: float) -> void:
 					desired_vel = Vector3.ZERO
 					if _windup_timer <= 0.0:
 						_pending_action_kind = 0
-						_action_timer = 0.22
+						_action_timer = 0.28 if _biome_trait_id == 1 else 0.22
+						if _biome_trait_id == 4:
+							_rpc_enemy_orb(
+								global_position + Vector3(0.0, 0.40, 0.0) + _action_dir * 0.4,
+								_action_dir,
+								13.5,
+								9.0,
+								7.0,
+								Color(0.88, 0.32, 1.0),
+								false
+							)
 				elif _action_timer > 0.0:
 					_action_timer -= delta
 					desired_vel = _action_dir * (14.5 * speed_mult)
@@ -885,7 +930,8 @@ func _physics_process(delta: float) -> void:
 						if sin(_bob_phase) < 0.0:
 							side_sign = -side_sign
 						_action_dir = dir.rotated(Vector3.UP, side_sign * 0.58).normalized()
-						_rpc_enemy_sightline(global_position, _action_dir, 3.2, 0.58, Color(0.25, 0.92, 1.0))
+						var d_sight_col: Color = Color(0.65, 0.96, 1.0) if _biome_trait_id == 1 else Color(0.25, 0.92, 1.0)
+						_rpc_enemy_sightline(global_position, _action_dir, 3.2, 0.58, d_sight_col)
 					elif dist > (_base_radius + 0.18):
 						desired_vel = dir * (_archetype.move_speed * speed_mult)
 
@@ -917,9 +963,22 @@ func _physics_process(delta: float) -> void:
 					_windup_timer -= delta
 					desired_vel = Vector3.ZERO
 					if _windup_timer <= 0.0:
-						_action_timer = 0.32
+						_action_timer = 0.40 if _biome_trait_id == 1 else 0.32
 				elif _action_timer > 0.0:
 					_action_timer -= delta
+					if _action_timer <= 0.0 and _biome_trait_id == 3:
+						_rpc_enemy_ground_hazard(
+							HazardScript.HazardMode.LOB_POOL,
+							global_position + Vector3(0.0, 0.30, 0.0),
+							global_position,
+							1.8,
+							0.0,
+							6.5,
+							0.25,
+							2.4,
+							Color(1.0, 0.42, 0.14),
+							0.08
+						)
 					desired_vel = _action_dir * (16.2 * speed_mult)
 				else:
 					_ability_cd -= delta * speed_mult
@@ -968,6 +1027,7 @@ func _physics_process(delta: float) -> void:
 					desired_vel = Vector3.ZERO
 					if _windup_timer <= 0.0:
 						_pending_action_kind = 0
+						var pool_col: Color = Color(0.38, 0.88, 1.0) if _biome_trait_id == 1 else Color(0.36, 0.98, 0.48)
 						_rpc_enemy_ground_hazard(
 							HazardScript.HazardMode.LOB_POOL,
 							global_position + Vector3(0.0, 0.9, 0.0),
@@ -977,7 +1037,7 @@ func _physics_process(delta: float) -> void:
 							9.0,
 							1.10,
 							4.8,
-							Color(0.36, 0.98, 0.48),
+							pool_col,
 							0.0
 						)
 				else:
@@ -1005,8 +1065,9 @@ func _physics_process(delta: float) -> void:
 					_windup_timer -= delta
 					desired_vel = Vector3.ZERO
 					if _windup_timer <= 0.0:
+						var orb_origin: Vector3 = global_position + Vector3(0.0, 0.42, 0.0) + _action_dir * 0.5
 						_rpc_enemy_orb(
-							global_position + Vector3(0.0, 0.42, 0.0) + _action_dir * 0.5,
+							orb_origin,
 							_action_dir,
 							29.0,
 							24.0,
@@ -1014,6 +1075,10 @@ func _physics_process(delta: float) -> void:
 							Color(1.0, 0.92, 0.42),
 							true
 						)
+						if _biome_trait_id == 2:
+							for side_deg in [-13.0, 13.0]:
+								var s_dir: Vector3 = _action_dir.rotated(Vector3.UP, deg_to_rad(side_deg))
+								_rpc_enemy_orb(orb_origin, s_dir, 21.0, 20.0, 8.0, Color(1.0, 0.86, 0.36), false)
 				else:
 					if dist < 9.5:
 						desired_vel = -dir * (_archetype.move_speed * 0.85 * speed_mult)
@@ -1654,6 +1719,23 @@ func _on_health_changed(current_hp: float, max_hp: float) -> void:
 	if current_hp < max_hp and current_hp > 0.0 and _burrow_state != 1:
 		hp_bar_root.visible = true
 
+	if _biome_trait_id == 2 and not _biome_special_used and not _is_dying and _is_active_unit and current_hp > 0.0 and current_hp <= max_hp * 0.50:
+		var aid: int = _archetype.archetype_id
+		if (
+			aid == ArchetypeScript.ArchetypeId.DASHER
+			or aid == ArchetypeScript.ArchetypeId.LUNGER
+			or aid == ArchetypeScript.ArchetypeId.OCULAR_SNIPER
+		):
+			_biome_special_used = true
+			if is_inside_tree() and (not multiplayer.has_multiplayer_peer() or multiplayer.is_server()):
+				var side := Vector3(cos(_bob_phase), 0.0, sin(_bob_phase)).normalized() * 1.85
+				if not test_move(global_transform, side):
+					global_position += side
+					reset_physics_interpolation()
+				_hit_flash_timer = 0.14
+				if sphere_mesh_inst:
+					sphere_mesh_inst.material_override = ArchetypeScript.get_hit_flash_material()
+
 
 func _on_armor_changed(cur_arm: float, max_arm: float) -> void:
 	if hp_fill_mesh:
@@ -1765,5 +1847,21 @@ func _on_died() -> void:
 	if visual_root:
 		visual_root.visible = true
 		visual_root.scale = Vector3.ONE * (_base_radius * 1.38)
+
+	if _biome_trait_id == 3 and _archetype != null and (not multiplayer.has_multiplayer_peer() or multiplayer.is_server()):
+		var aid: int = _archetype.archetype_id
+		if aid == ArchetypeScript.ArchetypeId.CHASER or aid == ArchetypeScript.ArchetypeId.LUNGER:
+			_rpc_enemy_ground_hazard(
+				HazardScript.HazardMode.GROUND_QUAKE,
+				global_position,
+				global_position,
+				2.1,
+				0.0,
+				9.0,
+				0.85,
+				0.24,
+				Color(1.0, 0.34, 0.12),
+				0.14
+			)
 
 	defeated.emit(enemy_id, area_idx)
