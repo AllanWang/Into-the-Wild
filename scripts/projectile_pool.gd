@@ -143,6 +143,34 @@ func spawn_enemy_ground_hazard(
 	return hz
 
 
+func spawn_enemy_clock_sector(
+	p_center: Vector3,
+	p_radius: float,
+	p_safe_angle: float,
+	p_safe_half_width: float,
+	p_damage: float,
+	p_telegraph_s: float,
+	p_color: Color,
+	p_shake: float,
+	p_players_root: Node3D
+) -> Node3D:
+	var hz: Node3D = _acquire_enemy_hazard()
+	if hz and hz.has_method("activate_clock_sector"):
+		hz.call(
+			"activate_clock_sector",
+			p_center,
+			p_radius,
+			p_safe_angle,
+			p_safe_half_width,
+			p_damage,
+			p_telegraph_s,
+			p_color,
+			p_shake,
+			p_players_root
+		)
+	return hz
+
+
 ## Legacy simple spawn signature
 func spawn(p_shooter_id: int, p_pos: Vector3, p_dir: Vector3, p_speed: float = -1.0) -> Node:
 	var proj := acquire()

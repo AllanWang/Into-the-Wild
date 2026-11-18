@@ -20,6 +20,7 @@ const HEALING_WELL_SCENE: PackedScene = preload("res://world/healing_well.tscn")
 const StagePortalScript = preload("res://world/stage_portal.gd")
 const DroppedItemScript = preload("res://world/dropped_item.gd")
 const BossHealthHudScript = preload("res://ui/boss_health_hud.gd")
+const BossArenaDirectorScript = preload("res://world/boss_arena_director.gd")
 
 enum RoomState {
 	UNVISITED,
@@ -49,6 +50,10 @@ var _pedestal_pool: NodePool = null
 var _well_pool: NodePool = null
 var _stage_portal: Node3D = null
 var _boss_hud: Control = null
+var _boss_director: BossArenaDirector = null
+var _boss_reinforcement_ids: Dictionary = {} # enemy_id -> EnemySphere
+var _last_boss_prog_mult: float = 1.0
+var _last_boss_depth_mult: float = 1.0
 var _dropped_items: Array[Node3D] = []
 var _drop_angle_cursor: int = 0
 
@@ -183,6 +188,14 @@ func _setup_pools() -> void:
 	add_child(_stage_portal)
 	if _stage_portal.has_signal("portal_activated") and not _stage_portal.is_connected("portal_activated", _on_stage_portal_activated):
 		_stage_portal.connect("portal_activated", _on_stage_portal_activated)
+
+	_boss_director = BossArenaDirectorScript.new()
+	_boss_director.name = "BossArenaDirector"
+	add_child(_boss_director)
+	if not _boss_director.callout_changed.is_connected(_on_boss_callout_changed):
+		_boss_director.callout_changed.connect(_on_boss_callout_changed)
+	if not _boss_director.reinforcements_requested.is_connected(_on_boss_reinforcements_requested):
+		_boss_director.reinforcements_requested.connect(_on_boss_reinforcements_requested)
 
 	for i in range(8):
 		_create_pooled_dropped_item(i)
@@ -600,6 +613,9 @@ func reset_active_encounter(mark_current_cleared: bool = false) -> void:
 	_total_wave_enemies = 0
 	_pending_enemy_specs.clear()
 	_active_barriers.clear()
+	_release_boss_reinforcements()
+	if _boss_director:
+		_boss_director.clear_boss_encounter()
 	_clear_boss_hud()
 
 	if _telegraph_pool:
@@ -614,6 +630,68 @@ func reset_active_encounter(mark_current_cleared: bool = false) -> void:
 
 func is_encounter_active() -> bool:
 	return _locked_area_idx >= 0
+
+
+func is_boss_encounter_active() -> bool:
+	return _locked_area_idx >= 0 and _boss_director != null and _boss_director.is_boss_active()
+
+
+func get_boss_area_center() -> Vector3:
+	if _graph == null or _graph.areas.is_empty():
+		return Vector3.ZERO
+	for area in _graph.areas:
+		if area.role == AreaPresetScript.RoomRole.BOSS:
+			return Vector3(area.center.x, 0.0, area.center.y)
+	if _graph.goal_index >= 0 and _graph.goal_index < _graph.areas.size():
+		var ga: PlainsGraph.AreaData = _graph.areas[_graph.goal_index]
+		return Vector3(ga.center.x, 0.0, ga.center.y)
+	return Vector3.ZERO
+
+
+func _on_boss_callout_changed(text: String, col: Color, duration: float) -> void:
+	if _boss_hud != null and is_instance_valid(_boss_hud) and _boss_hud.has_method("set_mechanic_callout"):
+		_boss_hud.call("set_mechanic_callout", text, col, duration)
+
+
+func _on_boss_reinforcements_requested(specs: Array) -> void:
+	if _locked_area_idx < 0 or _enemy_pool == null:
+		return
+	for s_var in specs:
+		var sp: Dictionary = s_var as Dictionary
+		var arch_id: int = int(sp.get("arch", ArchetypeScript.ArchetypeId.CHASER))
+		var spos: Vector3 = sp.get("pos", Vector3.ZERO) as Vector3
+		var is_clone: bool = bool(sp.get("is_clone", false))
+		var eid: int = _next_enemy_id
+		_next_enemy_id += 1
+		var enemy: EnemySphere = _enemy_pool.acquire() as EnemySphere
+		if enemy == null:
+			continue
+		if not enemy.defeated.is_connected(_on_enemy_defeated):
+			enemy.defeated.connect(_on_enemy_defeated)
+		_boss_reinforcement_ids[eid] = enemy
+		enemy.activate(eid, _locked_area_idx, arch_id, spos, players_container)
+		enemy.is_boss_reinforcement = true
+		if is_clone:
+			enemy.configure_astral_clone(85.0 * _last_boss_prog_mult)
+		else:
+			var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(arch_id)
+			if enemy.health_comp != null:
+				enemy.health_comp.setup_max_health(arch_d.max_hp * _last_boss_depth_mult)
+			enemy.set_biome_trait(_current_biome_id)
+
+
+func _release_boss_reinforcements() -> void:
+	if _boss_reinforcement_ids.is_empty():
+		return
+	var vals: Array = _boss_reinforcement_ids.values()
+	_boss_reinforcement_ids.clear()
+	for v in vals:
+		var es: EnemySphere = v as EnemySphere
+		if es != null and is_instance_valid(es) and es.visible:
+			if _enemy_pool != null:
+				_enemy_pool.release(es)
+			else:
+				es.deactivate()
 
 
 func _physics_process(delta: float) -> void:
@@ -668,7 +746,7 @@ func _trigger_arena_lockdown(area_idx: int) -> void:
 		return
 
 	var area: PlainsGraph.AreaData = _graph.areas[area_idx]
-	var total_waves: int = maxi(1, waves_per_arena)
+	var total_waves: int = 1 if area.role == AreaPresetScript.RoomRole.BOSS else maxi(1, waves_per_arena)
 	var wave_1_specs: Array[Dictionary] = _build_wave_manifest(area, 1, total_waves)
 	if wave_1_specs.is_empty():
 		_room_states[area_idx] = RoomState.CLEARED
@@ -822,14 +900,34 @@ func _spawn_pooled_enemy(
 			enemy.configure_elite_or_boss(bar_hp, bars, armor, gate_s, is_el)
 		elif bar_hp > 0.0 and enemy.health_comp != null:
 			enemy.health_comp.setup_max_health(bar_hp)
+		var armor_dr: float = float(spec.get("armor_dr", 0.0))
+		if armor_dr > 0.0 and enemy.health_comp != null:
+			enemy.health_comp.set_armor_dr(armor_dr)
 	enemy.set_biome_trait(biome_trait)
 
-	if ArchetypeScript.is_boss_archetype(p_arch_id) and _boss_hud != null and is_instance_valid(_boss_hud):
-		var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(p_arch_id)
-		_boss_hud.call("bind_boss", enemy, arch_d.display_name, ArchetypeScript.get_boss_epithet(p_arch_id))
+	if ArchetypeScript.is_boss_archetype(p_arch_id) and not _boss_reinforcement_ids.has(p_enemy_id):
+		if _boss_hud != null and is_instance_valid(_boss_hud):
+			var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(p_arch_id)
+			_boss_hud.call("bind_boss", enemy, arch_d.display_name, ArchetypeScript.get_boss_epithet(p_arch_id))
+		if _boss_director != null and _graph != null and p_area_idx >= 0 and p_area_idx < _graph.areas.size():
+			var c_area: PlainsGraph.AreaData = _graph.areas[p_area_idx]
+			var prog_m: float = float(spec.get("prog_mult", 1.0))
+			_last_boss_prog_mult = prog_m
+			_last_boss_depth_mult = float(spec.get("depth_mult", 1.0))
+			enemy.boss_director = _boss_director
+			_boss_director.begin_boss_encounter(
+				enemy,
+				Vector3(c_area.center.x, 0.0, c_area.center.y),
+				_current_biome_id,
+				players_container,
+				prog_m
+			)
 
 
-func _on_enemy_defeated(_enemy_id: int, p_area_idx: int) -> void:
+func _on_enemy_defeated(p_enemy_id: int, p_area_idx: int) -> void:
+	if _boss_reinforcement_ids.has(p_enemy_id):
+		_boss_reinforcement_ids.erase(p_enemy_id)
+		return
 	if p_area_idx != _locked_area_idx:
 		return
 
@@ -868,6 +966,9 @@ func _rpc_clear_encounter(area_idx: int) -> void:
 	_next_wave_delay_timer = 0.0
 	_remaining_enemies = 0
 	_pending_enemy_specs.clear()
+	_release_boss_reinforcements()
+	if _boss_director:
+		_boss_director.clear_boss_encounter()
 	_clear_boss_hud()
 
 	for barrier in _active_barriers:
@@ -959,23 +1060,8 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 
 		AreaPresetScript.RoomRole.BOSS:
-			if wave_idx == 1:
-				for _i in range(2):
-					archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
-					archetypes.append(ArchetypeScript.ArchetypeId.LUNGER)
-				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
-			elif not is_final_wave:
-				for _i in range(2):
-					archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
-				archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER)
-				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
-				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
-			else:
-				var boss_arch: int = _pick_biome_boss(area.index)
-				archetypes.append(boss_arch)
-				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
-				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
-				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
+			var boss_arch: int = _pick_biome_boss(area.index)
+			archetypes.append(boss_arch)
 
 		_:
 			# Standard COMBAT arena: introduces upgraded mini-units & specialists as progression_stage rises!
@@ -1029,14 +1115,30 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 		var spec_bars: int = 1
 		var spec_bar_hp: float = arch_d.max_hp * depth_mult
 		var spec_armor: float = 0.0
+		var spec_armor_dr: float = 0.0
 		var spec_gate: float = 0.0
 		var spec_is_elite: bool = false
 
 		if ArchetypeScript.is_boss_archetype(arch_id):
 			spec_bars = 4 if _stage_depth >= 2 else 3
 			spec_bar_hp = arch_d.max_hp * prog_mult
-			spec_armor = arch_d.max_hp * 0.35 * prog_mult
-			spec_gate = 1.15
+			match arch_id:
+				ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
+					spec_armor = 0.0
+					spec_armor_dr = 0.0
+					spec_gate = 0.6
+				ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON:
+					spec_armor = 220.0 * prog_mult
+					spec_armor_dr = 0.25
+					spec_gate = 0.9
+				ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER:
+					spec_armor = 0.0
+					spec_armor_dr = 0.0
+					spec_gate = 0.6
+				_:
+					spec_armor = 360.0 * prog_mult
+					spec_armor_dr = 0.55
+					spec_gate = 1.0
 		elif allow_elite_anchor and not elite_assigned_in_wave and arch_id == ArchetypeScript.ArchetypeId.BRUISER:
 			elite_assigned_in_wave = true
 			spec_is_elite = true
@@ -1058,9 +1160,12 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 			"bars": spec_bars,
 			"bar_hp": spec_bar_hp,
 			"armor": spec_armor,
+			"armor_dr": spec_armor_dr,
 			"phase_gate": spec_gate,
 			"is_elite": spec_is_elite,
-			"biome": _current_biome_id
+			"biome": _current_biome_id,
+			"prog_mult": prog_mult,
+			"depth_mult": depth_mult
 		})
 
 	return manifest
@@ -1068,6 +1173,8 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 
 func _pick_biome_boss(area_idx: int) -> int:
 	match _current_biome_id:
+		0:
+			return ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
 		1:
 			return ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON
 		2:
@@ -1077,7 +1184,7 @@ func _pick_biome_boss(area_idx: int) -> int:
 		4:
 			return ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER if ((area_idx + _rng.randi()) % 2 == 0) else ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
 		_:
-			return ArchetypeScript.ArchetypeId.BOSS if ((area_idx + _rng.randi()) % 2 == 0) else ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
+			return ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
 
 
 func _sample_safe_spawn_point(

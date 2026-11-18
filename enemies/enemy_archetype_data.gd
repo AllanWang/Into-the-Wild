@@ -70,9 +70,9 @@ static func is_boss_archetype(id: int) -> bool:
 static func get_boss_epithet(id: int) -> String:
 	match id:
 		ArchetypeId.BOSS:
-			return "Earthshaker Juggernaut"
+			return "Magma Earthshaker"
 		ArchetypeId.BOSS_BLIGHTWEAVER:
-			return "Plague Broodmother"
+			return "Verdant Broodmother"
 		ArchetypeId.BOSS_CRYO_ARCHON:
 			return "Rimeblade Sovereign"
 		ArchetypeId.BOSS_CHRONOMANCER:
@@ -199,22 +199,22 @@ static func _ensure_cache() -> void:
 	)
 	_cache[ArchetypeId.BOSS] = _build_entry(
 		ArchetypeId.BOSS, "Tectonic Sovereign",
-		1.02, 350.0, 14.0, 3.3, 15.0, true,
-		Color(0.88, 0.24, 0.32), Color(0.46, 0.08, 0.12), Color(1.0, 0.80, 0.28)
+		1.04, 700.0, 14.0, 3.3, 15.0, true,
+		Color(0.88, 0.24, 0.22), Color(0.48, 0.10, 0.06), Color(1.0, 0.72, 0.24)
 	)
 	_cache[ArchetypeId.BOSS_BLIGHTWEAVER] = _build_entry(
 		ArchetypeId.BOSS_BLIGHTWEAVER, "Blightweaver Core",
-		1.02, 330.0, 13.0, 3.2, 15.0, false,
-		Color(0.68, 0.20, 0.92), Color(0.34, 0.06, 0.48), Color(0.36, 0.98, 0.58)
+		1.04, 720.0, 13.0, 3.2, 15.0, false,
+		Color(0.24, 0.76, 0.44), Color(0.08, 0.36, 0.18), Color(0.78, 1.0, 0.44)
 	)
 	_cache[ArchetypeId.BOSS_CRYO_ARCHON] = _build_entry(
 		ArchetypeId.BOSS_CRYO_ARCHON, "Cryo-Archon Valkyrie",
-		1.00, 330.0, 14.0, 3.6, 16.0, true,
+		1.02, 680.0, 14.0, 3.6, 16.0, true,
 		Color(0.30, 0.78, 0.98), Color(0.08, 0.34, 0.58), Color(0.88, 0.98, 1.0)
 	)
 	_cache[ArchetypeId.BOSS_CHRONOMANCER] = _build_entry(
 		ArchetypeId.BOSS_CHRONOMANCER, "Astral Chronomancer",
-		1.02, 320.0, 13.0, 3.2, 15.0, false,
+		1.04, 740.0, 13.0, 3.2, 15.0, false,
 		Color(0.28, 0.22, 0.72), Color(0.14, 0.10, 0.46), Color(1.0, 0.86, 0.38)
 	)
 

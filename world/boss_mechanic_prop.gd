@@ -1,0 +1,695 @@
+class_name BossMechanicProp
+extends StaticBody3D
+
+## Interactive 3D Boss Arena Prop supporting:
+## - BASALT_PILLAR: Solid destructible lava pillar (shatters boss Monolith Armor on Bull-Rush impact)
+## - BLIGHT_CONDUIT: Tethered emerald spire keeping Blightweaver Impervious until destroyed
+## - SPORE_SAC: Swelling toxic pod that pops harmlessly if focused or erupts room-wide at 4.5s
+## - ICE_OBELISK: Solid crystalline pillar casting a safe Whiteout shelter shadow & shattering on Lance/Dash
+## - STAR_BEACON: Floating golden astrolabe ring (stand inside 1.1s OR shoot down to cancel Time Rewind)
+
+enum PropKind {
+	BASALT_PILLAR = 0,
+	BLIGHT_CONDUIT = 1,
+	SPORE_SAC = 2,
+	ICE_OBELISK = 3,
+	STAR_BEACON = 4
+}
+
+const HazardScript = preload("res://world/enemy_hazard_effect.gd")
+const OVERHEAD_BAR_SHADER: Shader = preload("res://shaders/OverheadBar.gdshader")
+const HAZARD_SHADER: Shader = preload("res://shaders/EnemyHazard.gdshader")
+
+signal prop_destroyed(prop: BossMechanicProp, was_player_cleared: bool)
+signal pillar_impacted(prop: BossMechanicProp, shattered: bool)
+signal obelisk_shattered(prop: BossMechanicProp, world_pos: Vector3)
+signal spore_detonated(prop: BossMechanicProp, world_pos: Vector3)
+
+var prop_kind: int = PropKind.BASALT_PILLAR
+var anchor_index: int = -1
+var _boss_node: Node3D = null
+var _players_root: Node3D = null
+var _is_cleaned_up: bool = false
+var _elapsed: float = 0.0
+
+# Pillar durability
+var _durability: int = 2
+var _max_durability: int = 2
+
+# Conduit / Spore / Beacon gameplay timers
+var _ability_timer: float = 2.0
+var _fuse_timer: float = 0.0
+var _fuse_duration: float = 4.5
+var _capture_progress: float = 0.0
+var _capture_duration: float = 1.1
+var _hit_flash_timer: float = 0.0
+
+# Components
+var health_comp: HealthComponent = null
+var hurtbox_comp: HurtboxComponent = null
+var _body_col: CollisionShape3D = null
+var _hurt_col: CollisionShape3D = null
+
+# Visuals
+var _visual_root: Node3D = null
+var _main_mesh: MeshInstance3D = null
+var _accent_mesh: MeshInstance3D = null
+var _tether_mesh: MeshInstance3D = null
+var _ring_disc: MeshInstance3D = null
+var _shelter_pivot: Node3D = null
+var _shelter_mesh: MeshInstance3D = null
+var _hp_bar_root: Node3D = null
+var _hp_fill_mesh: MeshInstance3D = null
+var _hp_bar_mat: ShaderMaterial = null
+var _ring_mat: ShaderMaterial = null
+var _main_mat_normal: StandardMaterial3D = null
+
+static var _mesh_hex_pillar: CylinderMesh = null
+static var _mesh_ice_spire: CylinderMesh = null
+static var _mesh_conduit: CylinderMesh = null
+static var _mesh_sac: SphereMesh = null
+static var _mesh_torus_band: TorusMesh = null
+static var _mesh_tether_beam: BoxMesh = null
+static var _mesh_floor_plane: PlaneMesh = null
+static var _mesh_shelter_plane: PlaneMesh = null
+static var _mesh_hp_quad: QuadMesh = null
+
+static var _mat_basalt: StandardMaterial3D = null
+static var _mat_basalt_cracked: StandardMaterial3D = null
+static var _mat_magma_glow: StandardMaterial3D = null
+static var _mat_conduit: StandardMaterial3D = null
+static var _mat_tether: StandardMaterial3D = null
+static var _mat_spore: StandardMaterial3D = null
+static var _mat_ice: StandardMaterial3D = null
+static var _mat_ice_core: StandardMaterial3D = null
+static var _mat_shelter: StandardMaterial3D = null
+static var _mat_beacon: StandardMaterial3D = null
+static var _mat_hit_flash: StandardMaterial3D = null
+static var _base_hp_bar_mat: ShaderMaterial = null
+
+
+static func _ensure_shared() -> void:
+	if _mesh_hex_pillar != null:
+		return
+
+	_mesh_hex_pillar = CylinderMesh.new()
+	_mesh_hex_pillar.top_radius = 1.02
+	_mesh_hex_pillar.bottom_radius = 1.18
+	_mesh_hex_pillar.height = 3.5
+	_mesh_hex_pillar.radial_segments = 6
+
+	_mesh_ice_spire = CylinderMesh.new()
+	_mesh_ice_spire.top_radius = 0.08
+	_mesh_ice_spire.bottom_radius = 0.96
+	_mesh_ice_spire.height = 3.3
+	_mesh_ice_spire.radial_segments = 5
+
+	_mesh_conduit = CylinderMesh.new()
+	_mesh_conduit.top_radius = 0.18
+	_mesh_conduit.bottom_radius = 0.68
+	_mesh_conduit.height = 2.4
+	_mesh_conduit.radial_segments = 6
+
+	_mesh_sac = SphereMesh.new()
+	_mesh_sac.radius = 0.65
+	_mesh_sac.height = 1.3
+	_mesh_sac.radial_segments = 14
+	_mesh_sac.rings = 10
+
+	_mesh_torus_band = TorusMesh.new()
+	_mesh_torus_band.inner_radius = 1.02
+	_mesh_torus_band.outer_radius = 1.24
+	_mesh_torus_band.rings = 18
+	_mesh_torus_band.ring_segments = 6
+
+	_mesh_tether_beam = BoxMesh.new()
+	_mesh_tether_beam.size = Vector3(0.16, 0.16, 1.0)
+
+	_mesh_floor_plane = PlaneMesh.new()
+	_mesh_floor_plane.size = Vector2(2.0, 2.0)
+
+	_mesh_shelter_plane = PlaneMesh.new()
+	_mesh_shelter_plane.size = Vector2(2.8, 9.5)
+
+	_mesh_hp_quad = QuadMesh.new()
+	_mesh_hp_quad.size = Vector2(1.0, 1.0)
+
+	_mat_basalt = _make_toon_mat(Color(0.20, 0.17, 0.21), Color(0.28, 0.10, 0.04), 0.55)
+	_mat_basalt_cracked = _make_toon_mat(Color(0.32, 0.18, 0.16), Color(0.95, 0.36, 0.08), 1.35)
+	_mat_magma_glow = _make_unshaded_mat(Color(1.0, 0.56, 0.16, 0.95), false)
+	_mat_conduit = _make_toon_mat(Color(0.26, 0.86, 0.46), Color(0.18, 0.54, 0.24), 1.05)
+	_mat_tether = _make_unshaded_mat(Color(0.40, 1.0, 0.58, 0.82), true)
+	_mat_spore = _make_toon_mat(Color(0.48, 0.94, 0.34), Color(0.26, 0.55, 0.12), 1.15)
+	_mat_ice = _make_toon_mat(Color(0.68, 0.94, 1.0), Color(0.18, 0.54, 0.78), 0.90)
+	_mat_ice_core = _make_unshaded_mat(Color(0.56, 0.94, 1.0, 0.92), false)
+	_mat_shelter = _make_unshaded_mat(Color(0.14, 0.82, 0.98, 0.34), true)
+	_mat_beacon = _make_unshaded_mat(Color(1.0, 0.86, 0.38, 0.96), false)
+	_mat_hit_flash = _make_unshaded_mat(Color(1.0, 0.98, 0.92, 1.0), false)
+
+	_base_hp_bar_mat = ShaderMaterial.new()
+	_base_hp_bar_mat.shader = OVERHEAD_BAR_SHADER
+	_base_hp_bar_mat.set_shader_parameter("fill_color", Color(0.96, 0.32, 0.38, 0.96))
+	_base_hp_bar_mat.set_shader_parameter("bg_color", Color(0.05, 0.07, 0.11, 0.86))
+	_base_hp_bar_mat.set_shader_parameter("border_color", Color(0.92, 0.89, 0.84, 0.38))
+
+
+static func _make_toon_mat(albedo: Color, emission: Color, emit_energy: float) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
+	mat.albedo_color = albedo
+	mat.roughness = 0.35
+	mat.emission_enabled = true
+	mat.emission = emission
+	mat.emission_energy_multiplier = emit_energy
+	return mat
+
+
+static func _make_unshaded_mat(col: Color, alpha_blend: bool) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = col
+	if alpha_blend:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return mat
+
+
+func _init() -> void:
+	_ensure_shared()
+	collision_layer = 1
+	collision_mask = 0
+
+
+func _ensure_nodes() -> void:
+	if _visual_root != null:
+		return
+
+	_body_col = CollisionShape3D.new()
+	_body_col.name = "CollisionShape3D"
+	var body_cyl := CylinderShape3D.new()
+	body_cyl.radius = 1.0
+	body_cyl.height = 3.2
+	_body_col.shape = body_cyl
+	_body_col.position = Vector3(0.0, 1.6, 0.0)
+	add_child(_body_col)
+
+	health_comp = HealthComponent.new()
+	health_comp.name = "HealthComponent"
+	add_child(health_comp)
+	health_comp.health_changed.connect(_on_health_changed)
+	health_comp.died.connect(_on_died)
+
+	hurtbox_comp = HurtboxComponent.new()
+	hurtbox_comp.name = "HurtboxComponent"
+	hurtbox_comp.health_component = health_comp
+	_hurt_col = CollisionShape3D.new()
+	_hurt_col.name = "CollisionShape3D"
+	var hurt_cyl := CylinderShape3D.new()
+	hurt_cyl.radius = 0.9
+	hurt_cyl.height = 2.6
+	_hurt_col.shape = hurt_cyl
+	_hurt_col.position = Vector3(0.0, 1.3, 0.0)
+	hurtbox_comp.add_child(_hurt_col)
+	add_child(hurtbox_comp)
+
+	_visual_root = Node3D.new()
+	_visual_root.name = "VisualRoot"
+	add_child(_visual_root)
+
+	_main_mesh = MeshInstance3D.new()
+	_main_mesh.name = "MainMesh"
+	_main_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_visual_root.add_child(_main_mesh)
+
+	_accent_mesh = MeshInstance3D.new()
+	_accent_mesh.name = "AccentMesh"
+	_accent_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_visual_root.add_child(_accent_mesh)
+
+	_tether_mesh = MeshInstance3D.new()
+	_tether_mesh.name = "TetherBeam"
+	_tether_mesh.mesh = _mesh_tether_beam
+	_tether_mesh.material_override = _mat_tether
+	_tether_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_tether_mesh.visible = false
+	add_child(_tether_mesh)
+
+	_ring_mat = ShaderMaterial.new()
+	_ring_mat.shader = HAZARD_SHADER
+	_ring_mat.set_shader_parameter("inner_ratio", 0.0)
+	_ring_mat.set_shader_parameter("hazard_stage", 0)
+	_ring_mat.set_shader_parameter("fade_out", 1.0)
+
+	_ring_disc = MeshInstance3D.new()
+	_ring_disc.name = "FloorRingDisc"
+	_ring_disc.mesh = _mesh_floor_plane
+	_ring_disc.material_override = _ring_mat
+	_ring_disc.position = Vector3(0.0, 0.04, 0.0)
+	_ring_disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ring_disc.visible = false
+	add_child(_ring_disc)
+
+	_shelter_pivot = Node3D.new()
+	_shelter_pivot.name = "ShelterPivot"
+	_shelter_pivot.visible = false
+	add_child(_shelter_pivot)
+
+	_shelter_mesh = MeshInstance3D.new()
+	_shelter_mesh.name = "ShelterShadowMesh"
+	_shelter_mesh.mesh = _mesh_shelter_plane
+	_shelter_mesh.material_override = _mat_shelter
+	_shelter_mesh.position = Vector3(0.0, 0.042, 4.9)
+	_shelter_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_shelter_pivot.add_child(_shelter_mesh)
+
+	_hp_bar_root = Node3D.new()
+	_hp_bar_root.name = "HPBarRoot"
+	_hp_bar_root.position = Vector3(0.0, 2.9, 0.0)
+	_hp_bar_root.visible = false
+	add_child(_hp_bar_root)
+
+	_hp_bar_mat = _base_hp_bar_mat.duplicate() as ShaderMaterial
+	_hp_fill_mesh = MeshInstance3D.new()
+	_hp_fill_mesh.name = "HPFill"
+	_hp_fill_mesh.mesh = _mesh_hp_quad
+	_hp_fill_mesh.material_override = _hp_bar_mat
+	_hp_fill_mesh.scale = Vector3(1.25, 0.11, 1.0)
+	_hp_fill_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_hp_bar_root.add_child(_hp_fill_mesh)
+
+
+func configure(
+	p_kind: int,
+	p_pos: Vector3,
+	p_boss: Node3D,
+	p_players_root: Node3D,
+	p_hp: float = 100.0,
+	p_anchor_idx: int = -1
+) -> void:
+	_ensure_shared()
+	_ensure_nodes()
+	prop_kind = p_kind
+	anchor_index = p_anchor_idx
+	_boss_node = p_boss
+	_players_root = p_players_root
+	_is_cleaned_up = false
+	_elapsed = 0.0
+	_hit_flash_timer = 0.0
+	_capture_progress = 0.0
+	_fuse_timer = 0.0
+	_ability_timer = 2.0 + float(maxi(0, p_anchor_idx) % 3) * 0.85
+
+	global_position = Vector3(p_pos.x, 0.0, p_pos.z)
+	if is_inside_tree():
+		reset_physics_interpolation()
+
+	_tether_mesh.visible = false
+	_ring_disc.visible = false
+	_shelter_pivot.visible = false
+	_hp_bar_root.visible = false
+	_visual_root.scale = Vector3.ONE
+	_visual_root.position = Vector3.ZERO
+	_visual_root.rotation = Vector3.ZERO
+
+	var is_targetable: bool = false
+	var body_cyl: CylinderShape3D = _body_col.shape as CylinderShape3D
+	var hurt_cyl: CylinderShape3D = _hurt_col.shape as CylinderShape3D
+
+	match prop_kind:
+		PropKind.BASALT_PILLAR:
+			_durability = 2
+			_max_durability = 2
+			collision_layer = 1
+			body_cyl.radius = 1.15
+			body_cyl.height = 3.5
+			_body_col.position = Vector3(0.0, 1.75, 0.0)
+			_body_col.set_deferred("disabled", false)
+			_main_mesh.mesh = _mesh_hex_pillar
+			_main_mesh.position = Vector3(0.0, 1.75, 0.0)
+			_main_mesh.scale = Vector3.ONE
+			_main_mat_normal = _mat_basalt
+			_main_mesh.material_override = _mat_basalt
+			_accent_mesh.mesh = _mesh_torus_band
+			_accent_mesh.material_override = _mat_magma_glow
+			_accent_mesh.position = Vector3(0.0, 1.85, 0.0)
+			_accent_mesh.rotation_degrees = Vector3.ZERO
+			_accent_mesh.scale = Vector3(1.06, 1.0, 1.06)
+			_accent_mesh.visible = true
+
+		PropKind.BLIGHT_CONDUIT:
+			is_targetable = true
+			collision_layer = 4
+			body_cyl.radius = 0.72
+			body_cyl.height = 2.4
+			_body_col.position = Vector3(0.0, 1.2, 0.0)
+			_body_col.set_deferred("disabled", false)
+			hurt_cyl.radius = 0.90
+			hurt_cyl.height = 2.5
+			_hurt_col.position = Vector3(0.0, 1.25, 0.0)
+			_main_mesh.mesh = _mesh_conduit
+			_main_mesh.position = Vector3(0.0, 1.2, 0.0)
+			_main_mesh.scale = Vector3.ONE
+			_main_mat_normal = _mat_conduit
+			_main_mesh.material_override = _mat_conduit
+			_accent_mesh.mesh = _mesh_sac
+			_accent_mesh.material_override = _mat_tether
+			_accent_mesh.position = Vector3(0.0, 2.35, 0.0)
+			_accent_mesh.rotation_degrees = Vector3.ZERO
+			_accent_mesh.scale = Vector3.ONE * 0.45
+			_accent_mesh.visible = true
+			_tether_mesh.visible = (_boss_node != null and is_instance_valid(_boss_node))
+			_hp_bar_root.position = Vector3(0.0, 3.05, 0.0)
+
+		PropKind.SPORE_SAC:
+			is_targetable = true
+			_fuse_duration = 4.5
+			collision_layer = 4
+			body_cyl.radius = 0.68
+			body_cyl.height = 1.6
+			_body_col.position = Vector3(0.0, 0.8, 0.0)
+			_body_col.set_deferred("disabled", false)
+			hurt_cyl.radius = 0.85
+			hurt_cyl.height = 1.8
+			_hurt_col.position = Vector3(0.0, 0.9, 0.0)
+			_main_mesh.mesh = _mesh_sac
+			_main_mesh.position = Vector3(0.0, 0.85, 0.0)
+			_main_mesh.scale = Vector3.ONE * 0.65
+			_main_mat_normal = _mat_spore
+			_main_mesh.material_override = _mat_spore
+			_accent_mesh.visible = false
+			_ring_mat.set_shader_parameter("hazard_color", Color(0.42, 0.98, 0.44, 1.0))
+			_ring_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.22, 0.34, 1.0))
+			_ring_mat.set_shader_parameter("progress", 0.0)
+			_ring_disc.scale = Vector3(7.2, 1.0, 7.2)
+			_ring_disc.visible = true
+			_hp_bar_root.position = Vector3(0.0, 2.25, 0.0)
+
+		PropKind.ICE_OBELISK:
+			collision_layer = 1
+			body_cyl.radius = 0.95
+			body_cyl.height = 3.3
+			_body_col.position = Vector3(0.0, 1.65, 0.0)
+			_body_col.set_deferred("disabled", false)
+			_main_mesh.mesh = _mesh_ice_spire
+			_main_mesh.position = Vector3(0.0, 1.65, 0.0)
+			_main_mesh.scale = Vector3.ONE
+			_main_mat_normal = _mat_ice
+			_main_mesh.material_override = _mat_ice
+			_accent_mesh.mesh = _mesh_torus_band
+			_accent_mesh.material_override = _mat_ice_core
+			_accent_mesh.position = Vector3(0.0, 1.25, 0.0)
+			_accent_mesh.rotation_degrees = Vector3.ZERO
+			_accent_mesh.scale = Vector3(0.76, 1.0, 0.76)
+			_accent_mesh.visible = true
+
+		PropKind.STAR_BEACON:
+			is_targetable = true
+			_capture_duration = 1.1
+			collision_layer = 4
+			body_cyl.radius = 0.72
+			body_cyl.height = 2.6
+			_body_col.position = Vector3(0.0, 1.3, 0.0)
+			_body_col.set_deferred("disabled", false)
+			hurt_cyl.radius = 0.88
+			hurt_cyl.height = 2.6
+			_hurt_col.position = Vector3(0.0, 1.3, 0.0)
+			_main_mesh.mesh = _mesh_conduit
+			_main_mesh.position = Vector3(0.0, 1.25, 0.0)
+			_main_mesh.scale = Vector3(0.85, 0.95, 0.85)
+			_main_mat_normal = _mat_beacon
+			_main_mesh.material_override = _mat_beacon
+			_accent_mesh.mesh = _mesh_torus_band
+			_accent_mesh.material_override = _mat_ice_core
+			_accent_mesh.position = Vector3(0.0, 1.75, 0.0)
+			_accent_mesh.rotation_degrees = Vector3(32.0, 0.0, 22.0)
+			_accent_mesh.scale = Vector3(0.82, 0.82, 0.82)
+			_accent_mesh.visible = true
+			_tether_mesh.visible = (_boss_node != null and is_instance_valid(_boss_node))
+			_ring_mat.set_shader_parameter("hazard_color", Color(1.0, 0.86, 0.34, 1.0))
+			_ring_mat.set_shader_parameter("border_danger_color", Color(0.42, 0.94, 1.0, 1.0))
+			_ring_mat.set_shader_parameter("progress", 0.0)
+			_ring_disc.scale = Vector3(2.75, 1.0, 2.75)
+			_ring_disc.visible = true
+			_hp_bar_root.position = Vector3(0.0, 3.05, 0.0)
+
+	if is_targetable:
+		if not is_in_group("active_enemies"):
+			add_to_group("active_enemies")
+		hurtbox_comp.set_active_deferred(true)
+		health_comp.setup_max_health(maxf(10.0, p_hp))
+		if _hp_bar_mat:
+			_hp_bar_mat.set_shader_parameter("fill_ratio", 1.0)
+		_hp_bar_root.visible = true
+	else:
+		if is_in_group("active_enemies"):
+			remove_from_group("active_enemies")
+		hurtbox_comp.set_active_deferred(false)
+		_hp_bar_root.visible = false
+
+	set_process(true)
+
+
+func is_targetable_prop() -> bool:
+	return (
+		prop_kind == PropKind.BLIGHT_CONDUIT
+		or prop_kind == PropKind.SPORE_SAC
+		or prop_kind == PropKind.STAR_BEACON
+	)
+
+
+func apply_combat_hit(
+	raw_damage: float,
+	hit_dir: Vector3,
+	_proc_coeff: float,
+	_shooter_stats: Object,
+	_attacker_pos: Vector3 = Vector3.INF
+) -> void:
+	if _is_cleaned_up or not is_targetable_prop():
+		return
+	if health_comp == null or health_comp.is_dead:
+		return
+	_hit_flash_timer = 0.08
+	if _main_mesh:
+		_main_mesh.material_override = _mat_hit_flash
+	if _visual_root:
+		_visual_root.scale = Vector3(1.12, 0.90, 1.12)
+	health_comp.take_damage(raw_damage, hit_dir)
+
+
+func take_boss_charge_impact() -> bool:
+	if _is_cleaned_up or prop_kind != PropKind.BASALT_PILLAR:
+		return false
+	_durability -= 1
+	var shattered: bool = _durability <= 0
+	if not shattered:
+		_main_mat_normal = _mat_basalt_cracked
+		if _main_mesh:
+			_main_mesh.material_override = _mat_basalt_cracked
+		_visual_root.scale = Vector3(1.15, 0.88, 1.15)
+		pillar_impacted.emit(self, false)
+	else:
+		pillar_impacted.emit(self, true)
+		_finish_destroy(true)
+	return shattered
+
+
+func on_lance_hit(_hit_pos: Vector3) -> void:
+	if _is_cleaned_up or prop_kind != PropKind.ICE_OBELISK:
+		return
+	var pos: Vector3 = global_position
+	obelisk_shattered.emit(self, pos)
+	_finish_destroy(true)
+
+
+func set_whiteout_shadow(active: bool, boss_pos: Vector3) -> void:
+	if _shelter_pivot == null or prop_kind != PropKind.ICE_OBELISK:
+		return
+	if not active:
+		_shelter_pivot.visible = false
+		return
+	var away: Vector3 = global_position - boss_pos
+	away.y = 0.0
+	if away.length_squared() < 0.01:
+		away = Vector3.FORWARD
+	else:
+		away = away.normalized()
+	_shelter_pivot.rotation.y = atan2(away.x, away.z)
+	_shelter_pivot.visible = true
+
+
+func _process(delta: float) -> void:
+	if _is_cleaned_up:
+		return
+	_elapsed += delta
+
+	if _hit_flash_timer > 0.0:
+		_hit_flash_timer -= delta
+		if _hit_flash_timer <= 0.0 and _main_mesh and _main_mat_normal:
+			_main_mesh.material_override = _main_mat_normal
+
+	if _visual_root:
+		_visual_root.scale = _visual_root.scale.lerp(Vector3.ONE, clampf(12.0 * delta, 0.0, 1.0))
+
+	match prop_kind:
+		PropKind.BLIGHT_CONDUIT:
+			if _accent_mesh:
+				_accent_mesh.position.y = 2.35 + sin(_elapsed * 4.5) * 0.14
+			_update_tether_to_boss(Vector3(0.0, 2.25, 0.0), Vector3(0.0, 1.05, 0.0))
+			_ability_timer -= delta
+			if _ability_timer <= 0.0:
+				_ability_timer = 4.0
+				if ProjectilePool and ProjectilePool.has_method("spawn_enemy_ground_hazard") and _players_root != null:
+					var target_pt: Vector3 = global_position
+					var np: Node3D = _find_nearest_player()
+					if np != null:
+						target_pt = np.global_position
+					ProjectilePool.call(
+						"spawn_enemy_ground_hazard",
+						HazardScript.HazardMode.GROUND_QUAKE,
+						global_position,
+						target_pt,
+						2.5,
+						0.0,
+						9.0,
+						1.25,
+						0.28,
+						Color(0.36, 0.96, 0.56),
+						0.12,
+						_players_root
+					)
+
+		PropKind.SPORE_SAC:
+			_fuse_timer += delta
+			var prog: float = clampf(_fuse_timer / maxf(0.5, _fuse_duration), 0.0, 1.0)
+			if _main_mesh:
+				var s_val: float = lerpf(0.65, 1.45, prog)
+				_main_mesh.scale = Vector3.ONE * s_val
+				_main_mesh.position.y = 0.85 * s_val
+			if _ring_mat:
+				_ring_mat.set_shader_parameter("progress", prog)
+			if _fuse_timer >= _fuse_duration:
+				var pos: Vector3 = global_position
+				if ProjectilePool and ProjectilePool.has_method("spawn_enemy_ground_hazard") and _players_root != null:
+					ProjectilePool.call(
+						"spawn_enemy_ground_hazard",
+						HazardScript.HazardMode.GROUND_QUAKE,
+						pos,
+						pos,
+						7.2,
+						0.0,
+						16.0,
+						0.22,
+						0.45,
+						Color(0.45, 0.98, 0.42),
+						0.42,
+						_players_root
+					)
+				spore_detonated.emit(self, pos)
+				_finish_destroy(false)
+
+		PropKind.STAR_BEACON:
+			if _accent_mesh:
+				_accent_mesh.rotation.y += delta * 2.8
+			_update_tether_to_boss(Vector3(0.0, 1.75, 0.0), Vector3(0.0, 1.05, 0.0))
+			if _is_any_player_inside(2.75):
+				_capture_progress = clampf(_capture_progress + delta / maxf(0.2, _capture_duration), 0.0, 1.0)
+				if _ring_mat:
+					_ring_mat.set_shader_parameter("progress", _capture_progress)
+				if _capture_progress >= 1.0:
+					_finish_destroy(true)
+			elif _capture_progress > 0.0:
+				_capture_progress = maxf(0.0, _capture_progress - delta * 0.45)
+				if _ring_mat:
+					_ring_mat.set_shader_parameter("progress", _capture_progress)
+
+
+func _update_tether_to_boss(local_start: Vector3, boss_off: Vector3) -> void:
+	if _tether_mesh == null:
+		return
+	if _boss_node == null or not is_instance_valid(_boss_node) or not _boss_node.visible:
+		_tether_mesh.visible = false
+		return
+	var start_pt: Vector3 = global_position + local_start
+	var end_pt: Vector3 = _boss_node.global_position + boss_off
+	var diff: Vector3 = end_pt - start_pt
+	var len_d: float = diff.length()
+	if len_d < 0.25 or (diff.x * diff.x + diff.z * diff.z) < 0.04:
+		_tether_mesh.visible = false
+		return
+	_tether_mesh.visible = true
+	_tether_mesh.global_position = (start_pt + end_pt) * 0.5
+	_tether_mesh.look_at(end_pt, Vector3.UP)
+	var pulse: float = 0.85 + 0.35 * sin(_elapsed * 12.0)
+	_tether_mesh.scale = Vector3(pulse, pulse, len_d)
+
+
+func _is_any_player_inside(radius: float) -> bool:
+	if _players_root == null or not is_instance_valid(_players_root):
+		return false
+	var r2: float = radius * radius
+	for i in range(_players_root.get_child_count()):
+		var p3d: Node3D = _players_root.get_child(i) as Node3D
+		if p3d == null or not p3d.visible:
+			continue
+		var dx: float = p3d.global_position.x - global_position.x
+		var dz: float = p3d.global_position.z - global_position.z
+		if (dx * dx + dz * dz) <= r2:
+			return true
+	return false
+
+
+func _find_nearest_player() -> Node3D:
+	if _players_root == null or not is_instance_valid(_players_root):
+		return null
+	var best: Node3D = null
+	var best_d2: float = INF
+	for i in range(_players_root.get_child_count()):
+		var p3d: Node3D = _players_root.get_child(i) as Node3D
+		if p3d == null or not p3d.visible:
+			continue
+		var d2: float = global_position.distance_squared_to(p3d.global_position)
+		if d2 < best_d2:
+			best_d2 = d2
+			best = p3d
+	return best
+
+
+func _on_health_changed(cur_hp: float, max_hp: float) -> void:
+	if _hp_bar_mat:
+		_hp_bar_mat.set_shader_parameter("fill_ratio", clampf(cur_hp / maxf(1.0, max_hp), 0.0, 1.0))
+
+
+func _on_died() -> void:
+	_finish_destroy(true)
+
+
+func _finish_destroy(was_player_cleared: bool) -> void:
+	if _is_cleaned_up:
+		return
+	_is_cleaned_up = true
+	if is_in_group("active_enemies"):
+		remove_from_group("active_enemies")
+	set_process(false)
+	visible = false
+	if _body_col:
+		_body_col.set_deferred("disabled", true)
+	if hurtbox_comp:
+		hurtbox_comp.set_active_deferred(false)
+	prop_destroyed.emit(self, was_player_cleared)
+	queue_free()
+
+
+func cleanup_and_free() -> void:
+	if _is_cleaned_up:
+		return
+	_is_cleaned_up = true
+	if is_in_group("active_enemies"):
+		remove_from_group("active_enemies")
+	set_process(false)
+	visible = false
+	if _body_col:
+		_body_col.set_deferred("disabled", true)
+	if hurtbox_comp:
+		hurtbox_comp.set_active_deferred(false)
+	queue_free()

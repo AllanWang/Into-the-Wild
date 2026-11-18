@@ -65,6 +65,7 @@ var _web_curtain_tween: Tween = null
 var _portal_transition_busy: bool = false
 var _god_mode_enabled: bool = false
 var _god_mode_button: Button = null
+var _boss_jump_button: Button = null
 
 
 func add_camera_shake(trauma: float) -> void:
@@ -127,6 +128,14 @@ func _ready() -> void:
 		_god_mode_button.text = "God Mode: ON [F2]" if _god_mode_enabled else "God Mode: OFF [F2]"
 		dbg_row.add_child(_god_mode_button)
 		_configure_button(_god_mode_button, _on_god_mode_pressed)
+
+		_boss_jump_button = Button.new()
+		_boss_jump_button.name = "BossJumpButton"
+		_boss_jump_button.custom_minimum_size = Vector2(126.0, 30.0)
+		_boss_jump_button.focus_mode = Control.FOCUS_NONE
+		_boss_jump_button.text = "Boss Arena [F3]"
+		dbg_row.add_child(_boss_jump_button)
+		_configure_button(_boss_jump_button, _on_jump_to_boss_pressed)
 
 	if cam_button:
 		cam_button.text = "Player Cam" if is_overview else "Overview Cam"
@@ -251,6 +260,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_on_god_mode_pressed()
 			get_viewport().set_input_as_handled()
 			return
+		if ke.keycode == KEY_F3 and OS.is_debug_build():
+			_on_jump_to_boss_pressed()
+			get_viewport().set_input_as_handled()
+			return
 	if is_overview:
 		return
 	if event is InputEventMouseButton and event.pressed:
@@ -274,7 +287,10 @@ func _physics_process(delta: float) -> void:
 		camera.size = lerpf(camera.size, overview_size, clampf(6.0 * delta, 0.0, 1.0))
 		camera.global_position = camera.global_position.lerp(overview_pos, clampf(6.0 * delta, 0.0, 1.0))
 	else:
-		camera.size = lerpf(camera.size, default_camera_size, clampf(8.0 * delta, 0.0, 1.0))
+		var target_zoom: float = default_camera_size
+		if encounter_manager != null and encounter_manager.is_boss_encounter_active():
+			target_zoom = minf(17.5, default_camera_size + 2.2)
+		camera.size = lerpf(camera.size, target_zoom, clampf(8.0 * delta, 0.0, 1.0))
 		if _local_player == null or not is_instance_valid(_local_player):
 			var my_id: int = multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 1
 			_local_player = players_container.get_node_or_null(str(my_id)) as CharacterBody3D
@@ -308,6 +324,9 @@ func _on_encounter_started(_area_idx: int, area_name: String, wave_idx: int, tot
 	_active_arena_title = area_name
 	_banner_fade_timer = 0.0
 	if encounter_banner:
+		if area_name == "Boss Citadel" or (encounter_manager != null and encounter_manager.is_boss_encounter_active()):
+			encounter_banner.visible = false
+			return
 		encounter_banner.add_theme_color_override("font_color", Color(1.0, 0.72, 0.36, 1.0))
 		encounter_banner.text = "%s Locked — Wave %d / %d  |  Enemies: %d / %d" % [
 			_active_arena_title, wave_idx, total_waves, total_enemies, total_enemies
@@ -337,6 +356,9 @@ func _on_wave_started(_area_idx: int, area_name: String, wave_idx: int, total_wa
 
 func _on_encounter_progress_changed(_area_idx: int, wave_idx: int, total_waves: int, remaining: int, total: int) -> void:
 	if encounter_banner and remaining > 0:
+		if _active_arena_title == "Boss Citadel" or (encounter_manager != null and encounter_manager.is_boss_encounter_active()):
+			encounter_banner.visible = false
+			return
 		encounter_banner.text = "%s Locked — Wave %d / %d  |  Enemies: %d / %d" % [
 			_active_arena_title, wave_idx, total_waves, remaining, total
 		]
@@ -685,6 +707,7 @@ func _setup_pause_menu_modal() -> void:
 	_pause_menu_modal.connect("debug_preset_requested", _on_preset_pressed)
 	_pause_menu_modal.connect("debug_regen_requested", _on_regen_pressed)
 	_pause_menu_modal.connect("debug_teleport_requested", _on_teleport_pressed)
+	_pause_menu_modal.connect("debug_boss_jump_requested", _on_jump_to_boss_pressed)
 	_pause_menu_modal.connect("debug_overview_requested", _on_cam_button_pressed)
 	_pause_menu_modal.connect("debug_god_mode_requested", _on_god_mode_pressed)
 	if _pause_menu_modal.has_method("set_debug_god_mode_label"):
@@ -898,6 +921,23 @@ func _on_teleport_pressed() -> void:
 	if is_overview:
 		overview_mode = false
 	_update_teleport_button_label()
+
+
+func _on_jump_to_boss_pressed() -> void:
+	if not OS.is_debug_build():
+		return
+	if encounter_manager == null:
+		return
+	if encounter_manager.is_encounter_active():
+		encounter_manager.reset_active_encounter(false)
+	var boss_center: Vector3 = encounter_manager.get_boss_area_center()
+	var target_pos: Vector3 = boss_center + Vector3(0.0, 0.0, 7.5)
+	_reposition_existing_players(target_pos)
+	if is_overview:
+		overview_mode = false
+	if camera and not is_overview:
+		camera.global_position = target_pos + camera_offset
+		camera.reset_physics_interpolation()
 
 
 func _on_god_mode_pressed() -> void:

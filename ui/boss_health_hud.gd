@@ -6,11 +6,11 @@ extends Control
 ## crimson HP fill with smooth damage trail, golden Armor overlay,
 ## and gleaming Impervious Barrier feedback during phase shifts.
 
-const HUD_W: float = 520.0
-const HUD_H: float = 72.0
+const HUD_W: float = 580.0
+const HUD_H: float = 74.0
 const BAR_X: float = 18.0
 const BAR_Y: float = 38.0
-const BAR_W: float = 484.0
+const BAR_W: float = 544.0
 const BAR_H: float = 12.0
 
 const COL_BG_PANEL := Color(0.036, 0.052, 0.084, 0.80)
@@ -42,6 +42,9 @@ var _remaining_bars: int = 3
 var _is_impervious: bool = false
 var _hit_flash: float = 0.0
 var _bar_flash: float = 0.0
+var _mechanic_callout: String = ""
+var _mechanic_callout_col: Color = COL_GOLD
+var _callout_timer: float = 0.0
 
 var _name_label: Label = null
 var _epithet_label: Label = null
@@ -71,7 +74,7 @@ func _recenter() -> void:
 	if vp == null:
 		return
 	var vp_w: float = vp.get_visible_rect().size.x
-	position = Vector2((vp_w - HUD_W) * 0.5, 92.0)
+	position = Vector2((vp_w - HUD_W) * 0.5, 78.0)
 
 
 func is_bound() -> bool:
@@ -106,6 +109,8 @@ func bind_boss(boss_node: Node, boss_name: String, epithet: String = "") -> void
 	_is_impervious = hc.is_impervious()
 	_hit_flash = 0.0
 	_bar_flash = 0.0
+	_mechanic_callout = ""
+	_callout_timer = 0.0
 
 	if not hc.health_changed.is_connected(_on_hp_changed):
 		hc.health_changed.connect(_on_hp_changed)
@@ -135,8 +140,18 @@ func bind_boss(boss_node: Node, boss_name: String, epithet: String = "") -> void
 
 func clear_boss() -> void:
 	_disconnect_boss()
+	_mechanic_callout = ""
+	_callout_timer = 0.0
 	visible = false
 	set_process(false)
+
+
+func set_mechanic_callout(text: String, col: Color = COL_GOLD, duration: float = 0.0) -> void:
+	_mechanic_callout = text
+	_mechanic_callout_col = col
+	_callout_timer = maxf(0.0, duration)
+	_refresh_status_label()
+	queue_redraw()
 
 
 func _disconnect_boss() -> void:
@@ -172,6 +187,13 @@ func _process(delta: float) -> void:
 	if _bar_flash > 0.0:
 		_bar_flash = maxf(0.0, _bar_flash - delta)
 		dirty = true
+	if _callout_timer > 0.0:
+		_callout_timer -= delta
+		if _callout_timer <= 0.0:
+			_callout_timer = 0.0
+			_mechanic_callout = ""
+			_refresh_status_label()
+			dirty = true
 	if dirty:
 		queue_redraw()
 
@@ -231,6 +253,10 @@ func _on_boss_died() -> void:
 func _refresh_status_label() -> void:
 	if _status_label == null:
 		return
+	if not _mechanic_callout.is_empty():
+		_status_label.text = _mechanic_callout
+		_status_label.add_theme_color_override("font_color", _mechanic_callout_col)
+		return
 	var phase_num: int = clampi((_total_bars - _remaining_bars) + 1, 1, _total_bars)
 	if _is_impervious:
 		_status_label.text = "IMPERVIOUS — PHASE SHIFT"
@@ -286,8 +312,12 @@ func _draw() -> void:
 	if not visible:
 		return
 
+	# Crisp translucent slate backing panel so Boss Name & Callouts read clearly over snow/grass/lava
+	draw_rect(Rect2(0.0, 0.0, HUD_W, HUD_H), COL_BG_PANEL, true)
+	draw_rect(Rect2(0.0, 0.0, HUD_W, HUD_H), Color(0.918, 0.894, 0.843, 0.22), false, 1.0)
+
 	# Track backdrop
-	draw_rect(Rect2(BAR_X, BAR_Y, BAR_W, BAR_H), COL_BG_PANEL, true)
+	draw_rect(Rect2(BAR_X, BAR_Y, BAR_W, BAR_H), Color(0.02, 0.03, 0.05, 0.92), true)
 
 	# Smooth delayed damage trail
 	var trail_w: float = BAR_W * clampf(_trail_ratio, 0.0, 1.0)

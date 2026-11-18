@@ -114,6 +114,9 @@ var _artifact_max_timer: float = 1.0
 var _artifact_buffer: float = 0.0
 
 var _temp_shield_timer: float = 0.0
+var _boss_slow_ratio: float = 0.0
+var _boss_slow_timer: float = 0.0
+var _ability_lock_timers: Array[float] = [0.0, 0.0]
 var ui_input_blocked: bool = false
 var _alt_inspect_active: bool = false
 var _ui_unblock_grace: float = 0.0
@@ -675,6 +678,10 @@ func restore_full_health() -> void:
 	_invuln_timer = 0.0
 	_hit_flash_timer = 0.0
 	_temp_shield_timer = 0.0
+	_boss_slow_ratio = 0.0
+	_boss_slow_timer = 0.0
+	_ability_lock_timers[0] = 0.0
+	_ability_lock_timers[1] = 0.0
 	is_dashing = false
 	ui_input_blocked = false
 	_alt_inspect_active = false
@@ -708,6 +715,43 @@ func set_debug_god_mode(enabled: bool) -> void:
 	debug_god_mode = enabled
 	if debug_god_mode and health_comp != null and not health_comp.is_dead:
 		health_comp.heal(health_comp.max_health)
+
+
+func apply_boss_slow(ratio: float, duration: float) -> void:
+	if debug_god_mode:
+		return
+	_boss_slow_ratio = maxf(_boss_slow_ratio, clampf(ratio, 0.0, 0.42))
+	_boss_slow_timer = maxf(_boss_slow_timer, duration)
+
+
+func apply_temporal_ability_lock(slot_idx: int, duration: float) -> void:
+	if slot_idx < 0 or slot_idx > 1 or duration <= 0.0:
+		return
+	_ability_lock_timers[slot_idx] = maxf(_ability_lock_timers[slot_idx], duration)
+	loadout_changed.emit()
+
+
+func clear_temporal_locks() -> void:
+	if _ability_lock_timers[0] > 0.0 or _ability_lock_timers[1] > 0.0:
+		_ability_lock_timers[0] = 0.0
+		_ability_lock_timers[1] = 0.0
+		loadout_changed.emit()
+
+
+func refresh_ability_cooldowns() -> void:
+	_ability_timers[0] = 0.0
+	_ability_timers[1] = 0.0
+	_ability_lock_timers[0] = 0.0
+	_ability_lock_timers[1] = 0.0
+	loadout_changed.emit()
+
+
+func is_slot_temporally_locked(slot_code: int) -> bool:
+	if slot_code == HudSlot.ABILITY_Q:
+		return _ability_lock_timers[0] > 0.001
+	if slot_code == HudSlot.ABILITY_E:
+		return _ability_lock_timers[1] > 0.001
+	return false
 
 
 func try_apply_contact_damage(amount: float, hit_dir: Vector3 = Vector3.ZERO) -> bool:
@@ -838,6 +882,20 @@ func _physics_process(delta: float) -> void:
 		if _temp_shield_timer <= 0.0 and health_comp and health_comp.current_shield > 0.0:
 			health_comp.set_shield(0.0)
 
+	if _boss_slow_timer > 0.0:
+		_boss_slow_timer = maxf(0.0, _boss_slow_timer - delta)
+		if _boss_slow_timer <= 0.0:
+			_boss_slow_ratio = 0.0
+
+	var lock_changed: bool = false
+	for lk_i in range(2):
+		if _ability_lock_timers[lk_i] > 0.0:
+			_ability_lock_timers[lk_i] = maxf(0.0, _ability_lock_timers[lk_i] - delta)
+			if _ability_lock_timers[lk_i] <= 0.0:
+				lock_changed = true
+	if lock_changed:
+		loadout_changed.emit()
+
 	if visual_root:
 		visual_root.scale = visual_root.scale.lerp(Vector3.ONE, clampf(12.0 * delta, 0.0, 1.0))
 
@@ -960,8 +1018,9 @@ func _physics_process(delta: float) -> void:
 		_target_rotation_y = atan2(_aim_dir.x, _aim_dir.z)
 		visual_root.rotation.y = lerp_angle(visual_root.rotation.y, _target_rotation_y, clampf(25.0 * delta, 0.0, 1.0))
 
-	var cur_move_speed: float = float(stats_comp.get("move_speed")) if stats_comp != null else BASE_SPEED
-	var cur_dash_speed: float = BASE_DASH_SPEED * (cur_move_speed / BASE_SPEED)
+	var base_move_speed: float = float(stats_comp.get("move_speed")) if stats_comp != null else BASE_SPEED
+	var cur_move_speed: float = base_move_speed * (1.0 - _boss_slow_ratio)
+	var cur_dash_speed: float = BASE_DASH_SPEED * (base_move_speed / BASE_SPEED)
 
 	if _dash_buffer_timer > 0.0 and _dash_charges > 0 and _dash_inter_delay_timer <= 0.0 and not is_dashing:
 		_dash_buffer_timer = 0.0
@@ -1006,7 +1065,7 @@ func _physics_process(delta: float) -> void:
 				_fire_weapon_slot(slot_i)
 
 		for ab_i in range(2):
-			if _ability_buffers[ab_i] > 0.0 and _ability_timers[ab_i] <= 0.0 and ability_slots[ab_i] != CatalogScript.AbilityId.NONE:
+			if _ability_buffers[ab_i] > 0.0 and _ability_timers[ab_i] <= 0.0 and _ability_lock_timers[ab_i] <= 0.0 and ability_slots[ab_i] != CatalogScript.AbilityId.NONE:
 				_ability_buffers[ab_i] = 0.0
 				_cast_ability_slot(ab_i)
 

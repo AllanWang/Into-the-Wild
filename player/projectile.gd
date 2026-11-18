@@ -316,6 +316,27 @@ func _physics_process(delta: float) -> void:
 	var next_pos: Vector3 = cur_from + direction * step
 	var is_piercing: bool = (_flight_mode == FlightMode.PIERCE or _flight_mode == FlightMode.BOOMERANG)
 
+	if is_inside_tree():
+		var dome_bosses: Array[Node] = get_tree().get_nodes_in_group("aegis_dome_bosses")
+		for db in dome_bosses:
+			if db == null or not is_instance_valid(db):
+				continue
+			if db.has_method("is_aegis_dome_active") and bool(db.call("is_aegis_dome_active")):
+				var dome_r: float = float(db.call("get_aegis_dome_radius"))
+				var shooter_outside: bool = true
+				if _shooter_node != null and is_instance_valid(_shooter_node):
+					var s_dx: float = _shooter_node.global_position.x - (db as Node3D).global_position.x
+					var s_dz: float = _shooter_node.global_position.z - (db as Node3D).global_position.z
+					shooter_outside = (s_dx * s_dx + s_dz * s_dz) > (dome_r * dome_r)
+				if shooter_outside:
+					var n_dx: float = next_pos.x - (db as Node3D).global_position.x
+					var n_dz: float = next_pos.z - (db as Node3D).global_position.z
+					if (n_dx * n_dx + n_dz * n_dz) <= (dome_r + 0.28) * (dome_r + 0.28):
+						if db.has_method("notify_dome_deflect"):
+							db.call("notify_dome_deflect", next_pos)
+						despawn()
+						return
+
 	var space_state: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	if space_state and _ray_query:
 		var safety: int = 0
@@ -452,6 +473,8 @@ func _is_enemy_collider(target: Object) -> bool:
 		return false
 	if target is EnemySphere or target is HurtboxComponent:
 		return true
+	if target.has_method("is_targetable_prop") and bool(target.call("is_targetable_prop")):
+		return true
 	return false
 
 
@@ -473,6 +496,8 @@ func _apply_enemy_hit(target: Object) -> bool:
 	if _flight_mode == FlightMode.SNIPER_BOLT:
 		effective_dmg = damage * lerpf(1.0, 1.45, clampf(traveled_distance / 15.0, 0.0, 1.0))
 
+	var atk_pos: Vector3 = _shooter_node.global_position if (_shooter_node != null and is_instance_valid(_shooter_node)) else global_position
+
 	var es: EnemySphere = _resolve_enemy_sphere(target)
 	if es != null:
 		if _hit_enemy_ids.has(es.enemy_id):
@@ -481,9 +506,34 @@ func _apply_enemy_hit(target: Object) -> bool:
 		_hit_enemy_ids.append(es.enemy_id)
 		_exclude_enemy_rids(es)
 		if es.has_method("apply_combat_hit"):
-			es.call("apply_combat_hit", effective_dmg, direction, _proc_coeff, _shooter_stats)
+			es.call("apply_combat_hit", effective_dmg, direction, _proc_coeff, _shooter_stats, atk_pos)
 		elif es.hurtbox_comp:
 			es.hurtbox_comp.apply_hit(effective_dmg, direction)
+		return true
+
+	var hit_obj: Node = null
+	if target is HurtboxComponent:
+		var p_node: Node = (target as Node).get_parent()
+		if p_node != null and p_node.has_method("apply_combat_hit"):
+			hit_obj = p_node
+	elif target is Node and (target as Node).has_method("apply_combat_hit"):
+		hit_obj = target as Node
+
+	if hit_obj != null:
+		var inst_key: int = -(int(hit_obj.get_instance_id()) & 0x7FFFFFFF)
+		if _hit_enemy_ids.has(inst_key):
+			return false
+		_hit_enemy_ids.append(inst_key)
+		if hit_obj is CollisionObject3D:
+			var hr: RID = (hit_obj as CollisionObject3D).get_rid()
+			if hr.is_valid() and not _exclude_rids.has(hr):
+				_exclude_rids.append(hr)
+		var hb_var: Variant = hit_obj.get("hurtbox_comp")
+		if hb_var is CollisionObject3D:
+			var hbr: RID = (hb_var as CollisionObject3D).get_rid()
+			if hbr.is_valid() and not _exclude_rids.has(hbr):
+				_exclude_rids.append(hbr)
+		hit_obj.call("apply_combat_hit", effective_dmg, direction, _proc_coeff, _shooter_stats, atk_pos)
 		return true
 
 	if target is HurtboxComponent:

@@ -39,7 +39,7 @@ static func get_room_size(role: RoomRole, rng: RandomNumberGenerator, scale_mult
 		RoomRole.HUB:
 			base = Vector2(rng.randf_range(42.0, 48.0), rng.randf_range(36.0, 42.0))
 		RoomRole.BOSS:
-			base = Vector2(rng.randf_range(56.0, 64.0), rng.randf_range(46.0, 54.0))
+			base = Vector2(rng.randf_range(44.0, 48.0), rng.randf_range(38.0, 42.0))
 		_:
 			base = Vector2(38.0, 34.0)
 	return base * scale_mult
@@ -62,7 +62,7 @@ static func pick_arena_shape(role: RoomRole, rng: RandomNumberGenerator) -> Aren
 		RoomRole.HUB:
 			return ArenaShape.CHAMFERED_OCTAGON if rng.randf() < 0.65 else ArenaShape.CRUCIFORM
 		RoomRole.BOSS:
-			return ArenaShape.CHAMFERED_OCTAGON if rng.randf() < 0.60 else ArenaShape.ROUNDED_RECT
+			return ArenaShape.CHAMFERED_OCTAGON if rng.randf() < 0.80 else ArenaShape.ROUNDED_RECT
 		_:
 			var roll: float = rng.randf()
 			if roll < 0.42:

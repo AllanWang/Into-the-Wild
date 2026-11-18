@@ -1513,6 +1513,13 @@ func _draw_loadout_cluster(canvas: Control) -> void:
 			if _dragging and _drag_from_idx == sock_idx:
 				g_col.a *= 0.38
 			_draw_slot_glyph_on(canvas, center, _slot_glyphs[idx], g_col, 1.0)
+			if (idx == 2 or idx == 3) and _bound_player != null and is_instance_valid(_bound_player) and _bound_player.has_method("is_slot_temporally_locked"):
+				if bool(_bound_player.call("is_slot_temporally_locked", idx)):
+					var lock_col := Color(0.84, 0.42, 1.0, 0.96)
+					_draw_diamond_on(canvas, center, h_diag + 1.5, Color(0.08, 0.04, 0.16, 0.42), lock_col, 1.8)
+					var x_off: float = 5.5
+					canvas.draw_line(center + Vector2(-x_off, -x_off), center + Vector2(x_off, x_off), Color(1.0, 0.86, 0.38, 0.95), 2.0, true)
+					canvas.draw_line(center + Vector2(x_off, -x_off), center + Vector2(-x_off, x_off), Color(1.0, 0.86, 0.38, 0.95), 2.0, true)
 		else:
 			_draw_diamond_filled_on(canvas, center, 2.0, COL_IVORY_DIM)
 

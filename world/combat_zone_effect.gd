@@ -565,6 +565,7 @@ func _apply_whip_cleave(base_dmg: float) -> void:
 	var max_r2: float = max_r * max_r
 	var sweet_min_r: float = _radius * 0.70
 	var cos_half: float = cos(deg_to_rad(60.0))
+	var atk_pos: Vector3 = _caster_node.global_position if (_caster_node != null and is_instance_valid(_caster_node)) else global_position
 	var enemies: Array[Node] = get_tree().get_nodes_in_group("active_enemies")
 	for e_node in enemies:
 		var e3d: Node3D = e_node as Node3D
@@ -582,7 +583,7 @@ func _apply_whip_cleave(base_dmg: float) -> void:
 		if e3d.has_method("apply_combat_hit"):
 			var is_sweetspot: bool = (dist >= sweet_min_r)
 			var final_dmg: float = base_dmg * (1.45 if is_sweetspot else 1.0)
-			e3d.call("apply_combat_hit", final_dmg, to_e, _proc_coeff, _shooter_stats)
+			e3d.call("apply_combat_hit", final_dmg, to_e, _proc_coeff, _shooter_stats, atk_pos)
 
 
 func _apply_aoe_damage(dmg: float, apply_traits: bool) -> void:
@@ -590,6 +591,7 @@ func _apply_aoe_damage(dmg: float, apply_traits: bool) -> void:
 		return
 	var r2: float = (_radius + 0.45) * (_radius + 0.45)
 	var total_dealt: float = 0.0
+	var atk_pos: Vector3 = _caster_node.global_position if (_caster_node != null and is_instance_valid(_caster_node)) else global_position
 	var enemies: Array[Node] = get_tree().get_nodes_in_group("active_enemies")
 	for e_node in enemies:
 		var e3d: Node3D = e_node as Node3D
@@ -602,7 +604,7 @@ func _apply_aoe_damage(dmg: float, apply_traits: bool) -> void:
 			if e3d is EnemySphere and (e3d as EnemySphere).health_comp != null:
 				hp_before = (e3d as EnemySphere).health_comp.current_health
 			var hit_dir: Vector3 = Vector3(dx, 0.0, dz).normalized() if (dx * dx + dz * dz) > 0.001 else Vector3.FORWARD
-			e3d.call("apply_combat_hit", dmg, hit_dir, _proc_coeff if apply_traits else 0.0, _shooter_stats if apply_traits else null)
+			e3d.call("apply_combat_hit", dmg, hit_dir, _proc_coeff if apply_traits else 0.0, _shooter_stats if apply_traits else null, atk_pos)
 			var hp_after: float = 0.0
 			if e3d is EnemySphere and (e3d as EnemySphere).health_comp != null:
 				hp_after = (e3d as EnemySphere).health_comp.current_health

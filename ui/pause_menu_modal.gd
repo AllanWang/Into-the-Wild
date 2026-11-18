@@ -14,6 +14,7 @@ signal debug_biome_requested()
 signal debug_preset_requested()
 signal debug_regen_requested()
 signal debug_teleport_requested()
+signal debug_boss_jump_requested()
 signal debug_overview_requested()
 signal debug_god_mode_requested()
 
@@ -278,6 +279,7 @@ func _build_ui() -> void:
 	_add_debug_action(d_grid, "DebugPresetButton", "Cycle Map Mode", debug_preset_requested)
 	_add_debug_action(d_grid, "DebugRegenButton", "New Map Seed", debug_regen_requested)
 	_add_debug_action(d_grid, "DebugTeleportButton", "Teleport Next Room", debug_teleport_requested)
+	_add_debug_action(d_grid, "DebugBossJumpButton", "Boss Arena  [F3]", debug_boss_jump_requested)
 	_add_debug_action(d_grid, "DebugOverviewButton", "Toggle Overview Cam", debug_overview_requested)
 	_debug_god_btn = _make_menu_button("DebugGodModeButton", "God Mode: OFF  [F2]", false, false, 32.0, 12)
 	_debug_god_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL

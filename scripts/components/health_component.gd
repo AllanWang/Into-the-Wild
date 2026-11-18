@@ -23,8 +23,10 @@ var max_armor: float = 0.0
 var current_armor: float = 0.0
 var total_bars: int = 1
 var current_bar_index: int = 1
+var armor_damage_reduction: float = 0.0
 var phase_gate_duration: float = 0.0
 var phase_gate_timer: float = 0.0
+var _impervious_locked: bool = false
 var is_dead: bool = false
 
 
@@ -34,6 +36,7 @@ func _ready() -> void:
 	current_bar_index = maxi(1, total_bars)
 	current_armor = maxf(0.0, max_armor)
 	phase_gate_timer = 0.0
+	_impervious_locked = false
 	is_dead = false
 	set_process(false)
 
@@ -46,7 +49,7 @@ func _process(delta: float) -> void:
 	if phase_gate_timer <= 0.0:
 		phase_gate_timer = 0.0
 		set_process(false)
-		phase_gate_changed.emit(false, current_bar_index)
+		phase_gate_changed.emit(is_impervious(), current_bar_index)
 
 
 func setup_max_health(p_max: float, p_shield: float = 0.0) -> void:
@@ -64,6 +67,7 @@ func setup_combat_bars(
 	max_health = maxf(1.0, p_bar_hp)
 	total_bars = maxi(1, p_total_bars)
 	max_armor = maxf(0.0, p_armor)
+	armor_damage_reduction = 0.0
 	phase_gate_duration = maxf(0.0, p_phase_gate_s)
 	starting_shield = maxf(0.0, p_shield)
 	reset_health()
@@ -75,12 +79,17 @@ func reset_health() -> void:
 	current_armor = max_armor
 	current_shield = maxf(0.0, starting_shield)
 	phase_gate_timer = 0.0
+	_impervious_locked = false
 	is_dead = false
 	set_process(false)
 	health_changed.emit(current_health, max_health)
 	shield_changed.emit(current_shield, max_health)
 	armor_changed.emit(current_armor, max_armor)
 	phase_gate_changed.emit(false, current_bar_index)
+
+
+func set_armor_dr(dr: float) -> void:
+	armor_damage_reduction = clampf(dr, 0.0, 0.85)
 
 
 func grant_armor(amount: float) -> void:
@@ -91,12 +100,33 @@ func grant_armor(amount: float) -> void:
 	armor_changed.emit(current_armor, max_armor)
 
 
+func shatter_armor() -> float:
+	if current_armor <= 0.001:
+		current_armor = 0.0
+		return 0.0
+	var lost: float = current_armor
+	current_armor = 0.0
+	armor_changed.emit(0.0, max_armor)
+	armor_broken.emit()
+	return lost
+
+
 func has_armor() -> bool:
 	return current_armor > 0.01
 
 
+func set_impervious_locked(locked: bool) -> void:
+	if _impervious_locked == locked:
+		return
+	var was_imp: bool = is_impervious()
+	_impervious_locked = locked
+	var now_imp: bool = is_impervious()
+	if was_imp != now_imp:
+		phase_gate_changed.emit(now_imp, current_bar_index)
+
+
 func is_impervious() -> bool:
-	return phase_gate_timer > 0.0
+	return phase_gate_timer > 0.0 or _impervious_locked
 
 
 func set_shield(amount: float) -> void:
@@ -126,7 +156,7 @@ func heal(amount: float) -> float:
 
 
 func take_damage(amount: float, hit_dir: Vector3 = Vector3.ZERO) -> bool:
-	if is_dead or amount <= 0.0 or phase_gate_timer > 0.0:
+	if is_dead or amount <= 0.0 or is_impervious():
 		return false
 
 	var remaining: float = amount
@@ -137,9 +167,15 @@ func take_damage(amount: float, hit_dir: Vector3 = Vector3.ZERO) -> bool:
 		shield_changed.emit(current_shield, max_health)
 
 	if remaining > 0.0 and current_armor > 0.0:
-		var absorbed_armor: float = minf(current_armor, remaining)
-		current_armor = maxf(0.0, current_armor - absorbed_armor)
-		remaining -= absorbed_armor
+		var dr_mult: float = 1.0 - clampf(armor_damage_reduction, 0.0, 0.85)
+		var armor_dmg: float = remaining * dr_mult
+		if armor_dmg <= current_armor:
+			current_armor = maxf(0.0, current_armor - armor_dmg)
+			remaining = 0.0
+		else:
+			var raw_consumed: float = current_armor / maxf(0.05, dr_mult)
+			current_armor = 0.0
+			remaining = maxf(0.0, remaining - raw_consumed)
 		armor_changed.emit(current_armor, max_armor)
 		if current_armor <= 0.001:
 			current_armor = 0.0

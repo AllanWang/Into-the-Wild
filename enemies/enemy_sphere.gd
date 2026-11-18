@@ -14,6 +14,7 @@ extends CharacterBody3D
 
 const ArchetypeScript = preload("res://enemies/enemy_archetype_data.gd")
 const HazardScript = preload("res://world/enemy_hazard_effect.gd")
+const BossPropScript = preload("res://world/boss_mechanic_prop.gd")
 
 signal defeated(enemy_id: int, area_idx: int)
 
@@ -37,11 +38,16 @@ var _trim_ring_b: MeshInstance3D = null
 var _role_prop_a: MeshInstance3D = null
 var _role_prop_b: MeshInstance3D = null
 var _ward_shell_mesh: MeshInstance3D = null
+var _aegis_dome_mesh: MeshInstance3D = null
+var _aegis_dome_ring: MeshInstance3D = null
+var _aegis_dome_mat: StandardMaterial3D = null
+var _aegis_ring_mat: StandardMaterial3D = null
 var _burrow_ring_inst: MeshInstance3D = null
 var _contact_shadow_inst: MeshInstance3D = null
 
 var _archetype: EnemyArchetypeData = null
 var _players_root: Node3D = null
+var boss_director: Node = null
 var _is_active_unit: bool = false
 var _is_dying: bool = false
 var _death_timer: float = 0.0
@@ -52,13 +58,25 @@ var _base_radius: float = 0.38
 
 # Hades-style multi-bar, armor, phase-shift & biome minion state
 var _is_elite_unit: bool = false
+var is_boss_reinforcement: bool = false
+var is_astral_clone: bool = false
 var _boss_phase: int = 1
 var _frenzy_mult: float = 1.0
 var _stagger_timer: float = 0.0
+var _exposed_mult: float = 1.0
 var _burst_window_dmg: float = 0.0
 var _biome_trait_id: int = 0
 var _biome_special_used: bool = false
 var _hp_bar_mat: ShaderMaterial = null
+
+# Signature boss mechanics state
+var _return_to_center_active: bool = false
+var _return_target_pos: Vector3 = Vector3.ZERO
+var _clock_sector_queued: bool = false
+var _aegis_dome_timer: float = 0.0
+var _aegis_dome_radius: float = 8.2
+var _aegis_dome_hp: float = 0.0
+var _aegis_flash_timer: float = 0.0
 
 # Ability / AI state machine timers (zero allocation)
 var _ability_cd: float = 2.0
@@ -144,6 +162,36 @@ func _ready() -> void:
 		_burrow_ring_inst.visible = false
 		add_child(_burrow_ring_inst)
 
+	if _aegis_dome_mesh == null:
+		_aegis_dome_mat = StandardMaterial3D.new()
+		_aegis_dome_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_aegis_dome_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_aegis_dome_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_aegis_dome_mat.albedo_color = Color(0.24, 0.82, 1.0, 0.22)
+
+		_aegis_ring_mat = StandardMaterial3D.new()
+		_aegis_ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_aegis_ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_aegis_ring_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_aegis_ring_mat.albedo_color = Color(0.56, 0.96, 1.0, 0.88)
+
+		_aegis_dome_mesh = MeshInstance3D.new()
+		_aegis_dome_mesh.name = "AegisDomeMesh"
+		_aegis_dome_mesh.mesh = ArchetypeScript.get_unit_sphere_mesh()
+		_aegis_dome_mesh.material_override = _aegis_dome_mat
+		_aegis_dome_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_aegis_dome_mesh.visible = false
+		add_child(_aegis_dome_mesh)
+
+		_aegis_dome_ring = MeshInstance3D.new()
+		_aegis_dome_ring.name = "AegisDomeRing"
+		_aegis_dome_ring.mesh = ArchetypeScript.get_trim_ring_mesh()
+		_aegis_dome_ring.material_override = _aegis_ring_mat
+		_aegis_dome_ring.position = Vector3(0.0, 0.06, 0.0)
+		_aegis_dome_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_aegis_dome_ring.visible = false
+		add_child(_aegis_dome_ring)
+
 	if OS.has_feature("web") and _contact_shadow_inst == null:
 		_contact_shadow_inst = MeshInstance3D.new()
 		_contact_shadow_inst.name = "ContactShadow"
@@ -197,12 +245,20 @@ func _reset_statuses() -> void:
 	_sub_steps_left = 0
 	_sub_step_kind = 0
 	_is_elite_unit = false
+	is_boss_reinforcement = false
+	is_astral_clone = false
 	_boss_phase = 1
 	_frenzy_mult = 1.0
 	_stagger_timer = 0.0
+	_exposed_mult = 1.0
 	_burst_window_dmg = 0.0
 	_biome_trait_id = 0
 	_biome_special_used = false
+	_return_to_center_active = false
+	_return_target_pos = Vector3.ZERO
+	_clock_sector_queued = false
+	_aegis_flash_timer = 0.0
+	_deactivate_aegis_dome()
 	if _ward_shell_mesh:
 		_ward_shell_mesh.visible = false
 	if _burrow_ring_inst:
@@ -276,6 +332,7 @@ func activate(
 	if health_comp:
 		health_comp.setup_max_health(_archetype.max_hp)
 	_refresh_ward_shell()
+	boss_director = null
 
 	_is_active_unit = true
 	_is_dying = false
@@ -443,6 +500,7 @@ func configure_elite_or_boss(
 	_boss_phase = 1
 	_frenzy_mult = 1.0
 	_stagger_timer = 0.0
+	_exposed_mult = 1.0
 	_burst_window_dmg = 0.0
 	if health_comp:
 		health_comp.setup_combat_bars(p_bar_hp, p_bars, p_armor, p_phase_gate_s)
@@ -458,6 +516,95 @@ func configure_elite_or_boss(
 			_hp_bar_mat.set_shader_parameter("impervious_ratio", 0.0)
 		hp_bar_root.visible = is_boss or p_is_elite or p_armor > 0.01
 	_refresh_ward_shell()
+
+
+func configure_astral_clone(bar_hp: float) -> void:
+	is_astral_clone = true
+	is_boss_reinforcement = true
+	if _role_prop_a:
+		_role_prop_a.visible = false
+	if visual_root:
+		visual_root.scale = Vector3.ONE * (_base_radius * 0.88)
+	if health_comp:
+		health_comp.setup_max_health(bar_hp)
+	if hp_bar_root:
+		hp_bar_root.visible = false
+	_refresh_ward_shell()
+
+
+func force_despawn_clone() -> void:
+	if not _is_dying:
+		_on_died()
+
+
+func force_return_to_point(pt: Vector3) -> void:
+	_return_target_pos = Vector3(pt.x, 0.0, pt.z)
+	_return_to_center_active = true
+
+
+func queue_clock_sector_soon() -> void:
+	_clock_sector_queued = true
+	_ability_cd = minf(_ability_cd, 0.65)
+
+
+func trigger_boss_stagger(duration: float, exposed_bonus: float, shatter_arm: bool) -> void:
+	if _is_dying or not _is_active_unit:
+		return
+	if shatter_arm and health_comp != null:
+		health_comp.shatter_armor()
+	_deactivate_aegis_dome()
+	_windup_timer = 0.0
+	_action_timer = 0.0
+	_pending_action_kind = 0
+	_sub_steps_left = 0
+	_sub_step_kind = 0
+	_stagger_timer = maxf(_stagger_timer, duration)
+	_exposed_mult = maxf(_exposed_mult, exposed_bonus)
+	_burst_window_dmg = 0.0
+
+
+func activate_aegis_dome(radius: float, duration: float) -> void:
+	if _is_dying or not _is_active_unit:
+		return
+	_aegis_dome_radius = maxf(4.0, radius)
+	_aegis_dome_timer = maxf(1.0, duration)
+	_aegis_dome_hp = 180.0
+	_aegis_flash_timer = 0.0
+	if not is_in_group("aegis_dome_bosses"):
+		add_to_group("aegis_dome_bosses")
+	if _aegis_dome_mesh:
+		_aegis_dome_mesh.scale = Vector3(_aegis_dome_radius, _aegis_dome_radius * 0.42, _aegis_dome_radius)
+		_aegis_dome_mesh.visible = true
+	if _aegis_dome_ring:
+		var ring_s: float = _aegis_dome_radius / 1.25
+		_aegis_dome_ring.scale = Vector3(ring_s, 1.0, ring_s)
+		_aegis_dome_ring.visible = true
+
+
+func is_aegis_dome_active() -> bool:
+	return _aegis_dome_timer > 0.0 and _is_active_unit and not _is_dying
+
+
+func get_aegis_dome_radius() -> float:
+	return _aegis_dome_radius
+
+
+func notify_dome_deflect(_hit_pos: Vector3) -> void:
+	_aegis_flash_timer = 0.14
+	if _aegis_ring_mat:
+		_aegis_ring_mat.albedo_color = Color(1.0, 0.98, 0.88, 0.98)
+
+
+func _deactivate_aegis_dome() -> void:
+	_aegis_dome_timer = 0.0
+	_aegis_dome_hp = 0.0
+	_aegis_flash_timer = 0.0
+	if is_in_group("aegis_dome_bosses"):
+		remove_from_group("aegis_dome_bosses")
+	if _aegis_dome_mesh:
+		_aegis_dome_mesh.visible = false
+	if _aegis_dome_ring:
+		_aegis_dome_ring.visible = false
 
 
 func _refresh_ward_shell() -> void:
@@ -494,6 +641,7 @@ func set_biome_trait(p_biome_id: int) -> void:
 func deactivate() -> void:
 	_is_active_unit = false
 	_is_dying = false
+	boss_director = null
 	_reset_statuses()
 	if is_in_group("characters"):
 		remove_from_group("characters")
@@ -525,14 +673,43 @@ func _release_to_pool() -> void:
 
 
 ## Resolves direct weapon/ability damage plus elemental on-hit traits (ignored while burrowed or Impervious!).
-func apply_combat_hit(raw_damage: float, hit_dir: Vector3, proc_coeff: float, shooter_stats: Object) -> void:
+func apply_combat_hit(
+	raw_damage: float,
+	hit_dir: Vector3,
+	proc_coeff: float,
+	shooter_stats: Object,
+	attacker_pos: Vector3 = Vector3.INF
+) -> void:
 	if _is_dying or not _is_active_unit or _burrow_state == 1:
 		return
+	if is_aegis_dome_active():
+		if attacker_pos != Vector3.INF:
+			var dx_a: float = attacker_pos.x - global_position.x
+			var dz_a: float = attacker_pos.z - global_position.z
+			if (dx_a * dx_a + dz_a * dz_a) > (_aegis_dome_radius + 0.35) * (_aegis_dome_radius + 0.35):
+				notify_dome_deflect(attacker_pos)
+				return
+		_aegis_dome_hp -= raw_damage
+		if _aegis_dome_hp <= 0.0:
+			_deactivate_aegis_dome()
+			trigger_boss_stagger(1.5, 1.35, false)
+
 	if health_comp != null and health_comp.is_impervious():
 		return
 
+	if (
+		not is_astral_clone
+		and _archetype != null
+		and _archetype.archetype_id == ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER
+		and boss_director != null
+		and boss_director.has_method("notify_true_chronomancer_hit")
+	):
+		boss_director.call("notify_true_chronomancer_hit")
+
 	var effective_raw: float = raw_damage
-	if _archetype != null and ArchetypeScript.is_boss_archetype(_archetype.archetype_id) and health_comp != null:
+	if _stagger_timer > 0.0 and _exposed_mult > 1.01:
+		effective_raw *= _exposed_mult
+	elif _archetype != null and ArchetypeScript.is_boss_archetype(_archetype.archetype_id) and not is_astral_clone and health_comp != null:
 		if _burst_window_dmg > health_comp.max_health * 0.52:
 			effective_raw *= 0.50
 		_burst_window_dmg += effective_raw
@@ -894,15 +1071,38 @@ func _physics_process(delta: float) -> void:
 	var aid: int = _archetype.archetype_id
 	var is_boss_u: bool = ArchetypeScript.is_boss_archetype(aid)
 
+	if _aegis_dome_timer > 0.0:
+		_aegis_dome_timer -= delta
+		if _aegis_flash_timer > 0.0:
+			_aegis_flash_timer -= delta
+			if _aegis_flash_timer <= 0.0 and _aegis_ring_mat:
+				_aegis_ring_mat.albedo_color = Color(0.56, 0.96, 1.0, 0.88)
+		if _aegis_dome_timer <= 0.0:
+			_deactivate_aegis_dome()
+
 	if health_comp != null and health_comp.is_impervious():
-		velocity.x = move_toward(velocity.x, 0.0, 35.0 * delta)
-		velocity.z = move_toward(velocity.z, 0.0, 35.0 * delta)
-		velocity.y = 0.0
+		if _return_to_center_active:
+			var to_c: Vector3 = _return_target_pos - global_position
+			to_c.y = 0.0
+			if to_c.length_squared() <= 0.25:
+				_return_to_center_active = false
+				velocity = Vector3.ZERO
+			else:
+				var c_dir: Vector3 = to_c.normalized()
+				velocity = c_dir * 12.0
+		else:
+			velocity.x = move_toward(velocity.x, 0.0, 35.0 * delta)
+			velocity.z = move_toward(velocity.z, 0.0, 35.0 * delta)
+			velocity.y = 0.0
 		move_and_slide()
 		return
+	_return_to_center_active = false
 
 	if _stagger_timer > 0.0:
 		_stagger_timer -= delta
+		if _stagger_timer <= 0.0:
+			_stagger_timer = 0.0
+			_exposed_mult = 1.0
 		velocity.x = move_toward(velocity.x, 0.0, 28.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, 28.0 * delta)
 		velocity.y = 0.0
@@ -1142,25 +1342,41 @@ func _physics_process(delta: float) -> void:
 		global_position += velocity * delta
 	else:
 		var was_boss_charging: bool = (_action_timer > 0.0 and aid == ArchetypeScript.ArchetypeId.BOSS)
+		var was_cryo_dashing: bool = (_action_timer > 0.0 and aid == ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON)
 		move_and_slide()
-		if was_boss_charging and is_on_wall() and _hit_static_wall():
-			# Hades Asterius-style wall slam self-stun!
-			_action_timer = 0.0
-			_sub_steps_left = 0
-			_stagger_timer = 1.15
-			_rpc_enemy_ground_hazard(
-				HazardScript.HazardMode.GROUND_QUAKE,
-				global_position,
-				global_position,
-				3.4,
-				0.0,
-				11.0,
-				0.55,
-				0.26,
-				Color(1.0, 0.72, 0.24),
-				0.52
-			)
+		if was_cryo_dashing and boss_director != null and boss_director.has_method("on_boss_dash_pos"):
+			boss_director.call("on_boss_dash_pos", self, global_position)
+		if was_boss_charging and is_on_wall():
+			var hit_pillar: Object = _find_colliding_pillar_prop()
+			if hit_pillar != null and boss_director != null and boss_director.has_method("on_boss_pillar_collision"):
+				_action_timer = 0.0
+				_sub_steps_left = 0
+				boss_director.call("on_boss_pillar_collision", self, hit_pillar)
+			elif _hit_static_wall():
+				_action_timer = 0.0
+				_sub_steps_left = 0
+				_stagger_timer = 0.85
+				_rpc_enemy_ground_hazard(
+					HazardScript.HazardMode.GROUND_QUAKE,
+					global_position,
+					global_position,
+					3.0,
+					0.0,
+					10.0,
+					0.55,
+					0.26,
+					Color(1.0, 0.72, 0.24),
+					0.42
+				)
 		_check_player_contact_damage()
+
+
+func _find_colliding_pillar_prop() -> Object:
+	for s_i in range(get_slide_collision_count()):
+		var col_obj: Object = get_slide_collision(s_i).get_collider()
+		if col_obj is BossPropScript and (col_obj as BossPropScript).prop_kind == BossPropScript.PropKind.BASALT_PILLAR:
+			return col_obj
+	return null
 
 
 func _hit_static_wall() -> bool:
@@ -1399,47 +1615,74 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 							_sub_step_timer = 0.90
 
 			ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER:
-				# ASTRAL CHRONOMANCER
-				match pat:
-					0:
-						# Predictive Starfall Craters
-						_ability_cd = 3.8
-						_windup_timer = 0.80
-						_windup_duration_ref = 0.80
-						_pending_action_kind = 3
-						_pending_target_pos = target_player.global_position
-					1:
-						# Astrolabe Clockwork Ring (clockwise spiral in Phase 3)
-						_ability_cd = 3.6
-						_action_dir = dir
-						_windup_timer = 0.75
-						_windup_duration_ref = 0.75
-						_pending_action_kind = 4
-					_:
-						# Temporal Safe-Eye Supernova + 4-way Star-Laser Sightlines
-						_ability_cd = 4.5
-						_windup_timer = 1.30
-						_windup_duration_ref = 1.30
+				if is_astral_clone:
+					match pat % 2:
+						0:
+							_ability_cd = 3.2
+							_action_dir = dir
+							_windup_timer = 0.65
+							_windup_duration_ref = 0.65
+							_pending_action_kind = 4
+						_:
+							_ability_cd = 3.6
+							_windup_timer = 0.75
+							_windup_duration_ref = 0.75
+							_pending_action_kind = 3
+							_pending_target_pos = target_player.global_position
+				else:
+					# ASTRAL CHRONOMANCER
+					if _clock_sector_queued or (pat == 2 and (is_p2 or _boss_pattern_idx <= 3)):
+						_clock_sector_queued = false
+						_ability_cd = 4.6
+						_windup_timer = 2.8
+						_windup_duration_ref = 2.8
 						_pending_action_kind = 1
-						_rpc_enemy_ground_hazard(
-							HazardScript.HazardMode.DONUT_AFTERSHOCK,
-							global_position,
-							global_position,
-							11.8,
-							4.2,
-							18.0,
-							1.30,
-							0.34,
-							Color(0.64, 0.42, 1.0),
-							0.64
-						)
-						if is_p2:
-							_sub_step_kind = 2
-							_sub_steps_left = 1
-							_sub_step_timer = 1.10
-							for q_i in range(4):
-								var l_d: Vector3 = Vector3.FORWARD.rotated(Vector3.UP, float(q_i) * (PI * 0.5) + 0.35)
-								_rpc_enemy_sightline(global_position, l_d, 20.0, 1.10, Color(1.0, 0.86, 0.36))
+						var side_ang: float = 1.35 if (_boss_pattern_idx % 2 == 0) else -1.35
+						var safe_ang: float = atan2(dir.z, dir.x) + side_ang
+						_rpc_enemy_clock_sector(global_position, 16.5, safe_ang, deg_to_rad(32.5), 24.0, 2.8, Color(0.56, 0.28, 0.96), 0.55)
+						if boss_director != null and boss_director.has_method("notify_clock_sector_cast"):
+							boss_director.call("notify_clock_sector_cast", 2.8)
+					else:
+						match pat:
+							0:
+								# Predictive Starfall Craters
+								_ability_cd = 3.8
+								_windup_timer = 0.80
+								_windup_duration_ref = 0.80
+								_pending_action_kind = 3
+								_pending_target_pos = target_player.global_position
+							1:
+								# Astrolabe Clockwork Ring (clockwise spiral in Phase 3)
+								_ability_cd = 3.6
+								_action_dir = dir
+								_windup_timer = 0.75
+								_windup_duration_ref = 0.75
+								_pending_action_kind = 4
+							_:
+								# Temporal Safe-Eye Supernova + 4-way Star-Laser Sightlines
+								_ability_cd = 4.5
+								_windup_timer = 1.30
+								_windup_duration_ref = 1.30
+								_pending_action_kind = 1
+								_rpc_enemy_ground_hazard(
+									HazardScript.HazardMode.DONUT_AFTERSHOCK,
+									global_position,
+									global_position,
+									11.8,
+									4.2,
+									18.0,
+									1.30,
+									0.34,
+									Color(0.64, 0.42, 1.0),
+									0.64
+								)
+								if is_p2:
+									_sub_step_kind = 2
+									_sub_steps_left = 1
+									_sub_step_timer = 1.10
+									for q_i in range(4):
+										var l_d: Vector3 = Vector3.FORWARD.rotated(Vector3.UP, float(q_i) * (PI * 0.5) + 0.35)
+										_rpc_enemy_sightline(global_position, l_d, 20.0, 1.10, Color(1.0, 0.86, 0.36))
 
 	if dist > (_base_radius + 0.35):
 		return dir * (_archetype.move_speed * speed_mult)
@@ -1644,6 +1887,32 @@ func _rpc_enemy_ground_hazard(
 		)
 
 
+@rpc("authority", "call_local", "reliable")
+func _rpc_enemy_clock_sector(
+	p_center: Vector3,
+	p_rad: float,
+	p_safe_ang: float,
+	p_safe_half_w: float,
+	p_dmg: float,
+	p_tel_s: float,
+	p_col: Color,
+	p_shake: float
+) -> void:
+	if ProjectilePool and ProjectilePool.has_method("spawn_enemy_clock_sector"):
+		ProjectilePool.call(
+			"spawn_enemy_clock_sector",
+			p_center,
+			p_rad,
+			p_safe_ang,
+			p_safe_half_w,
+			p_dmg,
+			p_tel_s,
+			p_col,
+			p_shake,
+			_players_root
+		)
+
+
 func _tick_statuses(delta: float) -> void:
 	var status_expired: bool = false
 
@@ -1779,7 +2048,15 @@ func _on_armor_broken() -> void:
 	_refresh_ward_shell()
 	if _archetype == null:
 		return
-	if not ArchetypeScript.is_boss_archetype(_archetype.archetype_id):
+	var aid: int = _archetype.archetype_id
+	if ArchetypeScript.is_boss_archetype(aid) and not is_astral_clone:
+		if _stagger_timer <= 0.0:
+			trigger_boss_stagger(1.8, 1.40, false)
+			if is_inside_tree():
+				get_tree().call_group("world_camera_shake", "add_camera_shake", 0.36)
+			if boss_director != null and boss_director.has_method("on_boss_armor_broken"):
+				boss_director.call("on_boss_armor_broken", self)
+	elif not ArchetypeScript.is_boss_archetype(aid):
 		# Hades-style Armor Break interrupt & stun on Elites!
 		_windup_timer = 0.0
 		_action_timer = 0.0
@@ -1810,7 +2087,7 @@ func _on_bar_broken(remaining_bars: int, total_bars: int, _bar_max_hp: float) ->
 
 	if _archetype == null:
 		return
-	if ArchetypeScript.is_boss_archetype(_archetype.archetype_id):
+	if ArchetypeScript.is_boss_archetype(_archetype.archetype_id) and not is_astral_clone:
 		if not multiplayer.has_multiplayer_peer() or multiplayer.is_server():
 			_rpc_enemy_ground_hazard(
 				HazardScript.HazardMode.GROUND_QUAKE,
@@ -1824,8 +2101,8 @@ func _on_bar_broken(remaining_bars: int, total_bars: int, _bar_max_hp: float) ->
 				Color(1.0, 0.78, 0.26),
 				0.45
 			)
-			if _archetype.archetype_id == ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER and _boss_phase == 2 and health_comp != null:
-				health_comp.grant_armor(health_comp.max_health * 0.40)
+			if boss_director != null and boss_director.has_method("on_boss_phase_changed"):
+				boss_director.call("on_boss_phase_changed", self, _boss_phase)
 		if remaining_bars == 1:
 			_frenzy_mult = 1.18
 	elif _is_elite_unit:
@@ -1858,6 +2135,7 @@ func _on_died() -> void:
 	_is_dying = true
 	_is_active_unit = false
 	_death_timer = 0.16
+	_deactivate_aegis_dome()
 
 	if is_in_group("characters"):
 		remove_from_group("characters")
