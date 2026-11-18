@@ -3,6 +3,8 @@ extends Control
 
 ## Dedicated Tutorial & Controls Guide (keeps gameplay HUD and pickup cards clutter-free).
 
+const CatalogScript = preload("res://scripts/data/combat_catalog.gd")
+
 const COL_BACKDROP := Color(0.020, 0.032, 0.056, 0.76)
 const COL_PANEL_BG := Color(0.043, 0.063, 0.098, 0.94)
 const COL_CARD_BG := Color(0.058, 0.082, 0.128, 0.88)
@@ -230,11 +232,16 @@ func _make_section(heading: String, accent: Color, body: String) -> PanelContain
 	sep.color = COL_IVORY_LINE
 	vb.add_child(sep)
 
-	var b_lbl := Label.new()
-	b_lbl.text = body
+	var b_lbl := RichTextLabel.new()
+	b_lbl.bbcode_enabled = true
+	b_lbl.fit_content = true
+	b_lbl.scroll_active = false
 	b_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	b_lbl.add_theme_font_size_override("font_size", 12)
-	b_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
+	b_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b_lbl.add_theme_font_size_override("normal_font_size", 12)
+	b_lbl.add_theme_color_override("default_color", COL_IVORY_MUTED)
+	b_lbl.text = CatalogScript.colorize_stat_text(body)
 	vb.add_child(b_lbl)
 
 	return card

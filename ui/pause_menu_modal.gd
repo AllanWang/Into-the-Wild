@@ -232,7 +232,7 @@ func _build_ui() -> void:
 	)
 	vb.add_child(tutorial_btn)
 
-	_web_quality_btn = _make_menu_button("WebQualityButton", "Graphics: Crisp (2x AA)", false, false)
+	_web_quality_btn = _make_menu_button("WebQualityButton", "Graphics: Balanced (Auto 900p)", false, false)
 	_web_quality_btn.visible = OS.has_feature("web")
 	_web_quality_btn.pressed.connect(func() -> void:
 		web_quality_cycle_requested.emit()

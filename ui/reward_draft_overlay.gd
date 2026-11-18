@@ -29,7 +29,7 @@ var _preview_card: PanelContainer = null
 var _preview_style: StyleBoxFlat = null
 var _preview_cat_lbl: Label = null
 var _preview_name_lbl: Label = null
-var _preview_desc_lbl: Label = null
+var _preview_desc_lbl: RichTextLabel = null
 var _preview_back_btn: Button = null
 
 var _hud_bar: Control = null
@@ -172,11 +172,8 @@ func _build_stationary_preview_card() -> void:
 	sep.color = COL_IVORY_LINE
 	vb.add_child(sep)
 
-	_preview_desc_lbl = Label.new()
-	_preview_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_preview_desc_lbl = _make_rich_desc_label(12, COL_IVORY_MUTED)
 	_preview_desc_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_preview_desc_lbl.add_theme_font_size_override("font_size", 12)
-	_preview_desc_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
 	vb.add_child(_preview_desc_lbl)
 
 	add_child(_preview_card)
@@ -289,7 +286,7 @@ func _show_stationary_preview_for(spec: Dictionary) -> void:
 	_preview_cat_lbl.text = str(info.get("subtitle", "Upgrade")).to_upper()
 	_preview_cat_lbl.add_theme_color_override("font_color", accent.lightened(0.18))
 	_preview_name_lbl.text = str(info.get("name", "Upgrade"))
-	_preview_desc_lbl.text = str(info.get("desc", ""))
+	_preview_desc_lbl.text = CatalogScript.colorize_stat_text(str(info.get("desc", "")))
 
 	_is_open = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -422,13 +419,9 @@ func _build_card(card_idx: int, spec: Dictionary) -> Button:
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(sep)
 
-	var desc_lbl := Label.new()
-	desc_lbl.text = desc_txt
-	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var desc_lbl := _make_rich_desc_label(13, COL_IVORY_MUTED)
 	desc_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	desc_lbl.add_theme_font_size_override("font_size", 13)
-	desc_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
+	desc_lbl.text = CatalogScript.colorize_stat_text(desc_txt)
 	vbox.add_child(desc_lbl)
 
 	return card_btn
@@ -527,3 +520,16 @@ func _make_small_button(btn_name: String, label_text: String) -> Button:
 	btn.add_theme_stylebox_override("hover", hover_sb)
 	btn.add_theme_stylebox_override("pressed", hover_sb)
 	return btn
+
+
+func _make_rich_desc_label(font_px: int, default_col: Color) -> RichTextLabel:
+	var rtl := RichTextLabel.new()
+	rtl.bbcode_enabled = true
+	rtl.fit_content = true
+	rtl.scroll_active = false
+	rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rtl.add_theme_font_size_override("normal_font_size", font_px)
+	rtl.add_theme_color_override("default_color", default_col)
+	return rtl

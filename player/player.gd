@@ -42,6 +42,7 @@ const DASH_POST_GRACE: float = 0.08
 
 const CONTACT_INVULN_DURATION: float = 0.75
 const INPUT_BUFFER_WINDOW: float = 0.16
+const AUTO_FIRE_HOLD_THRESHOLD: float = 0.18
 
 const SHARDS_PER_WEAPON: int = 3
 const RESERVE_SHARD_COUNT: int = 4
@@ -101,6 +102,8 @@ var _ability_hit_ctx: WeaponHitContext = WeaponHitContext.new()
 var _weapon_timers: Array[float] = [0.0, 0.0]
 var _weapon_max_timers: Array[float] = [0.24, 2.6]
 var _weapon_buffers: Array[float] = [0.0, 0.0]
+var _weapon_hold_timers: Array[float] = [0.0, 0.0]
+var _weapon_held_from_world: Array[bool] = [false, false]
 
 var _ability_timers: Array[float] = [0.0, 0.0]
 var _ability_max_timers: Array[float] = [8.0, 10.0]
@@ -261,6 +264,10 @@ func set_alt_inspect_active(active: bool) -> void:
 	if active:
 		_weapon_buffers[0] = 0.0
 		_weapon_buffers[1] = 0.0
+		_weapon_held_from_world[0] = false
+		_weapon_held_from_world[1] = false
+		_weapon_hold_timers[0] = 0.0
+		_weapon_hold_timers[1] = 0.0
 	else:
 		_ui_unblock_grace = 0.10
 
@@ -268,6 +275,10 @@ func set_alt_inspect_active(active: bool) -> void:
 func _clear_action_buffers() -> void:
 	_weapon_buffers[0] = 0.0
 	_weapon_buffers[1] = 0.0
+	_weapon_held_from_world[0] = false
+	_weapon_held_from_world[1] = false
+	_weapon_hold_timers[0] = 0.0
+	_weapon_hold_timers[1] = 0.0
 	_ability_buffers[0] = 0.0
 	_ability_buffers[1] = 0.0
 	_artifact_buffer = 0.0
@@ -667,6 +678,7 @@ func restore_full_health() -> void:
 	is_dashing = false
 	ui_input_blocked = false
 	_alt_inspect_active = false
+	_clear_action_buffers()
 	velocity = Vector3.ZERO
 	visible = true
 	_dash_charges = MAX_DASH_CHARGES
@@ -769,8 +781,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			if mb.pressed and not alt_now and not ui_input_blocked and _ui_unblock_grace <= 0.0:
 				if mb.button_index == MOUSE_BUTTON_LEFT:
 					_weapon_buffers[0] = INPUT_BUFFER_WINDOW
+					_weapon_held_from_world[0] = true
+					_weapon_hold_timers[0] = 0.0
 				elif mb.button_index == MOUSE_BUTTON_RIGHT:
 					_weapon_buffers[1] = INPUT_BUFFER_WINDOW
+					_weapon_held_from_world[1] = true
+					_weapon_hold_timers[1] = 0.0
 
 
 func _process(delta: float) -> void:
@@ -875,6 +891,10 @@ func _physics_process(delta: float) -> void:
 	if alt_held_now:
 		_weapon_buffers[0] = 0.0
 		_weapon_buffers[1] = 0.0
+		_weapon_held_from_world[0] = false
+		_weapon_held_from_world[1] = false
+		_weapon_hold_timers[0] = 0.0
+		_weapon_hold_timers[1] = 0.0
 	var allow_keys: bool = (not ui_input_blocked) and focused
 	var allow_mouse_weapons: bool = allow_keys and (not alt_held_now) and (_ui_unblock_grace <= 0.0)
 
@@ -896,11 +916,27 @@ func _physics_process(delta: float) -> void:
 				_artifact_buffer = INPUT_BUFFER_WINDOW
 
 	if allow_mouse_weapons:
-		if Input.is_action_just_pressed("attack") or Input.is_action_pressed("attack"):
+		# Support programmatic Input.action_press (e.g. MCP tests) without firing on GUI Button clicks:
+		if Input.is_action_just_pressed("attack") and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_weapon_buffers[0] = INPUT_BUFFER_WINDOW
-
-		if Input.is_action_just_pressed("secondary_attack") or Input.is_action_pressed("secondary_attack"):
+			_weapon_held_from_world[0] = true
+			_weapon_hold_timers[0] = 0.0
+		if Input.is_action_just_pressed("secondary_attack") and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			_weapon_buffers[1] = INPUT_BUFFER_WINDOW
+			_weapon_held_from_world[1] = true
+			_weapon_hold_timers[1] = 0.0
+
+		for w_i in range(2):
+			var act_name: StringName = &"attack" if w_i == 0 else &"secondary_attack"
+			if Input.is_action_pressed(act_name) and _weapon_held_from_world[w_i]:
+				_weapon_hold_timers[w_i] += delta
+			else:
+				_weapon_held_from_world[w_i] = false
+				_weapon_hold_timers[w_i] = 0.0
+	else:
+		for w_i in range(2):
+			_weapon_held_from_world[w_i] = false
+			_weapon_hold_timers[w_i] = 0.0
 
 	var input_dir: Vector2 = Vector2.ZERO
 	if not ui_input_blocked:
@@ -964,7 +1000,8 @@ func _physics_process(delta: float) -> void:
 
 	if not is_dashing:
 		for slot_i in range(2):
-			if _weapon_buffers[slot_i] > 0.0 and _weapon_timers[slot_i] <= 0.0:
+			var auto_hold_ready: bool = allow_mouse_weapons and _weapon_held_from_world[slot_i] and _weapon_hold_timers[slot_i] >= AUTO_FIRE_HOLD_THRESHOLD
+			if (_weapon_buffers[slot_i] > 0.0 or auto_hold_ready) and _weapon_timers[slot_i] <= 0.0:
 				_weapon_buffers[slot_i] = 0.0
 				_fire_weapon_slot(slot_i)
 

@@ -68,6 +68,7 @@ jobs:
           "$HOME/.cache/godot-bin/godot" --headless --version
           timeout 180 "$HOME/.cache/godot-bin/godot" --headless --import
           timeout 180 "$HOME/.cache/godot-bin/godot" --headless --export-release "Web" "build/web/index.html"
+          sed -i "s/src=\"index.js\"/src=\"index.js?v=${GITHUB_SHA::7}\"/g" build/web/index.html
 
           test -f build/web/index.html
           test -f build/web/index.js

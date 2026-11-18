@@ -41,6 +41,7 @@ uniform float ripple_ring_density : hint_range(1.0, 20.0, 0.5) = 7.0;
 
 group_uniforms pool_shape;
 uniform bool infinite_water = false;
+uniform bool enable_cloud_shadows = true;
 uniform float edge_distortion_strength : hint_range(0.0, 1.5, 0.05) = 0.65;
 uniform float edge_distortion_frequency : hint_range(0.1, 5.0, 0.1) = 1.2;
 
@@ -57,20 +58,19 @@ void vertex() {
 
 void fragment() {
 	vec2 p = vertex_world.xz;
-	float angle = atan(vertex_world.z, vertex_world.x);
-
-	float distort = sin(angle * 2.0) * 0.45 + cos(angle * 3.0 + 0.8) * 0.3 + sin(angle * 5.0) * 0.15;
-	float pond_radius = 2.3 + distort;
-	float dist_from_center = length(p);
-
+	float edge_dist = 1.0;
 	if (!infinite_water) {
+		float angle = atan(vertex_world.z, vertex_world.x);
+		float distort = sin(angle * 2.0) * 0.45 + cos(angle * 3.0 + 0.8) * 0.3 + sin(angle * 5.0) * 0.15;
+		float pond_radius = 2.3 + distort;
+		float dist_from_center = length(p);
 		if (dist_from_center > pond_radius) {
 			discard;
 		}
+		edge_dist = clamp(pond_radius - dist_from_center, 0.0, 1.8);
 	}
 	ALPHA_SCISSOR_THRESHOLD = infinite_water ? 0.0 : 0.5;
 
-	float edge_dist = infinite_water ? 1.0 : clamp(pond_radius - dist_from_center, 0.0, 1.8);
 	float depth_factor = infinite_water ? 0.65 : smoothstep(0.0, depth_distance, edge_dist);
 	float depth_stepped = floor(depth_factor * 3.0) / 3.0 * 0.45;
 	vec4 water_color = mix(shallow_color, deep_color, depth_stepped);
@@ -81,35 +81,37 @@ void fragment() {
 	float n2 = texture(surface_noise, noise_uv2).r;
 	float noise_blended = (n1 + n2) * 0.5;
 
-	float shore_band = 1.0 - clamp(edge_dist / foam_amount, 0.0, 1.0);
-	float shore_foam = step(0.48, shore_band + noise_blended * 0.35) * step(0.02, shore_band);
+	float shore_band = infinite_water ? 0.0 : (1.0 - clamp(edge_dist / foam_amount, 0.0, 1.0));
+	float shore_foam = infinite_water ? 0.0 : (step(0.48, shore_band + noise_blended * 0.35) * step(0.02, shore_band));
 	float surface_foam = step(surface_noise_cutoff, noise_blended) * (emission_strength > 0.2 ? 0.52 : 0.15);
 
 	float total_foam = clamp(shore_foam + surface_foam, 0.0, 1.0);
 
-	float ripple_foam = 0.0;
-	for (int i = 0; i < 8; i++) {
-		float current_radius = ripple_positions[i].w;
-		float progress = ripple_positions[i].z;
-		if (current_radius > 0.001) {
-			vec2 delta_pos = p - ripple_positions[i].xy;
-			float r_angle = atan(delta_pos.y, delta_pos.x);
-			float rip_distort = sin(r_angle * 3.0) * 0.05 + cos(r_angle * 4.0 + 0.5) * 0.035;
-			float d = length(delta_pos) + rip_distort;
+	if (!infinite_water) {
+		float ripple_foam = 0.0;
+		for (int i = 0; i < 8; i++) {
+			float current_radius = ripple_positions[i].w;
+			float progress = ripple_positions[i].z;
+			if (current_radius > 0.001) {
+				vec2 delta_pos = p - ripple_positions[i].xy;
+				float r_angle = atan(delta_pos.y, delta_pos.x);
+				float rip_distort = sin(r_angle * 3.0) * 0.05 + cos(r_angle * 4.0 + 0.5) * 0.035;
+				float d = length(delta_pos) + rip_distort;
 
-			float ring_dist = abs(d - current_radius);
-			float ring_thickness = 0.08 + progress * 0.05;
-			float ring = smoothstep(ring_thickness, 0.0, ring_dist);
+				float ring_dist = abs(d - current_radius);
+				float ring_thickness = 0.08 + progress * 0.05;
+				float ring = smoothstep(ring_thickness, 0.0, ring_dist);
 
-			float inner_radius = current_radius * 0.55;
-			float inner_dist = abs(d - inner_radius);
-			float inner_ring = smoothstep(0.06, 0.0, inner_dist) * 0.5;
+				float inner_radius = current_radius * 0.55;
+				float inner_dist = abs(d - inner_radius);
+				float inner_ring = smoothstep(0.06, 0.0, inner_dist) * 0.5;
 
-			float life_fade = (1.0 - progress) * (1.0 - progress);
-			ripple_foam += (ring + inner_ring) * life_fade * 0.85;
+				float life_fade = (1.0 - progress) * (1.0 - progress);
+				ripple_foam += (ring + inner_ring) * life_fade * 0.85;
+			}
 		}
+		total_foam = clamp(total_foam + ripple_foam, 0.0, 1.0);
 	}
-	total_foam = clamp(total_foam + ripple_foam, 0.0, 1.0);
 
 	vec3 active_foam_rgb = foam_color.rgb;
 	if (chromatic_foam) {
@@ -133,7 +135,7 @@ void light() {
 	float NdotL = dot(NORMAL, LIGHT);
 	float diffuse_amount = clamp(NdotL + (ATTENUATION - 1.0), 0.0, 1.0);
 
-	if (LIGHT_IS_DIRECTIONAL) {
+	if (LIGHT_IS_DIRECTIONAL && enable_cloud_shadows) {
 		float light_value = get_cloud_noise(vertex_world);
 		diffuse_amount = min(diffuse_amount, light_value);
 	}

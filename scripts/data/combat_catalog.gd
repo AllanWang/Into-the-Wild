@@ -83,11 +83,17 @@ enum GlyphKind {
 	SNIPER = 20
 }
 
+const HEX_AD := "#ff9638"
+const HEX_AP := "#c078ff"
+const HEX_HP := "#4ee878"
+const HEX_CRIT := "#ff4d5a"
+
 static var _weapons: Dictionary = {}
 static var _abilities: Dictionary = {}
 static var _artifacts: Dictionary = {}
 static var _shards: Dictionary = {}
 static var _traits: Dictionary = {}
+static var _stat_color_regex: RegEx = null
 
 
 static func _ensure_init() -> void:
@@ -198,7 +204,7 @@ static func _ensure_init() -> void:
 		"id": WeaponId.CHAIN_LASH,
 		"name": "Chain Lash",
 		"subtitle": "Arc Whip · Sweetspot Cleave",
-		"desc": "Sweeps a 5.4m arc (0.95x AD); outer Tip Sweetspot cracks for +45% bonus damage!",
+		"desc": "Sweeps a 5.4m arc (0.95x AD + 0.20x AP); outer Tip Sweetspot cracks for +45% bonus damage!",
 		"is_cooldown": false,
 		"interval": 0.46,
 		"cooldown": 0.0,
@@ -458,21 +464,21 @@ static func _ensure_init() -> void:
 		"name": "Keen Edge",
 		"subtitle": "Stat Trait",
 		"desc": "+4 Attack Damage (AD) to all weapon scaling.",
-		"color": Color(1.0, 0.56, 0.36, 1.0)
+		"color": Color(1.0, 0.588, 0.22, 1.0)
 	}
 	_traits[TraitId.STAT_AP] = {
 		"id": TraitId.STAT_AP,
 		"name": "Arcane Focus",
 		"subtitle": "Stat Trait",
 		"desc": "+6 Ability Power (AP) to abilities, shields, and arcane weapons.",
-		"color": Color(0.68, 0.56, 1.0, 1.0)
+		"color": Color(0.753, 0.471, 1.0, 1.0)
 	}
 	_traits[TraitId.STAT_HP] = {
 		"id": TraitId.STAT_HP,
 		"name": "Vitality Core",
 		"subtitle": "Stat Trait",
 		"desc": "+25 Max Health and restores 25 Health immediately.",
-		"color": Color(0.95, 0.34, 0.34, 1.0)
+		"color": Color(0.306, 0.910, 0.471, 1.0)
 	}
 	_traits[TraitId.STAT_ATK_SPD] = {
 		"id": TraitId.STAT_ATK_SPD,
@@ -581,3 +587,38 @@ static func get_all_stat_trait_ids() -> Array[int]:
 		TraitId.STAT_HASTE,
 		TraitId.STAT_MOVE_SPD
 	]
+
+
+static func colorize_stat_text(text: String) -> String:
+	if text.is_empty():
+		return text
+	if _stat_color_regex == null:
+		_stat_color_regex = RegEx.new()
+		_stat_color_regex.compile(
+			"(?<ad>\\+\\d+\\s+Attack Damage\\s*\\(AD\\)|Attack Damage\\s*\\(AD\\)|(?:\\d+\\s*x\\s*)?\\d+(?:\\.\\d+)?x\\s*AD\\b|\\bAD\\b)"
+			+ "|(?<ap>\\+\\d+\\s+Ability Power\\s*\\(AP\\)|Ability Power\\s*\\(AP\\)|(?:\\d+\\s*x\\s*)?\\d+(?:\\.\\d+)?x\\s*AP(?:/pulse)?\\b|\\b\\d+(?:\\.\\d+)?\\s*AP(?:\\s+dmg)?\\b|\\bAP\\b)"
+			+ "|(?<hp>\\+\\d+%?\\s*Max (?:Health|HP)\\b|\\b\\d+%?\\s*(?:Max )?(?:Health|HP)\\b|\\bMax (?:Health|HP)\\b|\\b(?:Health|HP)\\b)"
+			+ "|(?<crit>\\+\\d+(?:\\.\\d+)?%?\\s*Crit(?:ical)?(?:\\s+(?:Chance|Damage|Strike|Hit))?\\b|(?:\\d+(?:\\.\\d+)?x\\s*)?\\bCrit(?:ical)?(?:\\s+(?:Chance|Damage|Strike|Hit))?\\b)"
+		)
+	var matches: Array[RegExMatch] = _stat_color_regex.search_all(text)
+	if matches.is_empty():
+		return text
+	var out: String = ""
+	var cursor: int = 0
+	for m in matches:
+		var s_idx: int = m.get_start()
+		var e_idx: int = m.get_end()
+		if s_idx > cursor:
+			out += text.substr(cursor, s_idx - cursor)
+		var hex: String = HEX_AD
+		if not m.get_string("ap").is_empty():
+			hex = HEX_AP
+		elif not m.get_string("hp").is_empty():
+			hex = HEX_HP
+		elif not m.get_string("crit").is_empty():
+			hex = HEX_CRIT
+		out += "[color=%s]%s[/color]" % [hex, m.get_string()]
+		cursor = e_idx
+	if cursor < text.length():
+		out += text.substr(cursor)
+	return out

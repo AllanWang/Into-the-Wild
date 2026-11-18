@@ -256,7 +256,7 @@ func apply_biome_materials(biome_id: int) -> void:
 		floor_material.set_shader_parameter("fx_color2", b["fx_c2"])
 		floor_material.set_shader_parameter("fx_color3", b["fx_c3"])
 		floor_material.set_shader_parameter("fx_emission_strength", float(b["fx_emit"]))
-		floor_material.set_shader_parameter("enable_cloud_shadows", bool(b.get("cloud_shadows", true)))
+		floor_material.set_shader_parameter("enable_cloud_shadows", (not OS.has_feature("web")) and bool(b.get("cloud_shadows", true)))
 
 	if snow_trail and is_instance_valid(snow_trail):
 		snow_trail.call("set_snow_enabled", current_biome_id == BiomeThemeScript.BiomeId.GLACIAL_FROSTFIELD)
@@ -287,6 +287,7 @@ func apply_biome_materials(biome_id: int) -> void:
 			w_mat.set_shader_parameter("surface_noise_cutoff", float(b["water_cutoff"]))
 			w_mat.set_shader_parameter("chromatic_foam", bool(b["water_chromatic"]))
 			w_mat.set_shader_parameter("emission_strength", float(b["water_emit"]))
+			w_mat.set_shader_parameter("enable_cloud_shadows", not OS.has_feature("web"))
 
 	if _skirt_material:
 		_skirt_material.albedo_color = b["skirt_col"] as Color

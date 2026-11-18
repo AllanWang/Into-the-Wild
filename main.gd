@@ -185,6 +185,10 @@ func _ready() -> void:
 		camera.reset_physics_interpolation()
 
 	if OS.has_feature("web"):
+		var vp: Viewport = get_viewport()
+		if vp != null and not vp.size_changed.is_connected(_on_web_viewport_resized):
+			vp.size_changed.connect(_on_web_viewport_resized)
+		_apply_web_quality_preset()
 		_run_web_shader_prewarm()
 
 
@@ -958,28 +962,38 @@ func _fade_out_web_curtain(duration_s: float) -> void:
 	)
 
 
-func _on_web_quality_cycle_requested() -> void:
+func _on_web_viewport_resized() -> void:
+	if _web_quality_idx == 0:
+		_apply_web_quality_preset()
+
+
+func _apply_web_quality_preset() -> void:
 	var vp: Viewport = get_viewport()
 	if vp == null:
 		return
-	_web_quality_idx = (_web_quality_idx + 1) % 3
-	var label_text: String = "Graphics: Crisp (2x AA)"
+	var label_text: String = "Graphics: Balanced (Auto 900p)"
 	match _web_quality_idx:
 		0:
-			vp.scaling_3d_scale = 1.0
-			vp.msaa_3d = Viewport.MSAA_2X
-			label_text = "Graphics: Crisp (2x AA)"
-		1:
 			# Disable MSAA before downscaling 3D in WebGL2 GL Compatibility.
 			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.scaling_3d_scale = 0.80
-			label_text = "Graphics: Balanced (80% 3D)"
-		2:
+			var longest: float = maxf(float(vp.size.x), float(vp.size.y) * (16.0 / 9.0))
+			vp.scaling_3d_scale = clampf(1600.0 / maxf(1.0, longest), 0.50, 1.0)
+			label_text = "Graphics: Balanced (Auto 900p)"
+		1:
 			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.scaling_3d_scale = 0.65
-			label_text = "Graphics: Performance (65% 3D)"
+			vp.scaling_3d_scale = 0.60
+			label_text = "Graphics: Performance (60% 3D)"
+		2:
+			vp.scaling_3d_scale = 1.0
+			vp.msaa_3d = Viewport.MSAA_2X
+			label_text = "Graphics: Crisp (Native + 2x AA)"
 	if _pause_menu_modal and _pause_menu_modal.has_method("set_web_quality_label"):
 		_pause_menu_modal.call("set_web_quality_label", label_text)
+
+
+func _on_web_quality_cycle_requested() -> void:
+	_web_quality_idx = (_web_quality_idx + 1) % 3
+	_apply_web_quality_preset()
 
 
 func _add_warmup_mesh(parent: Node3D, mesh_res: Mesh, mat: Material) -> void:

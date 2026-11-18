@@ -35,14 +35,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not is_inside_tree():
 		return
-	
+
 	_update_water_ripples(delta)
-	
-	var grass_frametime = 1.0 / maxf(grass_framerate, 0.1)
-	grass_timer += delta
-	if grass_timer >= grass_frametime:
-		grass_timer -= grass_frametime
-		_update_grass()
+	_update_grass()
 
 func _update_grass() -> void:
 	if character_positions.size() != MAX_CHARACTERS:

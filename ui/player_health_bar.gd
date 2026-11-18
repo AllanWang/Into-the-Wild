@@ -82,14 +82,14 @@ var _hp_num_label: Label = null
 var _hp_max_label: Label = null
 var _shield_label: Label = null
 var _stats_panel: PanelContainer = null
-var _stats_body_label: Label = null
+var _stats_body_label: RichTextLabel = null
 
 var _inspect_card: PanelContainer = null
 var _inspect_style: StyleBoxFlat = null
 var _inspect_cat_lbl: Label = null
 var _inspect_name_lbl: Label = null
-var _inspect_desc_lbl: Label = null
-var _inspect_live_lbl: Label = null
+var _inspect_desc_lbl: RichTextLabel = null
+var _inspect_live_lbl: RichTextLabel = null
 var _last_inspected_key: String = ""
 
 var _slot_key_labels: Array[Label] = []
@@ -784,9 +784,8 @@ func _build_labels_if_needed() -> void:
 	margin.add_theme_constant_override("margin_bottom", 10)
 	_stats_panel.add_child(margin)
 
-	_stats_body_label = _make_clean_label(12, COL_IVORY_TEXT)
+	_stats_body_label = _make_clean_rich_label(12, COL_IVORY_TEXT)
 	_stats_body_label.name = "StatsBodyLabel"
-	_stats_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	margin.add_child(_stats_body_label)
 
 	add_child(_stats_panel)
@@ -837,12 +836,10 @@ func _build_labels_if_needed() -> void:
 	isep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ivb.add_child(isep)
 
-	_inspect_desc_lbl = _make_clean_label(12, COL_IVORY_MUTED)
-	_inspect_desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inspect_desc_lbl = _make_clean_rich_label(12, COL_IVORY_MUTED)
 	ivb.add_child(_inspect_desc_lbl)
 
-	_inspect_live_lbl = _make_clean_label(12, Color(0.56, 0.94, 1.0, 0.96))
-	_inspect_live_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inspect_live_lbl = _make_clean_rich_label(12, Color(0.56, 0.94, 1.0, 0.96))
 	ivb.add_child(_inspect_live_lbl)
 
 	add_child(_inspect_card)
@@ -904,9 +901,10 @@ func _update_inspect_card() -> void:
 		_inspect_cat_lbl.text = "[%s]  ·  %s" % [str(s["tag"]).to_upper(), str(sh.get("subtitle", "Shard")).to_upper()]
 		_inspect_cat_lbl.add_theme_color_override("font_color", scol.lightened(0.18))
 		_inspect_name_lbl.text = str(sh.get("name", "Shard"))
-		_inspect_desc_lbl.text = str(sh.get("desc", ""))
-		_inspect_live_lbl.text = _format_live_shard_scaling(sid, ad_v, ap_v)
-		_inspect_live_lbl.visible = not _inspect_live_lbl.text.is_empty()
+		_inspect_desc_lbl.text = CatalogScript.colorize_stat_text(str(sh.get("desc", "")))
+		var raw_live: String = _format_live_shard_scaling(sid, ad_v, ap_v)
+		_inspect_live_lbl.visible = not raw_live.is_empty()
+		_inspect_live_lbl.text = CatalogScript.colorize_stat_text(raw_live)
 	else:
 		var sl_i: int = int(s["slot_idx"])
 		if not _slot_equipped[sl_i]:
@@ -941,8 +939,8 @@ func _update_inspect_card() -> void:
 				rate_str = "%.1f shots/s" % shots_s
 			_inspect_cat_lbl.text = "[%s]  ·  %s" % [tag_txt, str(w.get("subtitle", "Weapon")).to_upper()]
 			_inspect_name_lbl.text = str(w.get("name", "Weapon"))
-			_inspect_desc_lbl.text = str(w.get("desc", ""))
-			_inspect_live_lbl.text = "Live Hit: %s   ·   Cadence: %s   ·   Shards: %s" % [hit_str, rate_str, _format_shard_names(sh_arr)]
+			_inspect_desc_lbl.text = CatalogScript.colorize_stat_text(str(w.get("desc", "")))
+			_inspect_live_lbl.text = CatalogScript.colorize_stat_text("Live Hit: %s   ·   Cadence: %s   ·   Shards: %s" % [hit_str, rate_str, _format_shard_names(sh_arr)])
 			_inspect_live_lbl.visible = true
 
 		elif kind == "ability":
@@ -950,8 +948,8 @@ func _update_inspect_card() -> void:
 			var ab_cd: float = float(ab.get("cooldown", 10.0)) * haste_mult
 			_inspect_cat_lbl.text = "[%s]  ·  %s" % [tag_txt, str(ab.get("subtitle", "Ability")).to_upper()]
 			_inspect_name_lbl.text = str(ab.get("name", "Ability"))
-			_inspect_desc_lbl.text = str(ab.get("desc", ""))
-			_inspect_live_lbl.text = "%s   ·   Live CD: %.1fs" % [_format_live_ability_scaling(item_id, ap_v), ab_cd]
+			_inspect_desc_lbl.text = CatalogScript.colorize_stat_text(str(ab.get("desc", "")))
+			_inspect_live_lbl.text = CatalogScript.colorize_stat_text("%s   ·   Live CD: %.1fs" % [_format_live_ability_scaling(item_id, ap_v), ab_cd])
 			_inspect_live_lbl.visible = true
 
 		else:
@@ -959,8 +957,8 @@ func _update_inspect_card() -> void:
 			var art_cd: float = float(art.get("cooldown", 25.0)) * haste_mult
 			_inspect_cat_lbl.text = "[%s]  ·  %s" % [tag_txt, str(art.get("subtitle", "Artifact")).to_upper()]
 			_inspect_name_lbl.text = str(art.get("name", "Artifact"))
-			_inspect_desc_lbl.text = str(art.get("desc", ""))
-			_inspect_live_lbl.text = "%s   ·   Live CD: %.1fs" % [_format_live_artifact_scaling(item_id, ad_v, ap_v), art_cd]
+			_inspect_desc_lbl.text = CatalogScript.colorize_stat_text(str(art.get("desc", "")))
+			_inspect_live_lbl.text = CatalogScript.colorize_stat_text("%s   ·   Live CD: %.1fs" % [_format_live_artifact_scaling(item_id, ad_v, ap_v), art_cd])
 			_inspect_live_lbl.visible = true
 
 	_inspect_card.visible = true
@@ -1008,7 +1006,7 @@ func _format_live_shard_scaling(sid: int, ad_v: float, ap_v: float) -> String:
 func _format_live_ability_scaling(ab_id: int, ap_v: float) -> String:
 	match ab_id:
 		CatalogScript.AbilityId.AEGIS_BARRIER:
-			return "Live Shield: %.0f HP (6.0s)" % (25.0 + 2.0 * ap_v)
+			return "Live Shield: %.0f Shield (6.0s)" % (25.0 + 2.0 * ap_v)
 		CatalogScript.AbilityId.STARFALL_STRIKE:
 			return "Live Blast: %.0f AoE dmg" % (30.0 + 2.5 * ap_v)
 		CatalogScript.AbilityId.FROST_NOVA:
@@ -1045,6 +1043,23 @@ func _make_clean_label(font_px: int, font_col: Color) -> Label:
 	lbl.add_theme_constant_override("shadow_offset_y", 1)
 	lbl.add_theme_constant_override("outline_size", 0)
 	return lbl
+
+
+func _make_clean_rich_label(font_px: int, font_col: Color) -> RichTextLabel:
+	var rtl := RichTextLabel.new()
+	rtl.bbcode_enabled = true
+	rtl.fit_content = true
+	rtl.scroll_active = false
+	rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rtl.add_theme_font_size_override("normal_font_size", font_px)
+	rtl.add_theme_color_override("default_color", font_col)
+	rtl.add_theme_color_override("font_shadow_color", COL_TEXT_SHADOW)
+	rtl.add_theme_constant_override("shadow_offset_x", 0)
+	rtl.add_theme_constant_override("shadow_offset_y", 1)
+	rtl.add_theme_constant_override("outline_size", 0)
+	return rtl
 
 
 func bind_player(player_node: Node) -> void:
@@ -1222,8 +1237,12 @@ func _refresh_stats_sheet_text() -> void:
 		+ "RMB: %s (%s)\n" % [_slot_names[1], w1_sh]
 		+ "Q: %s  |  E: %s  |  R: %s\n\n" % [_slot_names[2], _slot_names[3], _slot_names[4]]
 		+ "ATTRIBUTES\n"
-		+ "AD: %.0f   AP: %.0f   Atk Spd: %.2fx\n" % [ad_v, ap_v, as_v]
-		+ "Haste: %.0f   Move Spd: %.1f m/s" % [ah_v, ms_v]
+		+ "[color=%s]HP: %.0f/%.0f[/color]   [color=%s]AD: %.0f[/color]   [color=%s]AP: %.0f[/color]\n" % [
+			CatalogScript.HEX_HP, _current_hp, _max_hp,
+			CatalogScript.HEX_AD, ad_v,
+			CatalogScript.HEX_AP, ap_v
+		]
+		+ "Atk Spd: %.2fx   Haste: %.0f   Move: %.1f m/s" % [as_v, ah_v, ms_v]
 	)
 
 
