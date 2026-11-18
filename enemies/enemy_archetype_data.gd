@@ -13,8 +13,10 @@ enum ArchetypeId {
 	BRUISER = 4,         ## Heavy armored amber sentinel with orbiting monolith shields & levitating quake slam
 	MIRE_LOBBER = 5,     ## Standoff emerald castor with overhead swelling toxic mortar sac
 	OCULAR_SNIPER = 6,   ## Long-range alabaster-gold marksman with spinning front scope monocle
-	BOSS = 7,            ## Tectonic Sovereign — double-quake rings, faultline spikes & telegraphed charge
-	BOSS_BLIGHTWEAVER = 8 ## Blightweaver Core — acidic rain pools, horizon fans & safe-eye cataclysm
+	BOSS = 7,            ## Tectonic Sovereign — double-quake rings, bull-rush pillar/wall stun & seismic cross
+	BOSS_BLIGHTWEAVER = 8, ## Blightweaver Core — acidic rain, warded conduit phase & plague spiral
+	BOSS_CRYO_ARCHON = 9,  ## Cryo-Archon Valkyrie — glacial dash-slashes, rime lances & whiteout blizzard eye
+	BOSS_CHRONOMANCER = 10 ## Astral Chronomancer — predictive starfall, temporal supernova & clockwork spiral
 }
 
 @export var archetype_id: ArchetypeId = ArchetypeId.CHASER
@@ -44,6 +46,8 @@ static var _plate_mesh: BoxMesh = null
 static var _scope_ring_mesh: TorusMesh = null
 static var _sac_orb_mesh: SphereMesh = null
 static var _hit_flash_material: StandardMaterial3D = null
+static var _armor_shell_mat: StandardMaterial3D = null
+static var _impervious_shell_mat: StandardMaterial3D = null
 static var _status_poison_mat: StandardMaterial3D = null
 static var _status_burn_mat: StandardMaterial3D = null
 static var _status_frost_mat: StandardMaterial3D = null
@@ -52,7 +56,25 @@ static var _hp_quad_mesh: QuadMesh = null
 
 
 static func is_boss_archetype(id: int) -> bool:
-	return id == ArchetypeId.BOSS or id == ArchetypeId.BOSS_BLIGHTWEAVER
+	return (
+		id == ArchetypeId.BOSS
+		or id == ArchetypeId.BOSS_BLIGHTWEAVER
+		or id == ArchetypeId.BOSS_CRYO_ARCHON
+		or id == ArchetypeId.BOSS_CHRONOMANCER
+	)
+
+
+static func get_boss_epithet(id: int) -> String:
+	match id:
+		ArchetypeId.BOSS:
+			return "Earthshaker Juggernaut"
+		ArchetypeId.BOSS_BLIGHTWEAVER:
+			return "Plague Broodmother"
+		ArchetypeId.BOSS_CRYO_ARCHON:
+			return "Rimeblade Sovereign"
+		ArchetypeId.BOSS_CHRONOMANCER:
+			return "Cosmic Timeweaver"
+	return "Apex Warden"
 
 
 static func _ensure_cache() -> void:
@@ -105,6 +127,18 @@ static func _ensure_cache() -> void:
 	_hit_flash_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_hit_flash_material.albedo_color = Color(1.0, 0.98, 0.92, 1.0)
 
+	_armor_shell_mat = StandardMaterial3D.new()
+	_armor_shell_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_armor_shell_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_armor_shell_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_armor_shell_mat.albedo_color = Color(1.0, 0.80, 0.22, 0.28)
+
+	_impervious_shell_mat = StandardMaterial3D.new()
+	_impervious_shell_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_impervious_shell_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_impervious_shell_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_impervious_shell_mat.albedo_color = Color(1.0, 0.95, 0.68, 0.44)
+
 	_status_poison_mat = _make_status_mat(Color(0.32, 0.90, 0.44), Color(0.10, 0.45, 0.16))
 	_status_burn_mat = _make_status_mat(Color(1.0, 0.46, 0.14), Color(0.58, 0.16, 0.02))
 	_status_frost_mat = _make_status_mat(Color(0.46, 0.88, 1.0), Color(0.12, 0.38, 0.54))
@@ -155,13 +189,23 @@ static func _ensure_cache() -> void:
 	)
 	_cache[ArchetypeId.BOSS] = _build_entry(
 		ArchetypeId.BOSS, "Tectonic Sovereign",
-		1.02, 280.0, 14.0, 3.3, 15.0, true,
+		1.02, 350.0, 14.0, 3.3, 15.0, true,
 		Color(0.88, 0.24, 0.32), Color(0.46, 0.08, 0.12), Color(1.0, 0.80, 0.28)
 	)
 	_cache[ArchetypeId.BOSS_BLIGHTWEAVER] = _build_entry(
 		ArchetypeId.BOSS_BLIGHTWEAVER, "Blightweaver Core",
-		1.02, 270.0, 13.0, 3.2, 15.0, false,
+		1.02, 330.0, 13.0, 3.2, 15.0, false,
 		Color(0.68, 0.20, 0.92), Color(0.34, 0.06, 0.48), Color(0.36, 0.98, 0.58)
+	)
+	_cache[ArchetypeId.BOSS_CRYO_ARCHON] = _build_entry(
+		ArchetypeId.BOSS_CRYO_ARCHON, "Cryo-Archon Valkyrie",
+		1.00, 330.0, 14.0, 3.6, 16.0, true,
+		Color(0.30, 0.78, 0.98), Color(0.08, 0.34, 0.58), Color(0.88, 0.98, 1.0)
+	)
+	_cache[ArchetypeId.BOSS_CHRONOMANCER] = _build_entry(
+		ArchetypeId.BOSS_CHRONOMANCER, "Astral Chronomancer",
+		1.02, 320.0, 13.0, 3.2, 15.0, false,
+		Color(0.28, 0.22, 0.72), Color(0.14, 0.10, 0.46), Color(1.0, 0.86, 0.38)
 	)
 
 
@@ -276,6 +320,16 @@ static func get_sac_orb_mesh() -> SphereMesh:
 static func get_hit_flash_material() -> StandardMaterial3D:
 	_ensure_cache()
 	return _hit_flash_material
+
+
+static func get_armor_shell_material() -> StandardMaterial3D:
+	_ensure_cache()
+	return _armor_shell_mat
+
+
+static func get_impervious_shell_material() -> StandardMaterial3D:
+	_ensure_cache()
+	return _impervious_shell_mat
 
 
 static func get_hp_bar_material() -> ShaderMaterial:

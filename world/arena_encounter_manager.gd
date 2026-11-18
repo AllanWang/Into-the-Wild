@@ -19,6 +19,7 @@ const PEDESTAL_SCENE: PackedScene = preload("res://world/reward_pedestal.tscn")
 const HEALING_WELL_SCENE: PackedScene = preload("res://world/healing_well.tscn")
 const StagePortalScript = preload("res://world/stage_portal.gd")
 const DroppedItemScript = preload("res://world/dropped_item.gd")
+const BossHealthHudScript = preload("res://ui/boss_health_hud.gd")
 
 enum RoomState {
 	UNVISITED,
@@ -47,6 +48,7 @@ var _barrier_pool: NodePool = null
 var _pedestal_pool: NodePool = null
 var _well_pool: NodePool = null
 var _stage_portal: Node3D = null
+var _boss_hud: Control = null
 var _dropped_items: Array[Node3D] = []
 var _drop_angle_cursor: int = 0
 
@@ -62,9 +64,14 @@ var _total_waves_in_room: int = 3
 var _waiting_for_next_wave: bool = false
 var _next_wave_delay_timer: float = 0.0
 var _arenas_cleared_count: int = 0
+var _stage_depth: int = 0
+var _run_rooms_cleared: int = 0
+var _elites_encountered: int = 0
+var _current_biome_id: int = 0
 var _total_wave_enemies: int = 0
 var _remaining_enemies: int = 0
 var _next_enemy_id: int = 1
+var _pending_enemy_specs: Dictionary = {}
 var _active_barriers: Array[VineBarrier] = []
 var _check_accum: float = 0.0
 var _rng := RandomNumberGenerator.new()
@@ -73,6 +80,58 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	_rng.randomize()
 	_setup_pools()
+	call_deferred("_setup_boss_hud")
+
+
+func _setup_boss_hud() -> void:
+	if _boss_hud != null and is_instance_valid(_boss_hud):
+		return
+	var hud_parent: Node = get_parent().get_node_or_null("HUD") if get_parent() else null
+	if hud_parent == null:
+		var fallback_layer := CanvasLayer.new()
+		fallback_layer.name = "BossHudLayer"
+		fallback_layer.layer = 2
+		add_child(fallback_layer)
+		hud_parent = fallback_layer
+	_boss_hud = BossHealthHudScript.new() as Control
+	_boss_hud.name = "BossHealthHud"
+	hud_parent.add_child(_boss_hud)
+
+
+func _clear_boss_hud() -> void:
+	if _boss_hud != null and is_instance_valid(_boss_hud):
+		_boss_hud.call("clear_boss")
+
+
+## Resets cross-stage run escalation counters (called on fresh runs or test setup).
+func reset_run_progression() -> void:
+	_stage_depth = 0
+	_run_rooms_cleared = 0
+	_elites_encountered = 0
+
+
+func _is_fresh_run_party() -> bool:
+	var net_mgr: Node = get_tree().root.get_node_or_null("NetworkManager") if is_inside_tree() else null
+	if net_mgr != null and int(net_mgr.get("active_biome_id")) != 0:
+		return false
+	if players_container == null or not is_instance_valid(players_container):
+		return _run_rooms_cleared == 0
+	for i in range(players_container.get_child_count()):
+		var p_node: Node = players_container.get_child(i)
+		if p_node == null:
+			continue
+		if p_node.has_method("get_stats_component"):
+			var st: Object = p_node.call("get_stats_component") as Object
+			if st != null and (float(st.get("attack_damage")) > 10.1 or float(st.get("ability_power")) > 10.1):
+				return false
+		var ab_slots: Variant = p_node.get("ability_slots")
+		if ab_slots is Array and not (ab_slots as Array).is_empty():
+			for ab_v in (ab_slots as Array):
+				if int(ab_v) != 0:
+					return false
+		if int(p_node.get("artifact_id")) != 0:
+			return false
+	return true
 
 
 func _setup_pools() -> void:
@@ -304,8 +363,20 @@ func _on_pedestal_interacted(pedestal: Node3D, player_node: Node) -> void:
 
 ## Rebuilds room state tables, inset trigger zones, and bridge gate anchors for a generated graph
 func setup_for_graph(graph: PlainsGraph, map_seed: int = 0) -> void:
+	var had_progress: bool = (_arenas_cleared_count > 0 or _run_rooms_cleared > 0)
 	_setup_pools()
 	reset_active_encounter()
+	var pw_node: Node = get_parent().get_node_or_null("ProceduralWorld") if get_parent() else null
+	if pw_node != null and "current_biome_id" in pw_node:
+		_current_biome_id = int(pw_node.get("current_biome_id"))
+	else:
+		var net_mgr: Node = get_tree().root.get_node_or_null("NetworkManager") if is_inside_tree() else null
+		_current_biome_id = int(net_mgr.get("active_biome_id")) if net_mgr != null else 0
+
+	if _is_fresh_run_party():
+		reset_run_progression()
+	elif had_progress:
+		_stage_depth += 1
 	if _pedestal_pool:
 		_pedestal_pool.release_all()
 	if _well_pool:
@@ -517,6 +588,7 @@ func reset_active_encounter(mark_current_cleared: bool = false) -> void:
 		if mark_current_cleared:
 			_room_states[_locked_area_idx] = RoomState.CLEARED
 			_arenas_cleared_count += 1
+			_run_rooms_cleared += 1
 		else:
 			_room_states[_locked_area_idx] = RoomState.UNVISITED
 	_locked_area_idx = -1
@@ -526,7 +598,9 @@ func reset_active_encounter(mark_current_cleared: bool = false) -> void:
 	_next_wave_delay_timer = 0.0
 	_remaining_enemies = 0
 	_total_wave_enemies = 0
+	_pending_enemy_specs.clear()
 	_active_barriers.clear()
+	_clear_boss_hud()
 
 	if _telegraph_pool:
 		_telegraph_pool.release_all()
@@ -652,6 +726,7 @@ func _advance_to_next_wave() -> void:
 	var next_specs: Array[Dictionary] = _build_wave_manifest(area, next_wave, _total_waves_in_room)
 	if next_specs.is_empty():
 		_arenas_cleared_count += 1
+		_run_rooms_cleared += 1
 		if multiplayer.has_multiplayer_peer():
 			_rpc_clear_encounter.rpc(_locked_area_idx)
 		else:
@@ -696,6 +771,7 @@ func _begin_wave_telegraphs(area_idx: int, wave_specs: Array) -> void:
 	for spec_var in wave_specs:
 		var spec: Dictionary = spec_var as Dictionary
 		var eid: int = int(spec["id"])
+		_pending_enemy_specs[eid] = spec
 		var arch_id: int = int(spec["arch"])
 		var spos: Vector3 = spec["pos"] as Vector3
 		var arch_data: EnemyArchetypeData = ArchetypeScript.get_archetype(arch_id)
@@ -733,6 +809,23 @@ func _spawn_pooled_enemy(
 		enemy.defeated.connect(_on_enemy_defeated)
 	enemy.activate(p_enemy_id, p_area_idx, p_arch_id, p_spawn_pos, players_container)
 
+	var spec: Dictionary = _pending_enemy_specs.get(p_enemy_id, {}) as Dictionary
+	_pending_enemy_specs.erase(p_enemy_id)
+	if not spec.is_empty():
+		var bars: int = int(spec.get("bars", 1))
+		var bar_hp: float = float(spec.get("bar_hp", 0.0))
+		var armor: float = float(spec.get("armor", 0.0))
+		var gate_s: float = float(spec.get("phase_gate", 0.0))
+		var is_el: bool = bool(spec.get("is_elite", false))
+		if bar_hp > 0.0 and (bars > 1 or armor > 0.0 or is_el or ArchetypeScript.is_boss_archetype(p_arch_id)):
+			enemy.configure_elite_or_boss(bar_hp, bars, armor, gate_s, is_el)
+		elif bar_hp > 0.0 and enemy.health_comp != null:
+			enemy.health_comp.setup_max_health(bar_hp)
+
+	if ArchetypeScript.is_boss_archetype(p_arch_id) and _boss_hud != null and is_instance_valid(_boss_hud):
+		var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(p_arch_id)
+		_boss_hud.call("bind_boss", enemy, arch_d.display_name, ArchetypeScript.get_boss_epithet(p_arch_id))
+
 
 func _on_enemy_defeated(_enemy_id: int, p_area_idx: int) -> void:
 	if p_area_idx != _locked_area_idx:
@@ -754,6 +847,7 @@ func _on_enemy_defeated(_enemy_id: int, p_area_idx: int) -> void:
 				_rpc_notify_wave_incoming(p_area_idx, _current_wave_idx + 1, _total_waves_in_room)
 		else:
 			_arenas_cleared_count += 1
+			_run_rooms_cleared += 1
 			if multiplayer.has_multiplayer_peer():
 				_rpc_clear_encounter.rpc(p_area_idx)
 			else:
@@ -771,6 +865,8 @@ func _rpc_clear_encounter(area_idx: int) -> void:
 	_waiting_for_next_wave = false
 	_next_wave_delay_timer = 0.0
 	_remaining_enemies = 0
+	_pending_enemy_specs.clear()
+	_clear_boss_hud()
 
 	for barrier in _active_barriers:
 		if barrier and is_instance_valid(barrier):
@@ -873,7 +969,7 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 				archetypes.append(ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 			else:
-				var boss_arch: int = ArchetypeScript.ArchetypeId.BOSS if ((area.index + _rng.randi()) % 2 == 0) else ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
+				var boss_arch: int = _pick_biome_boss(area.index)
 				archetypes.append(boss_arch)
 				archetypes.append(ArchetypeScript.ArchetypeId.BURROWER)
 				archetypes.append(ArchetypeScript.ArchetypeId.DASHER)
@@ -907,6 +1003,17 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 					archetypes.append(ArchetypeScript.ArchetypeId.OCULAR_SNIPER if (area.index % 2 == 0) else ArchetypeScript.ArchetypeId.MIRE_LOBBER)
 				archetypes.append(ArchetypeScript.ArchetypeId.BRUISER)
 
+	var active_players: int = maxi(1, players_container.get_child_count()) if (players_container != null and is_instance_valid(players_container)) else 1
+	var coop_mult: float = 1.0 + 0.35 * float(active_players - 1)
+	var depth_mult: float = 1.0 + 0.32 * float(_stage_depth) + 0.04 * float(_run_rooms_cleared)
+	var prog_mult: float = coop_mult * depth_mult
+
+	var allow_elite_anchor: bool = (
+		area.role == AreaPresetScript.RoomRole.ELITE
+		or (is_final_wave and (area.role == AreaPresetScript.RoomRole.HUB or area.role == AreaPresetScript.RoomRole.DEADEND))
+	)
+	var elite_assigned_in_wave: bool = false
+
 	var chosen_pts: Array[Vector2] = []
 	var manifest: Array[Dictionary] = []
 
@@ -915,13 +1022,60 @@ func _build_wave_manifest(area: PlainsGraph.AreaData, wave_idx: int, total_waves
 		chosen_pts.append(pt2d)
 		var eid: int = _next_enemy_id
 		_next_enemy_id += 1
+
+		var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(arch_id)
+		var spec_bars: int = 1
+		var spec_bar_hp: float = arch_d.max_hp * depth_mult
+		var spec_armor: float = 0.0
+		var spec_gate: float = 0.0
+		var spec_is_elite: bool = false
+
+		if ArchetypeScript.is_boss_archetype(arch_id):
+			spec_bars = 4 if _stage_depth >= 2 else 3
+			spec_bar_hp = arch_d.max_hp * prog_mult
+			spec_armor = arch_d.max_hp * 0.35 * prog_mult
+			spec_gate = 1.15
+		elif allow_elite_anchor and not elite_assigned_in_wave and arch_id == ArchetypeScript.ArchetypeId.BRUISER:
+			elite_assigned_in_wave = true
+			spec_is_elite = true
+			if _elites_encountered == 0:
+				# Explicit design rule: First Elite stays a clean 1-bar unit with no extra armor bars!
+				spec_bars = 1
+				spec_bar_hp = 175.0 * prog_mult
+				spec_armor = 0.0
+			else:
+				spec_bars = 3 if _stage_depth >= 2 else 2
+				spec_bar_hp = 135.0 * prog_mult
+				spec_armor = 85.0 * prog_mult
+			_elites_encountered += 1
+
 		manifest.append({
 			"id": eid,
 			"arch": arch_id,
-			"pos": Vector3(pt2d.x, 0.0, pt2d.y)
+			"pos": Vector3(pt2d.x, 0.0, pt2d.y),
+			"bars": spec_bars,
+			"bar_hp": spec_bar_hp,
+			"armor": spec_armor,
+			"phase_gate": spec_gate,
+			"is_elite": spec_is_elite,
+			"biome": _current_biome_id
 		})
 
 	return manifest
+
+
+func _pick_biome_boss(area_idx: int) -> int:
+	match _current_biome_id:
+		1:
+			return ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON
+		2:
+			return ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER
+		3:
+			return ArchetypeScript.ArchetypeId.BOSS
+		4:
+			return ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER if ((area_idx + _rng.randi()) % 2 == 0) else ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
+		_:
+			return ArchetypeScript.ArchetypeId.BOSS if ((area_idx + _rng.randi()) % 2 == 0) else ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER
 
 
 func _sample_safe_spawn_point(
