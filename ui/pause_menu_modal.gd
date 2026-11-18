@@ -25,6 +25,10 @@ const COL_SOLO_ACCENT := Color(0.52, 0.90, 1.0, 1.0)
 const COL_MULTI_ACCENT := Color(1.0, 0.72, 0.38, 1.0)
 const COL_DANGER_ACCENT := Color(0.98, 0.42, 0.48, 0.92)
 
+const URL_GITHUB := "https://github.com/AllanWang/Into-the-Wild"
+const URL_GAME_PAGE := "https://allanwang.github.io/Into-the-Wild/"
+const URL_ATTRIBUTIONS := "https://github.com/AllanWang/Into-the-Wild/blob/main/Attribution.md"
+
 var _panel_style: StyleBoxFlat = null
 var _status_badge_lbl: Label = null
 var _title_lbl: Label = null
@@ -261,6 +265,31 @@ func _build_ui() -> void:
 		main_menu_requested.emit()
 	)
 	vb.add_child(_menu_btn)
+
+	var links_sep := ColorRect.new()
+	links_sep.custom_minimum_size = Vector2(0.0, 1.0)
+	links_sep.color = COL_IVORY_LINE
+	vb.add_child(links_sep)
+
+	var links_row := HBoxContainer.new()
+	links_row.name = "LinksRow"
+	links_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	links_row.add_theme_constant_override("separation", 6)
+	vb.add_child(links_row)
+	_add_external_link_button(links_row, "GitHubLinkButton", "GitHub", URL_GITHUB)
+	_add_external_link_button(links_row, "GamePageLinkButton", "Game Page", URL_GAME_PAGE)
+	_add_external_link_button(links_row, "AttributionsLinkButton", "Attributions", URL_ATTRIBUTIONS)
+
+
+func _add_external_link_button(parent: Control, btn_name: String, label_text: String, target_url: String) -> void:
+	var btn := _make_menu_button(btn_name, label_text, false, false, 26.0, 11)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.add_theme_color_override("font_color", COL_IVORY_MUTED)
+	btn.tooltip_text = target_url
+	btn.pressed.connect(func() -> void:
+		OS.shell_open(target_url)
+	)
+	parent.add_child(btn)
 
 
 func _add_debug_action(parent: Control, btn_name: String, label_text: String, sig: Signal) -> void:

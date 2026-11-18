@@ -55,4 +55,12 @@ The stylized water shader architecture, depth gradient transitions, and edge foa
 
 ## 5. Project Code & Multiplayer Integration
 
-All game networking, RPC player synchronization, character interaction managers, and lobby UI code written for this project are licensed under the [MIT License](https://opensource.org/licenses/MIT).
+All game networking (`NetworkManager`, transport providers), RPC player synchronization, procedural world/combat systems, and UI code written for **Into the Wild** are licensed under the [MIT License](https://opensource.org/licenses/MIT).
+
+---
+
+## 6. Game Engine
+
+- **Godot Engine (4.7.x)**:
+  - Used to build and export **Into the Wild** (Desktop & static WebGL 2.0 / WebAssembly builds), including bundled third-party components.
+  - Licensed under the [MIT License](https://godotengine.org/license).

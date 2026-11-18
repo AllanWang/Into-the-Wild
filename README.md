@@ -1,6 +1,12 @@
 # Into the Wild
 
-A stylized 2.5D isometric action roguelike built in Godot 4 featuring procedural arena webs, biome-tuned hazards, solo static-Web play ([play online](https://allanwang.github.io/Into-the-Wild/)), and desktop co-op multiplayer via `ENetMultiplayerPeer`.
+## Overview
+
+A stylized 2.5D isometric action roguelike built in **Godot 4.7** featuring 5 painterly biomes (*Verdant Meadow*, *Glacial Frostfield*, *Astral Constellation*, *Volcanic Caldera*, and *Arcane Anomaly*), procedural arena & bridge webs, dual-weapon + slottable shard + ability/artifact combat, *Hades*-inspired armored elites and multi-phase bosses, zero-header WebAssembly solo play, and desktop co-op multiplayer via `ENetMultiplayerPeer`.
+
+- **Live Web Game (Solo):** https://allanwang.github.io/Into-the-Wild/
+- **GitHub Repository:** https://github.com/AllanWang/Into-the-Wild
+- **Third-Party Attributions:** [Attribution.md](Attribution.md) | **License:** [MIT](LICENSE)
 
 ---
 

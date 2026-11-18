@@ -81,7 +81,7 @@ func _build_ui() -> void:
 
 	var outer := PanelContainer.new()
 	outer.name = "TutorialCard"
-	outer.custom_minimum_size = Vector2(780.0, 340.0)
+	outer.custom_minimum_size = Vector2(780.0, 368.0)
 	outer.mouse_filter = Control.MOUSE_FILTER_STOP
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = COL_PANEL_BG
@@ -148,6 +148,14 @@ func _build_ui() -> void:
 		+ "Weapon Shards add on-hit effects to whichever weapon holds them.\n\n"
 		+ "Healing Wells restore 45% Max HP (2 charges) and remain open if you backtrack."
 	))
+
+	var attr_lbl := Label.new()
+	attr_lbl.name = "AttributionNoteLabel"
+	attr_lbl.text = "Shaders & Grass Art: Dylearn, IronWarrior, atzuk4451  ·  Built with Godot Engine (MIT) — see Attribution.md"
+	attr_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	attr_lbl.add_theme_font_size_override("font_size", 11)
+	attr_lbl.add_theme_color_override("font_color", COL_IVORY_MUTED)
+	root_vbox.add_child(attr_lbl)
 
 	var footer := HBoxContainer.new()
 	footer.alignment = BoxContainer.ALIGNMENT_CENTER
