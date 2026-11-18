@@ -10,8 +10,9 @@ config_version=5
 
 [application]
 
-config/name="Godot AI"
+config/name="Into the Wild"
 run/main_scene="res://ui/lobby.tscn"
+run/main_scene.web="res://Main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
@@ -128,6 +129,7 @@ common/physics_interpolation=true
 
 rendering_device/driver.windows="d3d12"
 anti_aliasing/quality/msaa_3d=2
+textures/vram_compression/import_etc2_astc=true
 
 [shader_globals]
 

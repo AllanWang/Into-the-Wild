@@ -46,7 +46,7 @@ theme_override_constants/separation = 12
 [node name="Title" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/MainVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-text = "2.5D MULTIPLAYER LOBBY"
+text = "INTO THE WILD"
 horizontal_alignment = 1
 
 [node name="HSeparator" type="HSeparator" parent="CenterContainer/PanelContainer/MarginContainer/MainVBox"]

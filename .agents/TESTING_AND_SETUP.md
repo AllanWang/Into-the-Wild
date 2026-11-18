@@ -22,13 +22,13 @@ If there are parse errors, cyclic dependencies, missing scripts, or invalid scen
 
 ## 3. Multi-Instance Testing Workflow
 The project includes automated scripts for multi-instance multiplayer testing:
-- **PowerShell**: [`launch_multiplayer_test.ps1`](file:///c:/Users/user7/PA/Godot-AI/launch_multiplayer_test.ps1)
-- **Batch**: [`launch_multiplayer_test.bat`](file:///c:/Users/user7/PA/Godot-AI/launch_multiplayer_test.bat)
+- **PowerShell**: [`launch_multiplayer_test.ps1`](file:///c:/Users/user7/PA/Into-the-Wild/launch_multiplayer_test.ps1)
+- **Batch**: [`launch_multiplayer_test.bat`](file:///c:/Users/user7/PA/Into-the-Wild/launch_multiplayer_test.bat)
 
 ### Dynamic Window Placement System (`debug_tools.gd`)
 We implemented an automatic port-probing grid layout based on [Godot Proposal #10262](https://github.com/godotengine/godot-proposals/issues/10262#issuecomment-2756914788):
 1. **Instance ID Discovery**:
-   - Autoload [`debug_tools.gd`](file:///c:/Users/user7/PA/Godot-AI/debug_tools.gd) loops through local TCP ports `5920, 5921, 5922, ...` and attempts `server.listen(port)`.
+   - Autoload [`debug_tools.gd`](file:///c:/Users/user7/PA/Into-the-Wild/debug_tools.gd) loops through local TCP ports `5920, 5921, 5922, ...` and attempts `server.listen(port)`.
    - The first available port becomes that instance's assigned port and unique `instance_index`.
 2. **Desktop Grid Snapping**:
    - Probes active instances and queries `DisplayServer.screen_get_usable_rect()` to avoid overlapping the Windows taskbar.

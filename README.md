@@ -1,6 +1,6 @@
-# 3D Stylized Pixel Art Grass Multiplayer Game
+# Into the Wild
 
-A multiplayer Godot 4 game featuring a stylized 3D pixel-art grass meadow with locked 2.5D orthogonal perspective, multiplayer lobby, and RPC-based player synchronization.
+A stylized 2.5D isometric action roguelike built in Godot 4 featuring procedural arena webs, biome-tuned hazards, solo static-Web play ([play online](https://allanwang.github.io/Into-the-Wild/)), and desktop co-op multiplayer via `ENetMultiplayerPeer`.
 
 ---
 
@@ -11,7 +11,7 @@ This project builds on open-source shaders, tutorials, and assets from the Godot
 - **Stylized Toon Water**: Inspired by [IronWarrior (Erik Roystan Ross)](https://github.com/IronWarrior/ToonWaterShader).
 - **Toon Shading Foundation**: Adapted from [atzuk4451's Flexible Toon Shader](https://godotshaders.com/shader/flexible-toon-shader-godot-4/).
 
-See [**`Attribution.md`**](file:///c:/Users/user7/PA/Godot-AI/Attribution.md) for full licensing information, author credits, and original project links.
+See [**`Attribution.md`**](Attribution.md) for full licensing information, author credits, and original project links.
 
 ---
 

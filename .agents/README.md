@@ -1,18 +1,18 @@
-# Godot AI Project Agent System
+# Into the Wild — Project Agent System
 
-Welcome to the `.agents` documentation and reference hub for **Godot AI**.
+Welcome to the `.agents` documentation and reference hub for **Into the Wild**.
 
-This project is a Godot 4 multiplayer game with dynamic multi-instance grid layout debugging, ENet multiplayer networking, and component-based 2D/2.5D gameplay.
+This project is a Godot 4 action roguelike with dynamic multi-instance grid layout debugging, ENet multiplayer networking, solo static Web export (`OfflineMultiplayerPeer`), and component-based 2.5D gameplay.
 
 ## Reference Directory
 
 | Document / Skill | Purpose |
 | :--- | :--- |
-| [`.agents/GODOT_RULES.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/GODOT_RULES.md) | Godot 4 syntax rules, static typing guidelines, signal bus & component patterns. |
-| [`.agents/TESTING_AND_SETUP.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/TESTING_AND_SETUP.md) | Headless test execution, local Godot binary path, and multi-instance grid launch scripts. |
-| [`.agents/SUBAGENT_WORKFLOWS.md`](file:///c:/Users/user7/PA/Godot-AI/.agents/SUBAGENT_WORKFLOWS.md) | Role specifications for decomposing complex features into isolated subagent tasks. |
-| [`game-feature`](file:///c:/Users/user7/PA/Godot-AI/.agents/skills/game-feature/SKILL.md) | 3-stage sequential feature creation pipeline (Discovery -> Design Plan -> Implementation & MCP Validation). |
-| [`setup-godot-ai-mcp`](file:///c:/Users/user7/PA/Godot-AI/.agents/skills/setup-godot-ai-mcp/SKILL.md) | Automated skill to install, configure, or update the Godot AI MCP server across fresh clones. |
+| [`.agents/GODOT_RULES.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/GODOT_RULES.md) | Godot 4 syntax rules, static typing guidelines, signal bus & component patterns. |
+| [`.agents/TESTING_AND_SETUP.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/TESTING_AND_SETUP.md) | Headless test execution, local Godot binary path, and multi-instance grid launch scripts. |
+| [`.agents/SUBAGENT_WORKFLOWS.md`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/SUBAGENT_WORKFLOWS.md) | Role specifications for decomposing complex features into isolated subagent tasks. |
+| [`game-feature`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/skills/game-feature/SKILL.md) | 3-stage sequential feature creation pipeline (Discovery -> Design Plan -> Implementation & MCP Validation). |
+| [`setup-godot-ai-mcp`](file:///c:/Users/user7/PA/Into-the-Wild/.agents/skills/setup-godot-ai-mcp/SKILL.md) | Automated skill to install, configure, or update the Godot AI MCP server across fresh clones. |
 
 ## Verification & Quick Commands
 

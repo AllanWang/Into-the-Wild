@@ -1,6 +1,6 @@
 # Stylized Grass Shader & Procedural Terrain Architecture Guide
 
-This guide breaks down how the stylized grass rendering pipeline works in **Godot-AI**, explains the optical illusion behind the painterly meadow look, analyzes why expanding the map to procedural sections disrupted the texture, and details how the "unified plain and cropping" architecture solves it.
+This guide breaks down how the stylized grass rendering pipeline works in **Into the Wild**, explains the optical illusion behind the painterly meadow look, analyzes why expanding the map to procedural sections disrupted the texture, and details how the "unified plain and cropping" architecture solves it.
 
 ---
 
@@ -56,8 +56,8 @@ Both shaders sample the exact same mathematical noise functions at the exact sam
 
 ### The Two Coupled Shaders
 The visual system depends on strict lockstep coordination between:
-- [`shaders/Floor.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Floor.gdshader): Renders the flat ground.
-- [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Grass.gdshader): Renders the grass blade billboards.
+- [`shaders/Floor.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Floor.gdshader): Renders the flat ground.
+- [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Grass.gdshader): Renders the grass blade billboards.
 
 ### Color Palettes and Noise Thresholding
 Both shaders define three color variables:
@@ -66,10 +66,10 @@ Both shaders define three color variables:
 - **`albedo3` (Medium Green Patch)**: Olive / meadow green (`#80A739` / `RGB: 128, 167, 57`).
 
 Two continuous 2D `FastNoiseLite` textures control where these colors appear:
-- [`assets/Albedo2Noise.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/Albedo2Noise.tres) (`frequency = 0.0046`, seamless)
-- [`assets/Albedo3Noise.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/Albedo3Noise.tres) (`frequency = 0.0052`, seamless)
+- [`assets/Albedo2Noise.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/Albedo2Noise.tres) (`frequency = 0.0046`, seamless)
+- [`assets/Albedo3Noise.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/Albedo3Noise.tres) (`frequency = 0.0052`, seamless)
 
-In both [`Floor.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Floor.gdshader#L48-L56) and [`Grass.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Grass.gdshader#L313-L320):
+In both [`Floor.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Floor.gdshader#L48-L56) and [`Grass.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Grass.gdshader#L313-L320):
 ```glsl
 float albedo2_noise_tex = texture(albedo2_noise, (pos.xz + noise_offset) * albedo2_scale).r;
 float albedo3_noise_tex = texture(albedo3_noise, (pos.xz + noise_offset) * albedo3_scale).r;
@@ -100,9 +100,9 @@ The central question: **Why does Area 1 look like a clean, soft painterly painti
    - **This physical overlap creates the "teeth" / "grassy lines" along patch edges.** They are not drawn on a texture; they are the 3D silhouettes of light grass tufts popping against darker ground behind them.
 
 ### The Role of `grassleaf.png` and Silhouette Rendering
-The texture [`assets/grassleaf.png`](file:///c:/Users/user7/PA/Godot-AI/assets/grassleaf.png) is a small 24x24 pixel monochrome mask containing three grass blade shapes with an alpha channel.
+The texture [`assets/grassleaf.png`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grassleaf.png) is a small 24x24 pixel monochrome mask containing three grass blade shapes with an alpha channel.
 
-Look at the difference in how colors are assigned in [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Grass.gdshader#L315-L320):
+Look at the difference in how colors are assigned in [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Grass.gdshader#L315-L320):
 ```glsl
 ALBEDO = albedo1.rgb * albedo_tex.rgb; // Base: Multiplied by grassleaf.png
 if (albedo2_noise_tex > albedo2_threshold) {
@@ -121,7 +121,7 @@ ALPHA = albedo_tex.a;                  // Cutout quad shape
 
 ## 3. Why Procedural Areas and Bridges Lost the Texture
 
-When we expanded from a single isolated map to connected rooms and bridges in [`world/procedural_world.gd`](file:///c:/Users/user7/PA/Godot-AI/world/procedural_world.gd), the visual consistency broke. Here is why:
+When we expanded from a single isolated map to connected rooms and bridges in [`world/procedural_world.gd`](file:///c:/Users/user7/PA/Into-the-Wild/world/procedural_world.gd), the visual consistency broke. Here is why:
 
 ### 1. World-Space Continuous Noise vs. Disjoint Meshes
 In the shaders, noise is sampled using **world coordinates**:
@@ -147,11 +147,11 @@ World Z Coordinate:
 ### 2. Billboard Normal & Toon Lighting Discrepancies
 Why did `albedo1` look like a swarm of dark leaves instead of a flat dark floor?
 - The floor plane normal points **straight up** (`(0, 1, 0)`).
-- The grass quad normals are billboarded to **face the camera** in [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Grass.gdshader#L265-L270).
+- The grass quad normals are billboarded to **face the camera** in [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Grass.gdshader#L265-L270).
 - Because the surfaces face different directions, Godot's directional light and toon stepped shading (`cuts = 3`) hit the floor and the grass quads differently. In `albedo2` or `albedo3`, the bright colors overwhelm this difference. In `albedo1`, the blades cast high-contrast dark silhouettes against the ground.
 
 ### 3. Pre-Baked MultiMesh vs. Procedural Foliage
-- **Area 1 & Area 2** use [`assets/grass_multimesh.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/grass_multimesh.tres). This is a pre-baked Godot resource containing exactly 30,000 instance transforms distributed across a 25m x 25m footprint.
+- **Area 1 & Area 2** use [`assets/grass_multimesh.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grass_multimesh.tres). This is a pre-baked Godot resource containing exactly 30,000 instance transforms distributed across a 25m x 25m footprint.
 - Because a bridge is narrow ($6\text{m} \times 11\text{m}$), we could not use `grass_multimesh.tres` directly without blades spilling into the water. The bridge had to use a procedurally generated `MultiMesh` via `_create_foliage_multimesh()`.
 - Discrepancies in quad distribution, density (48 blades/$m^2$), and random seed made the bridge foliage contrast even more with the hand-tuned pre-baked layout.
 
@@ -165,7 +165,7 @@ Why did `albedo1` look like a swarm of dark leaves instead of a flat dark floor?
 This intuition is **architecturally optimal for stylized 2.5D games**. Rather than stitching disjoint rectangular meshes together and hoping world noise aligns nicely, the world is treated as one continuous canvas, and map information (rooms, corridors, water) is applied as a **geometric or shader crop**.
 
 ### How the Pond Exclusion Already Proved This
-The spawn pond in Area 1 already used this exact cropping technique. In [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Grass.gdshader#L273-L280):
+The spawn pond in Area 1 already used this exact cropping technique. In [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Grass.gdshader#L273-L280):
 
 ```glsl
 // Exclude grass blades from inside the organic water pool
@@ -216,13 +216,13 @@ If keeping separate meshes for rooms and bridges:
 - **Result**: 100% continuous grass and floor with organic shorelines and zero mesh seams.
 
 #### Approach C: Low-Frequency Noise Calibration
-- Adjust the noise frequencies in [`assets/Albedo2Noise.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/Albedo2Noise.tres) and [`assets/Albedo3Noise.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/Albedo3Noise.tres) so the wave period is much larger than individual rooms ($> 100\text{m}$ instead of $\approx 10\text{m}$).
+- Adjust the noise frequencies in [`assets/Albedo2Noise.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/Albedo2Noise.tres) and [`assets/Albedo3Noise.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/Albedo3Noise.tres) so the wave period is much larger than individual rooms ($> 100\text{m}$ instead of $\approx 10\text{m}$).
 - Lower the thresholds on corridor sections so corridors are guaranteed to carry the bright meadow path through them.
 
 #### Approach D: MultiMesh Instance Cropping (The Implemented Solution)
 Rather than writing synthetic generator algorithms for non-standard section shapes:
-1. Retain the **exact original materials** ([`assets/floor_material.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/floor_material.tres) and [`assets/grass_material.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/grass_material.tres)) with zero noise offsets across all rooms and bridges.
-2. For connecting bridges or irregular corridors, **crop instance transforms directly** from [`assets/grass_multimesh.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/grass_multimesh.tres) using bounding volume bounds (`crop_rect`).
+1. Retain the **exact original materials** ([`assets/floor_material.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/floor_material.tres) and [`assets/grass_material.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grass_material.tres)) with zero noise offsets across all rooms and bridges.
+2. For connecting bridges or irregular corridors, **crop instance transforms directly** from [`assets/grass_multimesh.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grass_multimesh.tres) using bounding volume bounds (`crop_rect`).
 3. This guarantees:
    - 100% identical quad mesh geometry, dimensions ($0.2\text{m} \times 0.3\text{m}$), and alternating crossed-quad basis.
    - 100% identical blade density ($48\text{ blades/m}^2$).
@@ -233,21 +233,21 @@ Rather than writing synthetic generator algorithms for non-standard section shap
 ## 5. Relevant Codebase References
 
 ### Shaders
-- [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Grass.gdshader): MultiMesh grass blade vertex billboarding, wind animation, character displacement, and noise thresholding.
-- [`shaders/Floor.gdshader`](file:///c:/Users/user7/PA/Godot-AI/shaders/Floor.gdshader): Ground toon shading, noise patch sampling, and pond shoreline blending.
-- [`shaders/clouds.gdshaderinc`](file:///c:/Users/user7/PA/Godot-AI/shaders/clouds.gdshaderinc): Cloud shadow projection included by both shaders.
+- [`shaders/Grass.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Grass.gdshader): MultiMesh grass blade vertex billboarding, wind animation, character displacement, and noise thresholding.
+- [`shaders/Floor.gdshader`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/Floor.gdshader): Ground toon shading, noise patch sampling, and pond shoreline blending.
+- [`shaders/clouds.gdshaderinc`](file:///c:/Users/user7/PA/Into-the-Wild/shaders/clouds.gdshaderinc): Cloud shadow projection included by both shaders.
 
 ### Materials & Resources
-- [`assets/grass_material.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/grass_material.tres): Grass material uniforms (`albedo1`, `albedo2`, `albedo3`, thresholds).
-- [`assets/floor_material.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/floor_material.tres): Ground material uniforms.
-- [`assets/grass_multimesh.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/grass_multimesh.tres): Pre-baked 30,000 instance MultiMesh for $25\text{m} \times 25\text{m}$ areas.
-- [`assets/grassleaf.png`](file:///c:/Users/user7/PA/Godot-AI/assets/grassleaf.png): 24x24 monochrome grass blade cutout texture.
-- [`assets/Albedo2Noise.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/Albedo2Noise.tres): Light green patch noise.
-- [`assets/Albedo3Noise.tres`](file:///c:/Users/user7/PA/Godot-AI/assets/Albedo3Noise.tres): Medium green patch noise.
+- [`assets/grass_material.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grass_material.tres): Grass material uniforms (`albedo1`, `albedo2`, `albedo3`, thresholds).
+- [`assets/floor_material.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/floor_material.tres): Ground material uniforms.
+- [`assets/grass_multimesh.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grass_multimesh.tres): Pre-baked 30,000 instance MultiMesh for $25\text{m} \times 25\text{m}$ areas.
+- [`assets/grassleaf.png`](file:///c:/Users/user7/PA/Into-the-Wild/assets/grassleaf.png): 24x24 monochrome grass blade cutout texture.
+- [`assets/Albedo2Noise.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/Albedo2Noise.tres): Light green patch noise.
+- [`assets/Albedo3Noise.tres`](file:///c:/Users/user7/PA/Into-the-Wild/assets/Albedo3Noise.tres): Medium green patch noise.
 
 ### Procedural World & Runtime
-- [`world/procedural_world.gd`](file:///c:/Users/user7/PA/Godot-AI/world/procedural_world.gd): Area, bridge, collision barrier, and multimesh cropping implementation (`_crop_multimesh`).
-- [`main.gd`](file:///c:/Users/user7/PA/Godot-AI/main.gd): Camera controls, teleportation between sections, and player spawning.
+- [`world/procedural_world.gd`](file:///c:/Users/user7/PA/Into-the-Wild/world/procedural_world.gd): Area, bridge, collision barrier, and multimesh cropping implementation (`_crop_multimesh`).
+- [`main.gd`](file:///c:/Users/user7/PA/Into-the-Wild/main.gd): Camera controls, teleportation between sections, and player spawning.
 
 ### Visual Comparison Captures
 - [Three Sections Restored Comparison](file:///C:/Users/user7/.gemini/antigravity/brain/bfe54145-4c20-4a5f-8aa0-b508413ca89b/three_sections_restored_comparison.png): Side-by-side comparison of Area 1, Cardinal Bridge, and Area 2 with restored old terrain and cropped foliage.
