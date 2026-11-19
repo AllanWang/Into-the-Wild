@@ -1532,6 +1532,16 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 		var charge_spd: float = 16.8 if aid == ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON else 14.2
 		return _action_dir * (charge_spd * speed_mult)
 
+	if aid == ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER and boss_director != null and boss_director.has_method("is_vine_slam_active"):
+		var slam_or_pending: bool = bool(boss_director.call("is_vine_slam_active"))
+		if not slam_or_pending and boss_director.has_method("is_overgrowth_pending"):
+			slam_or_pending = bool(boss_director.call("is_overgrowth_pending"))
+		if slam_or_pending:
+			_ability_cd = maxf(_ability_cd, 1.4)
+			if dist > (_base_radius + 0.35):
+				return dir * (_archetype.move_speed * speed_mult * 0.65)
+			return Vector3.ZERO
+
 	_ability_cd -= delta * speed_mult * rate_mult
 	if _ability_cd <= 0.0:
 		var pat: int = _boss_pattern_idx % 3
@@ -1604,7 +1614,7 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 						_rpc_enemy_sightline(global_position, _action_dir, 9.8, 0.85, Color(1.0, 0.22, 0.30))
 
 			ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
-				# BLIGHTWEAVER CORE
+				# BRIARBLOOM MATRIARCH
 				match pat:
 					0:
 						_ability_cd = 4.2
@@ -1619,6 +1629,10 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 						_windup_duration_ref = 0.70
 						_pending_action_kind = 4
 					_:
+						if boss_director != null and boss_director.has_method("try_trigger_vine_slam"):
+							if bool(boss_director.call("try_trigger_vine_slam")):
+								_ability_cd = 1.6
+								return Vector3.ZERO
 						_ability_cd = 4.5
 						_windup_timer = 1.30
 						_windup_duration_ref = 1.30
@@ -1635,10 +1649,6 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 							Color(0.32, 0.94, 0.42),
 							0.68
 						)
-						if is_p2:
-							for off_deg in [-18.0, 18.0]:
-								var l_d: Vector3 = dir.rotated(Vector3.UP, deg_to_rad(off_deg))
-								_rpc_enemy_sightline(global_position, l_d, 20.0, 1.15, Color(0.42, 0.98, 0.64))
 
 			ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON:
 				# CRYO-ARCHON VALKYRIE

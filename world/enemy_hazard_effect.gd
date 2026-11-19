@@ -15,7 +15,8 @@ enum HazardMode {
 	DONUT_AFTERSHOCK = 3,
 	SNIPER_SIGHTLINE = 4,
 	CLOCK_SECTOR = 5,
-	CLOCK_SAFE_CIRCLE = 6
+	CLOCK_SAFE_CIRCLE = 6,
+	VINE_SLAM_RIBBON = 7
 }
 
 const HAZARD_SHADER: Shader = preload("res://shaders/EnemyHazard.gdshader")
@@ -45,6 +46,7 @@ var _safe_angle: float = 0.0
 var _safe_half_width: float = 0.567
 var _safe_world_pos: Vector3 = Vector3.ZERO
 var _safe_world_radius: float = 4.2
+var _ribbon_width: float = 2.6
 var _is_lance_orb: bool = false
 
 var outer_ring: MeshInstance3D = null
@@ -54,6 +56,8 @@ var orb_mesh: MeshInstance3D = null
 var beam_mesh: MeshInstance3D = null
 var spike_ring_root: Node3D = null
 var _spike_meshes: Array[MeshInstance3D] = []
+var whip_pivot: Node3D = null
+var whip_scale_node: Node3D = null
 
 var _ring_mat: StandardMaterial3D = null
 var _hazard_mat: ShaderMaterial = null
@@ -67,6 +71,10 @@ static var _shared_orb: SphereMesh = null
 static var _shared_lance: BoxMesh = null
 static var _shared_beam: BoxMesh = null
 static var _shared_spike_mesh: CylinderMesh = null
+static var _shared_whip_shaft: CylinderMesh = null
+static var _shared_whip_thorn: BoxMesh = null
+static var _shared_whip_bark_mat: StandardMaterial3D = null
+static var _shared_whip_thorn_mat: StandardMaterial3D = null
 
 
 static func _ensure_shared() -> void:
@@ -99,6 +107,28 @@ static func _ensure_shared() -> void:
 	_shared_spike_mesh.bottom_radius = 0.14
 	_shared_spike_mesh.height = 0.95
 	_shared_spike_mesh.radial_segments = 4
+
+	_shared_whip_shaft = CylinderMesh.new()
+	_shared_whip_shaft.top_radius = 0.08
+	_shared_whip_shaft.bottom_radius = 0.28
+	_shared_whip_shaft.height = 1.0
+	_shared_whip_shaft.radial_segments = 8
+
+	_shared_whip_thorn = BoxMesh.new()
+	_shared_whip_thorn.size = Vector3(0.52, 0.10, 0.24)
+
+	_shared_whip_bark_mat = StandardMaterial3D.new()
+	_shared_whip_bark_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	_shared_whip_bark_mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
+	_shared_whip_bark_mat.albedo_color = Color(0.12, 0.48, 0.18)
+	_shared_whip_bark_mat.roughness = 0.35
+	_shared_whip_bark_mat.emission_enabled = true
+	_shared_whip_bark_mat.emission = Color(0.06, 0.26, 0.08)
+	_shared_whip_bark_mat.emission_energy_multiplier = 0.75
+
+	_shared_whip_thorn_mat = StandardMaterial3D.new()
+	_shared_whip_thorn_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_shared_whip_thorn_mat.albedo_color = Color(0.76, 1.0, 0.32, 1.0)
 
 
 func _ready() -> void:
@@ -176,6 +206,34 @@ func _ensure_nodes() -> void:
 		spike_ring_root.add_child(sp)
 		_spike_meshes.append(sp)
 
+	whip_pivot = Node3D.new()
+	whip_pivot.name = "WhipPivot"
+	whip_pivot.position = Vector3(0.0, 0.16, 0.0)
+	whip_pivot.visible = false
+	add_child(whip_pivot)
+
+	whip_scale_node = Node3D.new()
+	whip_scale_node.name = "WhipScaleNode"
+	whip_pivot.add_child(whip_scale_node)
+
+	var shaft := MeshInstance3D.new()
+	shaft.name = "WhipShaft"
+	shaft.mesh = _shared_whip_shaft
+	shaft.material_override = _shared_whip_bark_mat
+	shaft.position = Vector3(0.0, 0.5, 0.0)
+	shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	whip_scale_node.add_child(shaft)
+
+	for t_i in range(5):
+		var thorn := MeshInstance3D.new()
+		thorn.name = "WhipThorn_%d" % t_i
+		thorn.mesh = _shared_whip_thorn
+		thorn.material_override = _shared_whip_thorn_mat
+		thorn.position = Vector3(0.0, 0.18 + float(t_i) * 0.18, 0.0)
+		thorn.rotation_degrees = Vector3(0.0, 35.0 if (t_i % 2 == 0) else -35.0, 0.0)
+		thorn.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		whip_scale_node.add_child(thorn)
+
 	_ray_query = PhysicsRayQueryParameters3D.new()
 	_ray_query.collision_mask = 1 # World walls & VineBarriers only
 	_ray_query.collide_with_bodies = true
@@ -192,8 +250,12 @@ func deactivate() -> void:
 	set_process(false)
 	set_physics_process(false)
 	visible = false
+	if fill_disc:
+		fill_disc.position = Vector3.ZERO
 	if spike_ring_root:
 		spike_ring_root.visible = false
+	if whip_pivot:
+		whip_pivot.visible = false
 
 
 func activate_orb(
@@ -223,8 +285,11 @@ func activate_orb(
 	outer_ring.visible = false
 	inner_ring.visible = false
 	fill_disc.visible = false
+	fill_disc.position = Vector3.ZERO
 	beam_mesh.visible = false
 	spike_ring_root.visible = false
+	if whip_pivot:
+		whip_pivot.visible = false
 	orb_mesh.visible = true
 	orb_mesh.mesh = (_shared_lance as Mesh) if p_is_lance else (_shared_orb as Mesh)
 	orb_mesh.position = Vector3.ZERO
@@ -264,8 +329,11 @@ func activate_sightline(
 	outer_ring.visible = false
 	inner_ring.visible = false
 	fill_disc.visible = false
+	fill_disc.position = Vector3.ZERO
 	orb_mesh.visible = false
 	spike_ring_root.visible = false
+	if whip_pivot:
+		whip_pivot.visible = false
 	beam_mesh.visible = true
 	beam_mesh.scale = Vector3(1.0, 1.0, _max_range)
 	beam_mesh.position = Vector3(0.0, 0.32, -_max_range * 0.5)
@@ -322,6 +390,8 @@ func activate_ground_hazard(
 	inner_ring.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
+	if whip_pivot:
+		whip_pivot.visible = false
 
 	var in_ratio: float = (_inner_radius / _radius) if (_mode == HazardMode.DONUT_AFTERSHOCK and _inner_radius > 0.2) else 0.0
 	_hazard_mat.set_shader_parameter("hazard_color", p_color)
@@ -332,6 +402,7 @@ func activate_ground_hazard(
 	_hazard_mat.set_shader_parameter("fade_out", 1.0)
 
 	fill_disc.visible = true
+	fill_disc.position = Vector3.ZERO
 	fill_disc.scale = Vector3(_radius, 1.0, _radius)
 
 	_orb_mat.albedo_color = p_color.lightened(0.22)
@@ -391,6 +462,8 @@ func activate_clock_sector(
 	orb_mesh.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
+	if whip_pivot:
+		whip_pivot.visible = false
 
 	_hazard_mat.set_shader_parameter("hazard_color", p_color)
 	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.16, 0.26, 1.0))
@@ -402,6 +475,7 @@ func activate_clock_sector(
 	_hazard_mat.set_shader_parameter("safe_half_width", _safe_half_width)
 
 	fill_disc.visible = true
+	fill_disc.position = Vector3.ZERO
 	fill_disc.scale = Vector3(_radius, 1.0, _radius)
 	_orb_mat.albedo_color = Color(1.0, 0.88, 0.42, 1.0)
 
@@ -454,6 +528,8 @@ func activate_clock_safe_circle(
 	orb_mesh.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
+	if whip_pivot:
+		whip_pivot.visible = false
 
 	var rel_uv := Vector2(
 		(_safe_world_pos.x - p_center.x) / _radius,
@@ -469,6 +545,7 @@ func activate_clock_safe_circle(
 	_hazard_mat.set_shader_parameter("safe_radius_uv", clampf(_safe_world_radius / _radius, 0.05, 0.45))
 
 	fill_disc.visible = true
+	fill_disc.position = Vector3.ZERO
 	fill_disc.scale = Vector3(_radius, 1.0, _radius)
 	_orb_mat.albedo_color = Color(1.0, 0.88, 0.42, 1.0)
 
@@ -478,6 +555,72 @@ func activate_clock_safe_circle(
 		reset_physics_interpolation()
 	else:
 		position = _target_pos
+
+	visible = true
+	set_physics_process(false)
+	set_process(true)
+
+
+func activate_vine_slam_ribbon(
+	p_origin: Vector3,
+	p_dir: Vector3,
+	p_length: float,
+	p_width: float,
+	p_damage: float,
+	p_telegraph_s: float,
+	p_color: Color,
+	p_shake: float,
+	p_players_root: Node3D
+) -> void:
+	_ensure_nodes()
+	_mode = HazardMode.VINE_SLAM_RIBBON
+	_players_root = p_players_root
+	_origin_pos = Vector3(p_origin.x, 0.0, p_origin.z)
+	_dir = Vector3(p_dir.x, 0.0, p_dir.z).normalized() if Vector2(p_dir.x, p_dir.z).length_squared() > 0.0001 else Vector3.FORWARD
+	_max_range = maxf(4.0, p_length)
+	_ribbon_width = maxf(1.2, p_width)
+	_damage = p_damage
+	_telegraph_time = maxf(0.35, p_telegraph_s)
+	_active_duration = 0.46
+	_shake_amount = p_shake
+	_elapsed = 0.0
+	_detonated = false
+	_tick_timer = 0.0
+	_active = true
+
+	scale = Vector3.ONE
+	rotation = Vector3.ZERO
+	outer_ring.visible = false
+	inner_ring.visible = false
+	orb_mesh.visible = false
+	beam_mesh.visible = false
+	spike_ring_root.visible = false
+	spike_ring_root.rotation = Vector3.ZERO
+	if whip_pivot:
+		whip_pivot.visible = false
+		whip_pivot.rotation = Vector3.ZERO
+	if whip_scale_node:
+		whip_scale_node.scale = Vector3.ONE
+
+	_hazard_mat.set_shader_parameter("hazard_color", p_color)
+	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.16, 0.24, 1.0))
+	_hazard_mat.set_shader_parameter("inner_ratio", 0.0)
+	_hazard_mat.set_shader_parameter("progress", 0.0)
+	_hazard_mat.set_shader_parameter("hazard_stage", 6)
+	_hazard_mat.set_shader_parameter("fade_out", 1.0)
+
+	fill_disc.visible = true
+	fill_disc.position = Vector3(0.0, 0.0, -_max_range * 0.5)
+	fill_disc.scale = Vector3(_ribbon_width * 0.5, 1.0, _max_range * 0.5)
+
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var anchor := Vector3(p_origin.x, 0.048, p_origin.z)
+	if is_inside_tree():
+		global_position = anchor
+		look_at(global_position + _dir, Vector3.UP)
+		reset_physics_interpolation()
+	else:
+		position = anchor
 
 	visible = true
 	set_physics_process(false)
@@ -637,6 +780,37 @@ func _process(delta: float) -> void:
 				if fade_c >= 1.0:
 					deactivate()
 
+		HazardMode.VINE_SLAM_RIBBON:
+			if not _detonated:
+				var t_rib: float = clampf(_elapsed / _telegraph_time, 0.0, 1.0)
+				_hazard_mat.set_shader_parameter("progress", t_rib)
+				if _elapsed >= _telegraph_time:
+					_detonated = true
+					_hazard_mat.set_shader_parameter("hazard_stage", 7)
+					_hazard_mat.set_shader_parameter("progress", 1.0)
+					if whip_pivot and whip_scale_node:
+						whip_pivot.visible = true
+						whip_pivot.rotation.x = -0.55
+						whip_scale_node.scale = Vector3(1.15, _max_range * 0.45, 1.15)
+					_damage_players_in_ribbon()
+					if _shake_amount > 0.01 and is_inside_tree():
+						get_tree().call_group("world_camera_shake", "add_camera_shake", _shake_amount)
+			else:
+				var fade_r: float = clampf((_elapsed - _telegraph_time) / _active_duration, 0.0, 1.0)
+				_hazard_mat.set_shader_parameter("fade_out", 1.0 - fade_r)
+				if whip_pivot and whip_scale_node:
+					if fade_r < 0.22:
+						var slam_t: float = clampf(fade_r / 0.22, 0.0, 1.0)
+						whip_pivot.rotation.x = lerpf(-0.55, -PI * 0.49, slam_t)
+						whip_scale_node.scale = Vector3(1.22, lerpf(_max_range * 0.45, _max_range * 0.96, slam_t), 1.22)
+					else:
+						var recoil_t: float = clampf((fade_r - 0.22) / 0.78, 0.0, 1.0)
+						var thick: float = lerpf(1.22, 0.08, recoil_t)
+						whip_pivot.rotation.x = -PI * 0.49
+						whip_scale_node.scale = Vector3(thick, lerpf(_max_range * 0.96, _max_range * 0.40, recoil_t), thick)
+				if fade_r >= 1.0:
+					deactivate()
+
 
 func _show_eruption_spikes() -> void:
 	if spike_ring_root == null:
@@ -735,4 +909,36 @@ func _damage_players_outside_safe_zone(use_circle: bool) -> void:
 				continue
 		if p3d.has_method("try_apply_contact_damage"):
 			var k_dir: Vector3 = Vector3(dx, 0.0, dz).normalized() if d2 > 0.001 else Vector3.FORWARD
+			p3d.call("try_apply_contact_damage", _damage, k_dir)
+
+
+func _damage_players_in_ribbon() -> void:
+	if _damage <= 0.0 or _players_root == null or not is_instance_valid(_players_root):
+		return
+	var fwd := Vector2(_dir.x, _dir.z)
+	if fwd.length_squared() < 0.0001:
+		fwd = Vector2(0.0, -1.0)
+	else:
+		fwd = fwd.normalized()
+	var right := Vector2(-fwd.y, fwd.x)
+	var half_w_eff: float = _ribbon_width * 0.5 + 0.30
+	var count: int = _players_root.get_child_count()
+	for i in range(count):
+		var p3d: Node3D = _players_root.get_child(i) as Node3D
+		if p3d == null or not p3d.visible:
+			continue
+		var dp := Vector2(p3d.global_position.x - _origin_pos.x, p3d.global_position.z - _origin_pos.z)
+		var along_d: float = dp.dot(fwd)
+		if along_d < -0.35 or along_d > (_max_range + 0.35):
+			continue
+		var side_d: float = dp.dot(right)
+		if absf(side_d) > half_w_eff:
+			continue
+		if p3d.has_method("try_apply_contact_damage"):
+			var side_sign: float = 1.0 if side_d >= 0.0 else -1.0
+			var k_dir := Vector3(
+				right.x * side_sign * 0.8 + fwd.x * 0.2,
+				0.0,
+				right.y * side_sign * 0.8 + fwd.y * 0.2
+			).normalized()
 			p3d.call("try_apply_contact_damage", _damage, k_dir)

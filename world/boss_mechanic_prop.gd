@@ -6,12 +6,14 @@ extends StaticBody3D
 ## - VINE_SPAWNER: Coiled briar vine pillar spawning verdant swarmers while Briarbloom Matriarch stays impervious
 ## - SPORE_SAC: Swelling toxic pod that pops harmlessly if focused or erupts room-wide at 4.5s
 ## - ICE_OBELISK: Solid crystalline pillar casting a safe Whiteout shelter shadow & shattering on Lance/Dash
+## - SLAM_VINE: Temporary Illaoi-style briar lash stalk that erupts near a player, winds up, and slams forward
 
 enum PropKind {
 	BASALT_PILLAR = 0,
 	VINE_SPAWNER = 1,
 	SPORE_SAC = 2,
-	ICE_OBELISK = 3
+	ICE_OBELISK = 3,
+	SLAM_VINE = 4
 }
 
 const HazardScript = preload("res://world/enemy_hazard_effect.gd")
@@ -36,10 +38,16 @@ var _durability: int = 2
 var _max_durability: int = 2
 
 # Vine / Spore gameplay timers
+var spawn_interval: float = 2.8
 var _ability_timer: float = 2.0
 var _fuse_timer: float = 0.0
 var _fuse_duration: float = 4.5
 var _hit_flash_timer: float = 0.0
+var _slam_state: int = 0
+var _slam_timer: float = 0.0
+var _slam_duration: float = 1.0
+var _retracting: bool = false
+var _retract_timer: float = 0.0
 
 # Components
 var health_comp: HealthComponent = null
@@ -52,6 +60,9 @@ var _visual_root: Node3D = null
 var _main_mesh: MeshInstance3D = null
 var _accent_mesh: MeshInstance3D = null
 var _vine_cluster_root: Node3D = null
+var _slam_pivot: Node3D = null
+var _slam_stalk_mesh: MeshInstance3D = null
+var _slam_tip_mesh: MeshInstance3D = null
 var _ring_disc: MeshInstance3D = null
 var _shelter_pivot: Node3D = null
 var _shelter_mesh: MeshInstance3D = null
@@ -78,6 +89,7 @@ static var _mat_magma_glow: StandardMaterial3D = null
 static var _mat_vine_bark: StandardMaterial3D = null
 static var _mat_vine_leaf: StandardMaterial3D = null
 static var _mat_vine_bud: StandardMaterial3D = null
+static var _mat_slam_tip: StandardMaterial3D = null
 static var _mat_spore: StandardMaterial3D = null
 static var _mat_ice: StandardMaterial3D = null
 static var _mat_ice_core: StandardMaterial3D = null
@@ -144,6 +156,7 @@ static func _ensure_shared() -> void:
 	_mat_vine_bark = _make_toon_mat(Color(0.14, 0.44, 0.18), Color(0.05, 0.22, 0.08), 0.65)
 	_mat_vine_leaf = _make_toon_mat(Color(0.28, 0.80, 0.32), Color(0.10, 0.38, 0.14), 0.85)
 	_mat_vine_bud = _make_toon_mat(Color(0.84, 1.0, 0.30), Color(0.46, 0.72, 0.10), 1.15)
+	_mat_slam_tip = _make_toon_mat(Color(0.96, 0.38, 0.32), Color(0.82, 0.96, 0.26), 1.25)
 	_mat_spore = _make_toon_mat(Color(0.48, 0.94, 0.34), Color(0.26, 0.55, 0.12), 1.15)
 	_mat_ice = _make_toon_mat(Color(0.68, 0.94, 1.0), Color(0.18, 0.54, 0.78), 0.90)
 	_mat_ice_core = _make_unshaded_mat(Color(0.56, 0.94, 1.0, 0.92), false)
@@ -275,6 +288,30 @@ func _ensure_nodes() -> void:
 		leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		l_piv.add_child(leaf)
 
+	_slam_pivot = Node3D.new()
+	_slam_pivot.name = "SlamPivot"
+	_slam_pivot.position = Vector3(0.0, 0.22, 0.0)
+	_slam_pivot.visible = false
+	_visual_root.add_child(_slam_pivot)
+
+	_slam_stalk_mesh = MeshInstance3D.new()
+	_slam_stalk_mesh.name = "SlamStalk"
+	_slam_stalk_mesh.mesh = _mesh_vine_stalk
+	_slam_stalk_mesh.material_override = _mat_vine_bark
+	_slam_stalk_mesh.position = Vector3(0.0, 1.72, 0.0)
+	_slam_stalk_mesh.scale = Vector3(0.95, 1.25, 0.95)
+	_slam_stalk_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_slam_pivot.add_child(_slam_stalk_mesh)
+
+	_slam_tip_mesh = MeshInstance3D.new()
+	_slam_tip_mesh.name = "SlamTipBud"
+	_slam_tip_mesh.mesh = _mesh_sac
+	_slam_tip_mesh.material_override = _mat_slam_tip
+	_slam_tip_mesh.position = Vector3(0.0, 3.45, 0.0)
+	_slam_tip_mesh.scale = Vector3.ONE * 0.42
+	_slam_tip_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_slam_pivot.add_child(_slam_tip_mesh)
+
 	_ring_mat = ShaderMaterial.new()
 	_ring_mat.shader = HAZARD_SHADER
 	_ring_mat.set_shader_parameter("inner_ratio", 0.0)
@@ -337,13 +374,22 @@ func configure(
 	_elapsed = 0.0
 	_hit_flash_timer = 0.0
 	_fuse_timer = 0.0
-	_ability_timer = 1.8 + float(maxi(0, p_anchor_idx) % 4) * 0.75
+	spawn_interval = 2.8
+	_ability_timer = 1.4 + float(maxi(0, p_anchor_idx) % 5) * 0.45
+	_slam_state = 0
+	_slam_timer = 0.0
+	_slam_duration = 1.0
+	_retracting = false
+	_retract_timer = 0.0
 
 	global_position = Vector3(p_pos.x, 0.0, p_pos.z)
 	if is_inside_tree():
 		reset_physics_interpolation()
 
 	_vine_cluster_root.visible = false
+	_slam_pivot.visible = false
+	_slam_pivot.rotation = Vector3.ZERO
+	_slam_tip_mesh.scale = Vector3.ONE * 0.42
 	_ring_disc.visible = false
 	_shelter_pivot.visible = false
 	_hp_bar_root.visible = false
@@ -364,6 +410,7 @@ func configure(
 			body_cyl.height = 3.5
 			_body_col.position = Vector3(0.0, 1.75, 0.0)
 			_body_col.set_deferred("disabled", false)
+			_main_mesh.visible = true
 			_main_mesh.mesh = _mesh_hex_pillar
 			_main_mesh.position = Vector3(0.0, 1.75, 0.0)
 			_main_mesh.scale = Vector3.ONE
@@ -386,6 +433,7 @@ func configure(
 			hurt_cyl.radius = 1.05
 			hurt_cyl.height = 2.9
 			_hurt_col.position = Vector3(0.0, 1.45, 0.0)
+			_main_mesh.visible = true
 			_main_mesh.mesh = _mesh_vine_stalk
 			_main_mesh.position = Vector3(0.0, 1.38, 0.0)
 			_main_mesh.scale = Vector3.ONE
@@ -401,7 +449,7 @@ func configure(
 			_ring_mat.set_shader_parameter("hazard_color", Color(0.28, 0.94, 0.38, 1.0))
 			_ring_mat.set_shader_parameter("border_danger_color", Color(0.86, 1.0, 0.34, 1.0))
 			_ring_mat.set_shader_parameter("progress", 0.0)
-			_ring_disc.scale = Vector3(2.5, 1.0, 2.5)
+			_ring_disc.scale = Vector3(2.8, 1.0, 2.8)
 			_ring_disc.visible = true
 			_hp_bar_root.position = Vector3(0.0, 3.45, 0.0)
 
@@ -416,6 +464,7 @@ func configure(
 			hurt_cyl.radius = 0.85
 			hurt_cyl.height = 1.8
 			_hurt_col.position = Vector3(0.0, 0.9, 0.0)
+			_main_mesh.visible = true
 			_main_mesh.mesh = _mesh_sac
 			_main_mesh.position = Vector3(0.0, 0.85, 0.0)
 			_main_mesh.scale = Vector3.ONE * 0.65
@@ -435,6 +484,7 @@ func configure(
 			body_cyl.height = 3.3
 			_body_col.position = Vector3(0.0, 1.65, 0.0)
 			_body_col.set_deferred("disabled", false)
+			_main_mesh.visible = true
 			_main_mesh.mesh = _mesh_ice_spire
 			_main_mesh.position = Vector3(0.0, 1.65, 0.0)
 			_main_mesh.scale = Vector3.ONE
@@ -446,6 +496,21 @@ func configure(
 			_accent_mesh.rotation_degrees = Vector3.ZERO
 			_accent_mesh.scale = Vector3(0.76, 1.0, 0.76)
 			_accent_mesh.visible = true
+
+		PropKind.SLAM_VINE:
+			is_targetable = false
+			collision_layer = 0
+			_body_col.set_deferred("disabled", true)
+			_main_mesh.visible = false
+			_accent_mesh.visible = false
+			_vine_cluster_root.visible = true
+			_slam_pivot.visible = true
+			_visual_root.scale = Vector3(0.15, 0.06, 0.15)
+			_ring_mat.set_shader_parameter("hazard_color", Color(0.32, 0.96, 0.42, 1.0))
+			_ring_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.22, 0.30, 1.0))
+			_ring_mat.set_shader_parameter("progress", 0.15)
+			_ring_disc.scale = Vector3(1.5, 1.0, 1.5)
+			_ring_disc.visible = true
 
 	if is_targetable:
 		if not is_in_group("active_enemies"):
@@ -531,10 +596,44 @@ func set_whiteout_shadow(active: bool, boss_pos: Vector3) -> void:
 	_shelter_pivot.visible = true
 
 
+func set_vine_spawn_interval(interval_s: float) -> void:
+	spawn_interval = maxf(1.2, interval_s)
+	_ability_timer = minf(_ability_timer, spawn_interval * (0.45 + 0.10 * float(maxi(0, anchor_index) % 5)))
+
+
+func trigger_vine_slam(aim_dir: Vector3, telegraph_s: float) -> void:
+	if _is_cleaned_up or prop_kind != PropKind.SLAM_VINE or _slam_pivot == null:
+		return
+	var flat_d := Vector3(aim_dir.x, 0.0, aim_dir.z)
+	if flat_d.length_squared() < 0.0001:
+		flat_d = Vector3.FORWARD
+	else:
+		flat_d = flat_d.normalized()
+	_slam_pivot.rotation.y = atan2(flat_d.x, flat_d.z)
+	_slam_state = 1
+	_slam_timer = 0.0
+	_slam_duration = maxf(0.35, telegraph_s)
+
+
+func retract_and_free() -> void:
+	if _is_cleaned_up:
+		return
+	_retracting = true
+	_retract_timer = 0.0
+
+
 func _process(delta: float) -> void:
 	if _is_cleaned_up:
 		return
 	_elapsed += delta
+
+	if _retracting:
+		_retract_timer += delta
+		if _visual_root:
+			_visual_root.scale = _visual_root.scale.lerp(Vector3(0.10, 0.02, 0.10), clampf(14.0 * delta, 0.0, 1.0))
+		if _retract_timer >= 0.26:
+			_finish_destroy(false)
+		return
 
 	if _hit_flash_timer > 0.0:
 		_hit_flash_timer -= delta
@@ -551,16 +650,54 @@ func _process(delta: float) -> void:
 				_visual_root.rotation.z = sin(_elapsed * 2.3 + phase_off) * 0.05
 				_visual_root.rotation.x = cos(_elapsed * 1.9 + phase_off) * 0.04
 			_ability_timer -= delta
-			var charge: float = clampf(1.0 - _ability_timer / 4.4, 0.0, 1.0)
+			var denom: float = maxf(1.0, spawn_interval)
+			var charge: float = clampf(1.0 - _ability_timer / denom, 0.0, 1.0)
 			if _accent_mesh:
 				_accent_mesh.scale = Vector3.ONE * lerpf(0.42, 0.68, charge)
 			if _ring_mat:
 				_ring_mat.set_shader_parameter("progress", charge)
 			if _ability_timer <= 0.0:
-				_ability_timer = 4.4
+				_ability_timer = denom
 				if _visual_root:
 					_visual_root.scale = Vector3(1.24, 0.82, 1.24)
 				vine_spawn_requested.emit(self, global_position)
+
+		PropKind.SLAM_VINE:
+			if _slam_pivot:
+				if _slam_state == 0:
+					_slam_pivot.rotation.x = lerpf(_slam_pivot.rotation.x, sin(_elapsed * 2.6 + float(maxi(0, anchor_index))) * 0.06, clampf(10.0 * delta, 0.0, 1.0))
+					if _slam_tip_mesh:
+						_slam_tip_mesh.scale = Vector3.ONE * 0.42
+					if _ring_mat:
+						_ring_mat.set_shader_parameter("progress", 0.15)
+				elif _slam_state == 1:
+					_slam_timer += delta
+					var t: float = clampf(_slam_timer / _slam_duration, 0.0, 1.0)
+					_slam_pivot.rotation.x = lerpf(-0.12, -0.52, t) + sin(_elapsed * 34.0) * 0.04 * t
+					if _slam_tip_mesh:
+						_slam_tip_mesh.scale = Vector3.ONE * lerpf(0.38, 0.72, t)
+					if _ring_mat:
+						_ring_mat.set_shader_parameter("progress", t)
+					if _slam_timer >= _slam_duration:
+						_slam_state = 2
+						_slam_timer = 0.0
+				elif _slam_state == 2:
+					_slam_timer += delta
+					if _slam_timer < 0.10:
+						var s_t: float = clampf(_slam_timer / 0.10, 0.0, 1.0)
+						_slam_pivot.rotation.x = lerpf(-0.52, 1.45, s_t)
+					elif _slam_timer < 0.36:
+						_slam_pivot.rotation.x = 1.45
+					elif _slam_timer < 0.52:
+						var r_t: float = clampf((_slam_timer - 0.36) / 0.16, 0.0, 1.0)
+						_slam_pivot.rotation.x = lerpf(1.45, 0.0, r_t)
+					else:
+						_slam_pivot.rotation.x = 0.0
+						_slam_state = 0
+					if _slam_tip_mesh:
+						_slam_tip_mesh.scale = Vector3.ONE * 0.46
+					if _ring_mat:
+						_ring_mat.set_shader_parameter("progress", 1.0 if _slam_timer < 0.28 else 0.15)
 
 		PropKind.SPORE_SAC:
 			_fuse_timer += delta

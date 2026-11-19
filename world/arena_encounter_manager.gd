@@ -928,7 +928,8 @@ func _spawn_pooled_enemy(
 				Vector3(c_area.center.x, 0.0, c_area.center.y),
 				_current_biome_id,
 				players_container,
-				prog_m
+				prog_m,
+				c_area.polygon
 			)
 
 

@@ -199,6 +199,34 @@ func spawn_enemy_clock_safe_circle(
 	return hz
 
 
+func spawn_enemy_vine_slam_ribbon(
+	p_origin: Vector3,
+	p_dir: Vector3,
+	p_length: float,
+	p_width: float,
+	p_damage: float,
+	p_telegraph_s: float,
+	p_color: Color,
+	p_shake: float,
+	p_players_root: Node3D
+) -> Node3D:
+	var hz: Node3D = _acquire_enemy_hazard()
+	if hz and hz.has_method("activate_vine_slam_ribbon"):
+		hz.call(
+			"activate_vine_slam_ribbon",
+			p_origin,
+			p_dir,
+			p_length,
+			p_width,
+			p_damage,
+			p_telegraph_s,
+			p_color,
+			p_shake,
+			p_players_root
+		)
+	return hz
+
+
 ## Legacy simple spawn signature
 func spawn(p_shooter_id: int, p_pos: Vector3, p_dir: Vector3, p_speed: float = -1.0) -> Node:
 	var proj := acquire()
