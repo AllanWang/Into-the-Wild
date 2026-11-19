@@ -661,6 +661,8 @@ func _on_boss_reinforcements_requested(specs: Array) -> void:
 		var arch_id: int = int(sp.get("arch", ArchetypeScript.ArchetypeId.CHASER))
 		var spos: Vector3 = sp.get("pos", Vector3.ZERO) as Vector3
 		var is_clone: bool = bool(sp.get("is_clone", false))
+		var is_vine_swarm: bool = bool(sp.get("vine_swarm", false))
+		var hp_mult: float = float(sp.get("hp_mult", 1.0))
 		var eid: int = _next_enemy_id
 		_next_enemy_id += 1
 		var enemy: EnemySphere = _enemy_pool.acquire() as EnemySphere
@@ -675,9 +677,15 @@ func _on_boss_reinforcements_requested(specs: Array) -> void:
 			enemy.configure_astral_clone(85.0 * _last_boss_prog_mult)
 		else:
 			var arch_d: EnemyArchetypeData = ArchetypeScript.get_archetype(arch_id)
-			if enemy.health_comp != null:
-				enemy.health_comp.setup_max_health(arch_d.max_hp * _last_boss_depth_mult)
-			enemy.set_biome_trait(_current_biome_id)
+			if is_vine_swarm:
+				enemy.configure_vine_swarmer(arch_d.max_hp * _last_boss_depth_mult * hp_mult)
+				enemy.set_biome_trait(_current_biome_id)
+				if _boss_director != null and _boss_director.has_method("register_vine_swarmer"):
+					_boss_director.call("register_vine_swarmer", enemy)
+			else:
+				if enemy.health_comp != null:
+					enemy.health_comp.setup_max_health(arch_d.max_hp * _last_boss_depth_mult)
+				enemy.set_biome_trait(_current_biome_id)
 
 
 func _release_boss_reinforcements() -> void:
@@ -926,7 +934,10 @@ func _spawn_pooled_enemy(
 
 func _on_enemy_defeated(p_enemy_id: int, p_area_idx: int) -> void:
 	if _boss_reinforcement_ids.has(p_enemy_id):
+		var rein: EnemySphere = _boss_reinforcement_ids[p_enemy_id] as EnemySphere
 		_boss_reinforcement_ids.erase(p_enemy_id)
+		if _boss_director != null and rein != null and _boss_director.has_method("on_reinforcement_defeated"):
+			_boss_director.call("on_reinforcement_defeated", rein)
 		return
 	if p_area_idx != _locked_area_idx:
 		return

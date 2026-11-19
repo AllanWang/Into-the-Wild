@@ -13,6 +13,7 @@ const ArchetypeScript = preload("res://enemies/enemy_archetype_data.gd")
 const CombatZoneScript = preload("res://world/combat_zone_effect.gd")
 const Trail3DScript = preload("res://scripts/trail_3d.gd")
 const ENEMY_HAZARD_SHADER: Shader = preload("res://shaders/EnemyHazard.gdshader")
+const COSMIC_CORE_SHADER: Shader = preload("res://shaders/CosmicCore.gdshader")
 const OVERHEAD_BAR_SHADER: Shader = preload("res://shaders/OverheadBar.gdshader")
 const CONTACT_SHADOW_SHADER: Shader = preload("res://shaders/ContactShadow.gdshader")
 
@@ -1088,10 +1089,13 @@ func _run_web_shader_prewarm() -> void:
 	for zm in zone_mats:
 		_add_warmup_mesh(warmup_root, quad, zm)
 
-	# 4. EnemyHazard.gdshader
+	# 4. EnemyHazard.gdshader & CosmicCore.gdshader
 	var hazard_mat := ShaderMaterial.new()
 	hazard_mat.shader = ENEMY_HAZARD_SHADER
 	_add_warmup_mesh(warmup_root, plane, hazard_mat)
+	var medallion_mat := ShaderMaterial.new()
+	medallion_mat.shader = COSMIC_CORE_SHADER
+	_add_warmup_mesh(warmup_root, plane, medallion_mat)
 
 	# 5. OverheadBar.gdshader
 	var bar_mat := ShaderMaterial.new()
@@ -1108,6 +1112,10 @@ func _run_web_shader_prewarm() -> void:
 	if base_arch:
 		_add_warmup_mesh(warmup_root, sphere, base_arch.body_material)
 		_add_warmup_mesh(warmup_root, sphere, base_arch.trim_material)
+	var chrono_arch: EnemyArchetypeData = ArchetypeScript.get_archetype(ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER)
+	if chrono_arch:
+		_add_warmup_mesh(warmup_root, sphere, chrono_arch.body_material)
+		_add_warmup_mesh(warmup_root, sphere, chrono_arch.trim_material)
 	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_hit_flash_material())
 	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_status_frost_material())
 	_add_warmup_mesh(warmup_root, sphere, ArchetypeScript.get_status_burn_material())

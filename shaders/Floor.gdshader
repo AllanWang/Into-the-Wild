@@ -51,6 +51,45 @@ vec2 hash22(vec2 p) {
 	return fract(sin(p) * 43758.5453123);
 }
 
+float val_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453123);
+	float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453123);
+	float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453123);
+	float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453123);
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm4(vec2 p) {
+	float v = 0.0;
+	float amp = 0.5;
+	mat2 rot = mat2(vec2(0.80, -0.60), vec2(0.60, 0.80));
+	for (int i = 0; i < 4; i++) {
+		v += amp * val_noise(p);
+		p = rot * p * 2.04 + vec2(11.7, 5.3);
+		amp *= 0.5;
+	}
+	return v;
+}
+
+vec2 eval_pinpoint_stars(vec2 p, float scale_f, float thresh, float dot_r, float t_now) {
+	vec2 uv = p * scale_f;
+	vec2 id = floor(uv);
+	vec2 f = fract(uv);
+	vec2 rnd = hash22(id + vec2(5.1, 19.3));
+	float pick = fract(sin(dot(id, vec2(91.7, 213.9))) * 43758.5453);
+	if (pick < thresh) {
+		return vec2(0.0);
+	}
+	vec2 sp = vec2(0.18) + 0.64 * rnd;
+	float ds = length(f - sp);
+	float tw = 0.68 + 0.32 * sin(t_now * (2.2 + 2.4 * rnd.x) + pick * 28.0);
+	float core = (1.0 - smoothstep(dot_r * 0.35, dot_r, ds)) * tw;
+	return vec2(core, rnd.y);
+}
+
 vec3 voronoi_glacier(vec2 x) {
 	vec2 n = floor(x);
 	vec2 f = fract(x);
@@ -182,7 +221,7 @@ void fragment() {
 		ALBEDO = mix(ALBEDO, fx_color3.rgb, glint * 0.35);
 		emissive = (fx_color1.rgb * ice_crack * 0.65 + fx_color2.rgb * deep_crevasse * 0.55 + fx_color3.rgb * glint * 0.40) * fx_emission_strength;
 	} else if (biome_fx_mode == 2) {
-		// Astral Constellation: galaxy nebula marble + player-wake-reactive constellations & halos + subtle meteors
+		// Astral Constellation: calm deep midnight-indigo starry cosmos, crisp pinpoint parallax stars & player-wake constellations
 		float d_player = length(vertex_world.xz - player_focus_pos.xz);
 		float wake_factor = 1.0 - smoothstep(2.6, 8.8, d_player);
 		for (int w = 0; w < 4; w++) {
@@ -194,17 +233,32 @@ void fragment() {
 			}
 		}
 
-		float neb = smoothstep(0.32, 0.72, sin(vertex_world.x * 0.09 + n2 * 4.2 + TIME * 0.14) * cos(vertex_world.z * 0.08 + n3 * 3.8 - TIME * 0.11) * 0.5 + 0.5);
-		vec3 neb_col = mix(fx_color2.rgb, fx_color1.rgb, n3);
-		ALBEDO = mix(ALBEDO, neb_col * 0.52 + ALBEDO * 0.60, neb * 0.34);
+		float depth_shift = fbm4(vertex_world.xz * 0.032 + vec2(TIME * 0.008, -TIME * 0.006));
+		float banded_depth = mix(depth_shift, floor(depth_shift * 4.0) / 4.0, 0.30);
+		vec3 space_base = ALBEDO * mix(0.86, 1.14, banded_depth);
 
-		vec2 uv_star = vertex_world.xz * 0.21;
+		// Crisp multi-depth pinpoint parallax starfield
+		vec2 cam_xz = INV_VIEW_MATRIX[3].xz;
+		vec2 p_mid = vertex_world.xz + (vertex_world.xz - cam_xz) * 0.06;
+		vec2 p_deep = vertex_world.xz + (vertex_world.xz - cam_xz) * 0.12;
+		vec2 st_deep = eval_pinpoint_stars(p_deep, 2.35, 0.74, 0.072, TIME);
+		vec2 st_mid = eval_pinpoint_stars(p_mid + vec2(23.1, 7.4), 1.10, 0.80, 0.038, TIME * 0.85);
+		vec3 ivory = vec3(0.96, 0.97, 1.0);
+		vec3 st_deep_col = mix(ivory, fx_color3.rgb, step(0.65, st_deep.y));
+		vec3 st_mid_col = mix(mix(ivory, fx_color1.rgb, 0.38), fx_color3.rgb, step(0.58, st_mid.y));
+
+		// Needle-sharp 4-point hero constellation stars + subtle player-wake halos & connecting threads
+		vec2 uv_star = vertex_world.xz * 0.24;
 		vec2 cell = floor(uv_star);
 		vec2 star_p = astral_star_pos(cell);
-		float d_star = length(uv_star - star_p);
-		float twinkle = 0.72 + 0.28 * sin(TIME * 2.2 + cell.x * 3.1 + cell.y * 5.7);
-		float star_core = (1.0 - smoothstep(0.007, 0.036, d_star)) * twinkle * mix(0.65, 1.35, wake_factor);
-		float star_halo = (1.0 - smoothstep(0.056, 0.090, d_star)) * smoothstep(0.026, 0.052, d_star) * wake_factor * (0.75 + 0.25 * sin(TIME * 4.2));
+		vec2 dv = uv_star - star_p;
+		float d_star = length(dv);
+		float twinkle = 0.78 + 0.22 * sin(TIME * 2.2 + cell.x * 3.1 + cell.y * 5.7);
+		float sp_h = (1.0 - smoothstep(0.001, 0.004, abs(dv.y))) * (1.0 - smoothstep(0.0, 0.038, abs(dv.x)));
+		float sp_v = (1.0 - smoothstep(0.001, 0.004, abs(dv.x))) * (1.0 - smoothstep(0.0, 0.038, abs(dv.y)));
+		float flare = max(sp_h, sp_v);
+		float star_core = max(1.0 - smoothstep(0.003, 0.011, d_star), flare * 0.88) * twinkle * mix(0.80, 1.38, wake_factor);
+		float star_halo = (1.0 - smoothstep(0.036, 0.056, d_star)) * smoothstep(0.020, 0.034, d_star) * wake_factor * (0.75 + 0.25 * sin(TIME * 4.2));
 
 		float line_mask = 0.0;
 		for (int dx = 0; dx <= 1; dx++) {
@@ -219,7 +273,7 @@ void fragment() {
 				line_mask = max(line_mask, eval_constellation_edge(uv_star, ca_v, ca_v + vec2(0.0, 1.0), 3.7, TIME));
 			}
 		}
-		float line_vis = line_mask * mix(0.08, 1.0, wake_factor);
+		float line_vis = line_mask * mix(0.07, 0.95, wake_factor);
 
 		float meteor = max(
 			eval_shooting_star(vertex_world.xz, -32.0, 11.3, TIME),
@@ -229,9 +283,15 @@ void fragment() {
 		float h_pick = hash22(cell + vec2(7.3, 2.9)).x;
 		vec3 star_col = mix(fx_color1.rgb, fx_color3.rgb, step(0.55, h_pick));
 		vec3 meteor_col = mix(fx_color1.rgb, fx_color3.rgb, 0.45);
-		ALBEDO = mix(ALBEDO, star_col, clamp(line_vis * 0.56 + star_core * 0.72 + star_halo * 0.58, 0.0, 1.0));
-		ALBEDO = mix(ALBEDO, meteor_col, clamp(meteor * 0.18, 0.0, 1.0));
-		emissive = (fx_color1.rgb * line_vis * 0.58 + star_col * (star_core * 0.78 + star_halo * 0.88) + neb_col * neb * 0.08 + meteor_col * meteor * 0.22) * fx_emission_strength;
+
+		ALBEDO = space_base;
+		ALBEDO = mix(ALBEDO, st_deep_col, clamp(st_deep.x * 0.65, 0.0, 1.0));
+		ALBEDO = mix(ALBEDO, st_mid_col, clamp(st_mid.x * 0.80, 0.0, 1.0));
+		ALBEDO = mix(ALBEDO, star_col, clamp(line_vis * 0.50 + star_core * 0.90 + star_halo * 0.55, 0.0, 1.0));
+		ALBEDO = mix(ALBEDO, meteor_col, clamp(meteor * 0.22, 0.0, 1.0));
+
+		vec3 star_emit = st_deep_col * st_deep.x * 0.55 + st_mid_col * st_mid.x * 0.72 + star_col * (star_core * 0.92 + star_halo * 0.78) + fx_color1.rgb * line_vis * 0.52 + meteor_col * meteor * 0.26;
+		emissive = star_emit * fx_emission_strength;
 	} else if (biome_fx_mode == 3) {
 		// Volcanic Caldera: wide matte basalt stone slabs with restrained warm ember seams (keeps combat floor clean & dark!)
 		float seam = 1.0 - smoothstep(0.002, 0.014, abs(n2 - 0.54));

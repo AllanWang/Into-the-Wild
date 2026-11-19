@@ -13,6 +13,7 @@ const GrassTileStamperScript = preload("res://world/grass_tile_stamper.gd")
 const BiomeThemeScript = preload("res://world/biome_theme.gd")
 const VineBarrierScript = preload("res://world/vine_barrier.gd")
 const SnowFootstepTrailScript = preload("res://world/snow_footstep_trail.gd")
+const COSMIC_CORE_SHADER: Shader = preload("res://shaders/CosmicCore.gdshader")
 
 const CHUNK_SIZE: float = 40.0
 
@@ -71,6 +72,8 @@ static var _mesh_astrolabe_ring: TorusMesh = null
 static var _mesh_anomaly_ring: TorusMesh = null
 static var _mesh_poly_core: SphereMesh = null
 static var _mesh_octa_shard: SphereMesh = null
+static var _mesh_medallion_plane: PlaneMesh = null
+static var _mat_cosmic_medallion: ShaderMaterial = null
 
 
 static func _ensure_prop_meshes() -> void:
@@ -90,7 +93,7 @@ static func _ensure_prop_meshes() -> void:
 	_mesh_astral_obelisk.top_radius = 0.14
 	_mesh_astral_obelisk.bottom_radius = 0.34
 	_mesh_astral_obelisk.height = 2.6
-	_mesh_astral_obelisk.radial_segments = 4
+	_mesh_astral_obelisk.radial_segments = 8
 
 	_mesh_hex_pillar = CylinderMesh.new()
 	_mesh_hex_pillar.top_radius = 0.62
@@ -99,10 +102,10 @@ static func _ensure_prop_meshes() -> void:
 	_mesh_hex_pillar.radial_segments = 6
 
 	_mesh_astrolabe_ring = TorusMesh.new()
-	_mesh_astrolabe_ring.inner_radius = 1.15
-	_mesh_astrolabe_ring.outer_radius = 1.28
-	_mesh_astrolabe_ring.rings = 24
-	_mesh_astrolabe_ring.ring_segments = 8
+	_mesh_astrolabe_ring.inner_radius = 1.18
+	_mesh_astrolabe_ring.outer_radius = 1.26
+	_mesh_astrolabe_ring.rings = 44
+	_mesh_astrolabe_ring.ring_segments = 12
 
 	_mesh_anomaly_ring = TorusMesh.new()
 	_mesh_anomaly_ring.inner_radius = 0.92
@@ -121,6 +124,12 @@ static func _ensure_prop_meshes() -> void:
 	_mesh_octa_shard.height = 0.68
 	_mesh_octa_shard.radial_segments = 4
 	_mesh_octa_shard.rings = 1
+
+	_mesh_medallion_plane = PlaneMesh.new()
+	_mesh_medallion_plane.size = Vector2(2.0, 2.0)
+
+	_mat_cosmic_medallion = ShaderMaterial.new()
+	_mat_cosmic_medallion.shader = COSMIC_CORE_SHADER
 
 
 func _ready() -> void:
@@ -286,6 +295,7 @@ func apply_biome_materials(biome_id: int) -> void:
 			w_mat.set_shader_parameter("secondary_foam_color", b["water_foam2"])
 			w_mat.set_shader_parameter("surface_noise_cutoff", float(b["water_cutoff"]))
 			w_mat.set_shader_parameter("chromatic_foam", bool(b["water_chromatic"]))
+			w_mat.set_shader_parameter("cosmic_void", bool(b.get("water_cosmic", false)))
 			w_mat.set_shader_parameter("emission_strength", float(b["water_emit"]))
 			w_mat.set_shader_parameter("enable_cloud_shadows", not OS.has_feature("web"))
 
@@ -388,6 +398,38 @@ func _build_biome_landmarks(rng: RandomNumberGenerator) -> void:
 				continue
 
 			_spawn_single_biome_cluster(Vector3(anchor_2d.x, 0.0, anchor_2d.y), rng)
+
+	if current_biome_id == BiomeThemeScript.BiomeId.ASTRAL_CONSTELLATION:
+		_build_astral_ground_medallions()
+
+
+func _build_astral_ground_medallions() -> void:
+	if props_root == null or current_graph == null:
+		return
+	_ensure_prop_meshes()
+	for area in current_graph.areas:
+		if area.index == current_graph.spawn_index:
+			continue
+		var is_boss: bool = (area.index == current_graph.goal_index) or (area.role == AreaPresetScript.RoomRole.BOSS)
+		var main_r: float = 5.0 if is_boss else (3.1 if (area.role == AreaPresetScript.RoomRole.HUB or area.role == AreaPresetScript.RoomRole.ELITE) else 2.35)
+		_add_astral_medallion(Vector3(area.center.x, 0.014, area.center.y), main_r)
+		if is_boss:
+			for sx in [-1.0, 1.0]:
+				for sz in [-1.0, 1.0]:
+					var sat_2d := Vector2(area.center.x + sx * 8.8, area.center.y + sz * 8.8)
+					if _is_point_on_filleted_land(sat_2d):
+						_add_astral_medallion(Vector3(sat_2d.x, 0.014, sat_2d.y), 1.85)
+
+
+func _add_astral_medallion(world_pos: Vector3, radius: float) -> void:
+	var med := MeshInstance3D.new()
+	med.name = "AstralGalaxyMedallion"
+	med.mesh = _mesh_medallion_plane
+	med.material_override = _mat_cosmic_medallion
+	med.position = world_pos
+	med.scale = Vector3(radius, 1.0, radius)
+	med.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	props_root.add_child(med)
 
 
 func _spawn_shoreline_rim_accent(rim_pos: Vector3, rng: RandomNumberGenerator) -> void:

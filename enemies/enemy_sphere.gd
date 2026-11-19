@@ -10,7 +10,7 @@ extends CharacterBody3D
 ## - MIRE_LOBBER (5): Overhead swelling toxic mortar sac -> 0.65s swell lean-back -> 1.10s arcing Blight Pool
 ## - OCULAR_SNIPER (6): Floating front aiming scope ring -> 1.25s spinning lock-on sightline -> Sniper Lance
 ## - BOSS (7): Tectonic Sovereign -> 1.15s levitating double-quake, 0.95s faultline cascade, 0.85s shudder charge
-## - BOSS_BLIGHTWEAVER (8): Blightweaver Core -> 0.75s acidic rain, 0.70s salvo spin, 1.30s levitating safe-eye cataclysm
+## - BOSS_BLIGHTWEAVER (8): Briarbloom Matriarch -> vine-spawner pillars, swarmer hordes, petal-curl thorn shell & spore blooms
 
 const ArchetypeScript = preload("res://enemies/enemy_archetype_data.gd")
 const HazardScript = preload("res://world/enemy_hazard_effect.gd")
@@ -37,6 +37,8 @@ var _trim_ring_a: MeshInstance3D = null
 var _trim_ring_b: MeshInstance3D = null
 var _role_prop_a: MeshInstance3D = null
 var _role_prop_b: MeshInstance3D = null
+var _plant_crown_root: Node3D = null
+var _plant_petal_pivots: Array[Node3D] = []
 var _ward_shell_mesh: MeshInstance3D = null
 var _aegis_dome_mesh: MeshInstance3D = null
 var _aegis_dome_ring: MeshInstance3D = null
@@ -60,6 +62,7 @@ var _base_radius: float = 0.38
 var _is_elite_unit: bool = false
 var is_boss_reinforcement: bool = false
 var is_astral_clone: bool = false
+var is_vine_swarmer: bool = false
 var _boss_phase: int = 1
 var _frenzy_mult: float = 1.0
 var _stagger_timer: float = 0.0
@@ -152,6 +155,38 @@ func _ready() -> void:
 		_ward_shell_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_ward_shell_mesh.visible = false
 		visual_root.add_child(_ward_shell_mesh)
+
+		_plant_crown_root = Node3D.new()
+		_plant_crown_root.name = "PlantCrownRoot"
+		_plant_crown_root.visible = false
+		visual_root.add_child(_plant_crown_root)
+
+		var bud_mesh := MeshInstance3D.new()
+		bud_mesh.name = "FloralBud"
+		bud_mesh.mesh = ArchetypeScript.get_sac_orb_mesh()
+		bud_mesh.material_override = ArchetypeScript.get_bloom_core_material()
+		bud_mesh.position = Vector3(0.0, 0.98, 0.0)
+		bud_mesh.scale = Vector3.ONE * 0.74
+		bud_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_plant_crown_root.add_child(bud_mesh)
+
+		_plant_petal_pivots.clear()
+		for p_i in range(5):
+			var p_ang: float = float(p_i) * (TAU / 5.0)
+			var pivot := Node3D.new()
+			pivot.name = "PetalPivot_%d" % p_i
+			pivot.position = Vector3(sin(p_ang) * 0.62, 0.42, cos(p_ang) * 0.62)
+			pivot.rotation = Vector3(0.0, p_ang, 0.0)
+			_plant_crown_root.add_child(pivot)
+
+			var leaf := MeshInstance3D.new()
+			leaf.name = "PetalBlade_%d" % p_i
+			leaf.mesh = ArchetypeScript.get_petal_mesh()
+			leaf.material_override = ArchetypeScript.get_petal_material()
+			leaf.position = Vector3(0.0, 0.0, 0.42)
+			leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			pivot.add_child(leaf)
+			_plant_petal_pivots.append(pivot)
 
 	if _burrow_ring_inst == null:
 		_burrow_ring_inst = MeshInstance3D.new()
@@ -247,6 +282,7 @@ func _reset_statuses() -> void:
 	_is_elite_unit = false
 	is_boss_reinforcement = false
 	is_astral_clone = false
+	is_vine_swarmer = false
 	_boss_phase = 1
 	_frenzy_mult = 1.0
 	_stagger_timer = 0.0
@@ -261,6 +297,8 @@ func _reset_statuses() -> void:
 	_deactivate_aegis_dome()
 	if _ward_shell_mesh:
 		_ward_shell_mesh.visible = false
+	if _plant_crown_root:
+		_plant_crown_root.visible = false
 	if _burrow_ring_inst:
 		_burrow_ring_inst.visible = false
 	if _contact_shadow_inst:
@@ -327,7 +365,7 @@ func activate(
 			_hp_bar_mat.set_shader_parameter("armor_ratio", 0.0)
 			_hp_bar_mat.set_shader_parameter("stock_pips", 1.0)
 			_hp_bar_mat.set_shader_parameter("impervious_ratio", 0.0)
-		hp_bar_root.visible = is_boss
+		hp_bar_root.visible = false
 
 	if health_comp:
 		health_comp.setup_max_health(_archetype.max_hp)
@@ -338,8 +376,12 @@ func activate(
 	_is_dying = false
 	_death_timer = 0.0
 	_hit_flash_timer = 0.0
-	_ability_cd = 1.45 + float(p_enemy_id % 5) * 0.32
-	_boss_pattern_idx = p_enemy_id % 3
+	if _archetype != null and _archetype.archetype_id == ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER:
+		_ability_cd = 1.0
+		_boss_pattern_idx = 0
+	else:
+		_ability_cd = 1.45 + float(p_enemy_id % 5) * 0.32
+		_boss_pattern_idx = p_enemy_id % 3
 	_bob_phase = float(p_enemy_id) * 1.37
 	velocity = Vector3.ZERO
 
@@ -380,6 +422,12 @@ func _configure_trim_visuals() -> void:
 		_role_prop_b.scale = Vector3.ONE
 		_role_prop_b.rotation = Vector3.ZERO
 		_role_prop_b.material_override = _archetype.trim_material
+	if _plant_crown_root:
+		_plant_crown_root.visible = (aid == ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER)
+		_plant_crown_root.rotation = Vector3.ZERO
+		for piv in _plant_petal_pivots:
+			if piv:
+				piv.rotation_degrees.x = 8.0
 
 	match aid:
 		ArchetypeScript.ArchetypeId.DASHER:
@@ -450,15 +498,6 @@ func _configure_trim_visuals() -> void:
 		ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
 			_trim_ring_a.rotation_degrees = Vector3(24.0, 0.0, -24.0)
 			_trim_ring_b.rotation_degrees = Vector3(-42.0, 30.0, 32.0)
-			if _role_prop_a and _role_prop_b:
-				_role_prop_a.mesh = ArchetypeScript.get_sac_orb_mesh()
-				_role_prop_a.position = Vector3(0.0, 1.12, 0.0)
-				_role_prop_a.scale = Vector3(0.76, 0.76, 0.76)
-				_role_prop_a.visible = true
-				_role_prop_b.mesh = ArchetypeScript.get_scope_ring_mesh()
-				_role_prop_b.position = Vector3(0.0, 0.08, 1.18)
-				_role_prop_b.rotation_degrees = Vector3(90.0, 0.0, 0.0)
-				_role_prop_b.visible = true
 		ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON:
 			_trim_ring_a.rotation_degrees = Vector3(16.0, 0.0, -28.0)
 			_trim_ring_b.rotation_degrees = Vector3(-18.0, 36.0, 28.0)
@@ -514,8 +553,12 @@ func configure_elite_or_boss(
 			_hp_bar_mat.set_shader_parameter("armor_ratio", 1.0 if p_armor > 0.01 else 0.0)
 			_hp_bar_mat.set_shader_parameter("stock_pips", float(maxi(1, p_bars)))
 			_hp_bar_mat.set_shader_parameter("impervious_ratio", 0.0)
-		hp_bar_root.visible = is_boss or p_is_elite or p_armor > 0.01
+		hp_bar_root.visible = (not is_boss) and (p_is_elite or p_armor > 0.01)
 	_refresh_ward_shell()
+
+
+func _should_hide_overhead_hp() -> bool:
+	return _archetype != null and ArchetypeScript.is_boss_archetype(_archetype.archetype_id)
 
 
 func configure_astral_clone(bar_hp: float) -> void:
@@ -532,12 +575,31 @@ func configure_astral_clone(bar_hp: float) -> void:
 	_refresh_ward_shell()
 
 
+func configure_vine_swarmer(bar_hp: float) -> void:
+	is_vine_swarmer = true
+	is_boss_reinforcement = true
+	if visual_root:
+		visual_root.scale = Vector3.ONE * (_base_radius * 0.88)
+	if health_comp:
+		health_comp.setup_max_health(maxf(8.0, bar_hp))
+	_refresh_body_material()
+
+
 func force_despawn_clone() -> void:
 	if not _is_dying:
 		_on_died()
 
 
+func cancel_active_pattern() -> void:
+	_windup_timer = 0.0
+	_action_timer = 0.0
+	_pending_action_kind = 0
+	_sub_steps_left = 0
+	_sub_step_kind = 0
+
+
 func force_return_to_point(pt: Vector3) -> void:
+	cancel_active_pattern()
 	_return_target_pos = Vector3(pt.x, 0.0, pt.z)
 	_return_to_center_active = true
 
@@ -814,6 +876,8 @@ func _refresh_body_material() -> void:
 		sphere_mesh_inst.material_override = ArchetypeScript.get_status_poison_material()
 	elif _frost_timer > 0.0 or _external_slow_timer > 0.0:
 		sphere_mesh_inst.material_override = ArchetypeScript.get_status_frost_material()
+	elif is_vine_swarmer:
+		sphere_mesh_inst.material_override = ArchetypeScript.get_vine_swarmer_material()
 	else:
 		sphere_mesh_inst.material_override = _archetype.body_material
 
@@ -872,7 +936,7 @@ func _complete_burrow_emerge() -> void:
 		visual_root.scale = Vector3(_base_radius * 0.75, _base_radius * 1.45, _base_radius * 0.75)
 	if _contact_shadow_inst:
 		_contact_shadow_inst.visible = true
-	if health_comp and hp_bar_root and health_comp.current_health < health_comp.max_health:
+	if health_comp and hp_bar_root and not _should_hide_overhead_hp() and health_comp.current_health < health_comp.max_health:
 		hp_bar_root.visible = true
 	if _biome_trait_id == 1 and (not multiplayer.has_multiplayer_peer() or multiplayer.is_server()):
 		_rpc_enemy_ground_hazard(
@@ -976,8 +1040,7 @@ func _step_visual_pose(delta: float) -> void:
 					target_pos.y = _base_radius + 0.08 + maxf(0.0, b_lev)
 					visual_root.rotation.y += delta * 5.0
 			ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
-				if _pending_action_kind == 3 and _role_prop_a:
-					_role_prop_a.scale = Vector3.ONE * lerpf(0.76, 1.55, windup_prog)
+				if _pending_action_kind == 3:
 					target_rot_x = -0.25 * windup_prog
 				elif _pending_action_kind == 4:
 					visual_root.rotation.y += delta * 10.0
@@ -1031,14 +1094,22 @@ func _step_visual_pose(delta: float) -> void:
 				if _role_prop_a:
 					_role_prop_a.scale = Vector3.ONE
 			ArchetypeScript.ArchetypeId.BOSS_BLIGHTWEAVER:
-				if _role_prop_a:
-					_role_prop_a.scale = Vector3.ONE * 0.76
+				target_pos.y = _base_radius + 0.08 + sin(_bob_phase * 1.1) * 0.06
 			ArchetypeScript.ArchetypeId.BOSS_CRYO_ARCHON:
 				target_pos.y = _base_radius + 0.14 + sin(_bob_phase * 1.4) * 0.08
 			ArchetypeScript.ArchetypeId.BOSS_CHRONOMANCER:
 				target_pos.y = _base_radius + 0.24 + sin(_bob_phase) * 0.09
 				if _role_prop_a:
 					_role_prop_a.scale = Vector3.ONE * 0.68
+
+	if _plant_crown_root and _plant_crown_root.visible:
+		var is_imp: bool = (health_comp != null and health_comp.is_impervious())
+		_plant_crown_root.rotation.y += delta * (1.8 if is_imp else 0.7)
+		var petal_pitch: float = -58.0 if is_imp else (26.0 if _stagger_timer > 0.0 else (8.0 + sin(_bob_phase * 1.6) * 6.0))
+		var p_t: float = clampf(10.0 * delta, 0.0, 1.0)
+		for piv in _plant_petal_pivots:
+			if piv:
+				piv.rotation_degrees.x = lerpf(piv.rotation_degrees.x, petal_pitch, p_t)
 
 	if _ward_shell_mesh and _ward_shell_mesh.visible:
 		var pulse_w: float = 1.35 + 0.06 * sin(_bob_phase * 2.4)
@@ -1423,7 +1494,7 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 						_sub_steps_left = 3
 						_sub_step_timer = 0.36
 				else:
-					_fire_boss_orb_fan(_action_dir, 7, 108.0, Color(0.84, 0.36, 1.0), false, 11.5)
+					_fire_boss_orb_fan(_action_dir, 7, 108.0, Color(0.56, 0.98, 0.34), false, 11.5)
 					_sub_step_kind = 3
 					_sub_steps_left = 2 if is_p3 else 1
 					_sub_step_timer = 0.48
@@ -1561,7 +1632,7 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 							18.0,
 							1.30,
 							0.36,
-							Color(0.92, 0.24, 0.92),
+							Color(0.32, 0.94, 0.42),
 							0.68
 						)
 						if is_p2:
@@ -1630,59 +1701,40 @@ func _tick_boss_ai(delta: float, target_player: Node3D, dir: Vector3, dist: floa
 							_pending_action_kind = 3
 							_pending_target_pos = target_player.global_position
 				else:
-					# ASTRAL CHRONOMANCER
-					if _clock_sector_queued or (pat == 2 and (is_p2 or _boss_pattern_idx <= 3)):
+					# ASTRAL CHRONOMANCER — Multi-area ticking clocks, astrolabe volleys & large Clock-Dial Judgment
+					if _clock_sector_queued:
+						pat = 2
 						_clock_sector_queued = false
-						_ability_cd = 4.6
-						_windup_timer = 2.8
-						_windup_duration_ref = 2.8
-						_pending_action_kind = 1
-						var side_ang: float = 1.35 if (_boss_pattern_idx % 2 == 0) else -1.35
-						var safe_ang: float = atan2(dir.z, dir.x) + side_ang
-						_rpc_enemy_clock_sector(global_position, 16.5, safe_ang, deg_to_rad(32.5), 24.0, 2.8, Color(0.56, 0.28, 0.96), 0.55)
-						if boss_director != null and boss_director.has_method("notify_clock_sector_cast"):
-							boss_director.call("notify_clock_sector_cast", 2.8)
-					else:
-						match pat:
-							0:
-								# Predictive Starfall Craters
-								_ability_cd = 3.8
-								_windup_timer = 0.80
-								_windup_duration_ref = 0.80
-								_pending_action_kind = 3
-								_pending_target_pos = target_player.global_position
-							1:
-								# Astrolabe Clockwork Ring (clockwise spiral in Phase 3)
-								_ability_cd = 3.6
-								_action_dir = dir
-								_windup_timer = 0.75
-								_windup_duration_ref = 0.75
-								_pending_action_kind = 4
-							_:
-								# Temporal Safe-Eye Supernova + 4-way Star-Laser Sightlines
-								_ability_cd = 4.5
-								_windup_timer = 1.30
-								_windup_duration_ref = 1.30
-								_pending_action_kind = 1
-								_rpc_enemy_ground_hazard(
-									HazardScript.HazardMode.DONUT_AFTERSHOCK,
-									global_position,
-									global_position,
-									11.8,
-									4.2,
-									18.0,
-									1.30,
-									0.34,
-									Color(0.64, 0.42, 1.0),
-									0.64
-								)
-								if is_p2:
-									_sub_step_kind = 2
-									_sub_steps_left = 1
-									_sub_step_timer = 1.10
-									for q_i in range(4):
-										var l_d: Vector3 = Vector3.FORWARD.rotated(Vector3.UP, float(q_i) * (PI * 0.5) + 0.35)
-										_rpc_enemy_sightline(global_position, l_d, 20.0, 1.10, Color(1.0, 0.86, 0.36))
+					match pat:
+						0:
+							# Multi-Area Time-Ticking Clocks (2 -> 3 simultaneous localized zones)
+							_ability_cd = 4.4
+							_windup_timer = 1.25
+							_windup_duration_ref = 1.25
+							_pending_action_kind = 1
+							_launch_chronomancer_multi_clocks(target_player, is_p2)
+						1:
+							# Astrolabe Clockwork Ring (clockwise spiral in Phase 3)
+							_ability_cd = 3.6
+							_action_dir = dir
+							_windup_timer = 0.75
+							_windup_duration_ref = 0.75
+							_pending_action_kind = 4
+						_:
+							if is_p2 and boss_director != null and boss_director.has_method("try_trigger_mid_combat_horology"):
+								if bool(boss_director.call("try_trigger_mid_combat_horology")):
+									_ability_cd = 1.2
+									return Vector3.ZERO
+							# Large Localized Clock-Dial Judgment
+							_ability_cd = 4.6
+							_windup_timer = 2.45
+							_windup_duration_ref = 2.45
+							_pending_action_kind = 1
+							var side_ang: float = 1.35 if (_boss_pattern_idx % 2 == 0) else -1.35
+							var safe_ang: float = atan2(dir.z, dir.x) + side_ang
+							_rpc_enemy_clock_sector(global_position, 15.5, safe_ang, deg_to_rad(32.0), 22.0, 2.45, Color(0.56, 0.28, 0.96), 0.55)
+							if boss_director != null and boss_director.has_method("notify_clock_sector_cast"):
+								boss_director.call("notify_clock_sector_cast", 2.45)
 
 	if dist > (_base_radius + 0.35):
 		return dir * (_archetype.move_speed * speed_mult)
@@ -1707,6 +1759,29 @@ func _launch_tectonic_cross(base_angle_deg: float) -> void:
 				Color(1.0, 0.24, 0.30),
 				0.18 if step_d < 4.0 else 0.0
 			)
+
+
+func _launch_chronomancer_multi_clocks(target_player: Node3D, is_p2: bool) -> void:
+	var count_z: int = 3 if is_p2 else 2
+	var radius_z: float = 6.5 if is_p2 else 6.2
+	var tel_s: float = 2.2 if is_p2 else 2.4
+	var safe_half_w: float = deg_to_rad(30.0 if is_p2 else 34.0)
+	var dmg: float = 20.0 if is_p2 else 18.0
+	var p_pos: Vector3 = target_player.global_position if (target_player != null and is_instance_valid(target_player)) else global_position
+	var arena_c: Vector3 = global_position
+	if boss_director != null and boss_director.has_method("get_arena_center"):
+		arena_c = boss_director.call("get_arena_center")
+	var base_a: float = _bob_phase
+	var z0_pos := Vector3(p_pos.x + cos(base_a) * 1.8, 0.0, p_pos.z + sin(base_a) * 1.8)
+	_rpc_enemy_clock_sector(z0_pos, radius_z, base_a + 0.85, safe_half_w, dmg, tel_s, Color(0.56, 0.28, 0.96), 0.35)
+	var away_dir := Vector3(arena_c.x - z0_pos.x, 0.0, arena_c.z - z0_pos.z)
+	var away_ang: float = atan2(away_dir.z, away_dir.x) if away_dir.length_squared() > 0.25 else (base_a + PI)
+	for z_i in range(1, count_z):
+		var spread_a: float = away_ang + (0.0 if count_z == 2 else (-0.72 if z_i == 1 else 0.72))
+		var z_pos := Vector3(arena_c.x + cos(spread_a) * 9.2, 0.0, arena_c.z + sin(spread_a) * 9.2)
+		_rpc_enemy_clock_sector(z_pos, radius_z, spread_a + float(z_i) * 1.1, safe_half_w, dmg, tel_s, Color(0.56, 0.28, 0.96), 0.25)
+	if boss_director != null and boss_director.has_method("notify_multi_clock_cast"):
+		boss_director.call("notify_multi_clock_cast", tel_s)
 
 
 func _launch_chronomancer_starfall(target_player: Node3D, is_p2: bool) -> void:
@@ -2014,7 +2089,7 @@ func _on_health_changed(current_hp: float, max_hp: float) -> void:
 	var ratio: float = clampf(current_hp / maxf(1.0, max_hp), 0.0, 1.0)
 	if _hp_bar_mat:
 		_hp_bar_mat.set_shader_parameter("fill_ratio", ratio)
-	if current_hp < max_hp and current_hp > 0.0 and _burrow_state != 1:
+	if not _should_hide_overhead_hp() and current_hp < max_hp and current_hp > 0.0 and _burrow_state != 1:
 		hp_bar_root.visible = true
 
 	if _biome_trait_id == 2 and not _biome_special_used and not _is_dying and _is_active_unit and current_hp > 0.0 and current_hp <= max_hp * 0.50:
@@ -2039,7 +2114,7 @@ func _on_armor_changed(cur_arm: float, max_arm: float) -> void:
 	if _hp_bar_mat:
 		var a_ratio: float = clampf(cur_arm / maxf(1.0, max_arm), 0.0, 1.0) if cur_arm > 0.01 else 0.0
 		_hp_bar_mat.set_shader_parameter("armor_ratio", a_ratio)
-	if hp_bar_root and _burrow_state != 1 and cur_arm > 0.01:
+	if hp_bar_root and not _should_hide_overhead_hp() and _burrow_state != 1 and cur_arm > 0.01:
 		hp_bar_root.visible = true
 	_refresh_ward_shell()
 

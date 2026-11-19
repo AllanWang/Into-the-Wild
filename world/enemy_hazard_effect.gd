@@ -14,7 +14,8 @@ enum HazardMode {
 	GROUND_QUAKE = 2,
 	DONUT_AFTERSHOCK = 3,
 	SNIPER_SIGHTLINE = 4,
-	CLOCK_SECTOR = 5
+	CLOCK_SECTOR = 5,
+	CLOCK_SAFE_CIRCLE = 6
 }
 
 const HAZARD_SHADER: Shader = preload("res://shaders/EnemyHazard.gdshader")
@@ -42,6 +43,8 @@ var _tick_timer: float = 0.0
 var _shake_amount: float = 0.0
 var _safe_angle: float = 0.0
 var _safe_half_width: float = 0.567
+var _safe_world_pos: Vector3 = Vector3.ZERO
+var _safe_world_radius: float = 4.2
 var _is_lance_orb: bool = false
 
 var outer_ring: MeshInstance3D = null
@@ -414,6 +417,73 @@ func activate_clock_sector(
 	set_process(true)
 
 
+func activate_clock_safe_circle(
+	p_center: Vector3,
+	p_radius: float,
+	p_safe_pos: Vector3,
+	p_safe_radius: float,
+	p_damage: float,
+	p_telegraph_s: float,
+	p_color: Color,
+	p_shake: float,
+	p_players_root: Node3D
+) -> void:
+	_ensure_nodes()
+	_mode = HazardMode.CLOCK_SAFE_CIRCLE
+	_players_root = p_players_root
+	_origin_pos = p_center
+	_target_pos = Vector3(p_center.x, 0.045, p_center.z)
+	_radius = maxf(6.0, p_radius)
+	_inner_radius = 0.0
+	_safe_world_pos = Vector3(p_safe_pos.x, 0.0, p_safe_pos.z)
+	_safe_world_radius = clampf(p_safe_radius, 1.8, _radius * 0.45)
+	_damage = p_damage
+	_telegraph_time = maxf(0.5, p_telegraph_s)
+	_active_duration = 0.42
+	_shake_amount = p_shake
+	_elapsed = 0.0
+	_detonated = false
+	_tick_timer = 0.0
+	_active = true
+
+	rotation = Vector3.ZERO
+	scale = Vector3.ONE
+	beam_mesh.visible = false
+	outer_ring.visible = false
+	inner_ring.visible = false
+	orb_mesh.visible = false
+	spike_ring_root.visible = false
+	spike_ring_root.rotation = Vector3.ZERO
+
+	var rel_uv := Vector2(
+		(_safe_world_pos.x - p_center.x) / _radius,
+		(_safe_world_pos.z - p_center.z) / _radius
+	)
+	_hazard_mat.set_shader_parameter("hazard_color", p_color)
+	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.16, 0.28, 1.0))
+	_hazard_mat.set_shader_parameter("inner_ratio", 0.0)
+	_hazard_mat.set_shader_parameter("progress", 0.0)
+	_hazard_mat.set_shader_parameter("hazard_stage", 5)
+	_hazard_mat.set_shader_parameter("fade_out", 1.0)
+	_hazard_mat.set_shader_parameter("safe_center_uv", rel_uv)
+	_hazard_mat.set_shader_parameter("safe_radius_uv", clampf(_safe_world_radius / _radius, 0.05, 0.45))
+
+	fill_disc.visible = true
+	fill_disc.scale = Vector3(_radius, 1.0, _radius)
+	_orb_mat.albedo_color = Color(1.0, 0.88, 0.42, 1.0)
+
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	if is_inside_tree():
+		global_position = _target_pos
+		reset_physics_interpolation()
+	else:
+		position = _target_pos
+
+	visible = true
+	set_physics_process(false)
+	set_process(true)
+
+
 func _layout_spike_ring() -> void:
 	if _spike_meshes.is_empty():
 		return
@@ -551,14 +621,14 @@ func _process(delta: float) -> void:
 				if fade_d >= 1.0:
 					deactivate()
 
-		HazardMode.CLOCK_SECTOR:
+		HazardMode.CLOCK_SECTOR, HazardMode.CLOCK_SAFE_CIRCLE:
 			if not _detonated:
 				var tc: float = clampf(_elapsed / _telegraph_time, 0.0, 1.0)
 				_hazard_mat.set_shader_parameter("progress", tc)
 				if _elapsed >= _telegraph_time:
 					_detonated = true
 					_hazard_mat.set_shader_parameter("progress", 1.0)
-					_damage_players_outside_safe_sector()
+					_damage_players_outside_safe_zone(_mode == HazardMode.CLOCK_SAFE_CIRCLE)
 					if _shake_amount > 0.01 and is_inside_tree():
 						get_tree().call_group("world_camera_shake", "add_camera_shake", _shake_amount)
 			else:
@@ -637,10 +707,12 @@ func _damage_players_in_band(min_r: float, max_r: float, dmg: float) -> void:
 			p3d.call("try_apply_contact_damage", dmg, k_dir)
 
 
-func _damage_players_outside_safe_sector() -> void:
+func _damage_players_outside_safe_zone(use_circle: bool) -> void:
 	if _damage <= 0.0 or _players_root == null or not is_instance_valid(_players_root):
 		return
-	var max_r2: float = (_radius + 0.35) * (_radius + 0.35)
+	var outer_margin: float = 0.50 if use_circle else 0.35
+	var max_r2: float = (_radius + outer_margin) * (_radius + outer_margin)
+	var safe_r2: float = (_safe_world_radius + 0.28) * (_safe_world_radius + 0.28)
 	var count: int = _players_root.get_child_count()
 	for i in range(count):
 		var p3d: Node3D = _players_root.get_child(i) as Node3D
@@ -651,10 +723,16 @@ func _damage_players_outside_safe_sector() -> void:
 		var d2: float = dx * dx + dz * dz
 		if d2 > max_r2:
 			continue
-		var p_ang: float = atan2(dz, dx)
-		var ang_diff: float = absf(wrapf(p_ang - _safe_angle, -PI, PI))
-		if ang_diff <= _safe_half_width:
-			continue
+		if use_circle:
+			var s_dx: float = p3d.global_position.x - _safe_world_pos.x
+			var s_dz: float = p3d.global_position.z - _safe_world_pos.z
+			if (s_dx * s_dx + s_dz * s_dz) <= safe_r2:
+				continue
+		else:
+			var p_ang: float = atan2(dz, dx)
+			var ang_diff: float = absf(wrapf(p_ang - _safe_angle, -PI, PI))
+			if ang_diff <= _safe_half_width:
+				continue
 		if p3d.has_method("try_apply_contact_damage"):
 			var k_dir: Vector3 = Vector3(dx, 0.0, dz).normalized() if d2 > 0.001 else Vector3.FORWARD
 			p3d.call("try_apply_contact_damage", _damage, k_dir)

@@ -14,9 +14,9 @@ enum ArchetypeId {
 	MIRE_LOBBER = 5,     ## Standoff emerald castor with overhead swelling toxic mortar sac
 	OCULAR_SNIPER = 6,   ## Long-range alabaster-gold marksman with spinning front scope monocle
 	BOSS = 7,            ## Tectonic Sovereign — double-quake rings, bull-rush pillar/wall stun & seismic cross
-	BOSS_BLIGHTWEAVER = 8, ## Blightweaver Core — acidic rain, warded conduit phase & plague spiral
+	BOSS_BLIGHTWEAVER = 8, ## Briarbloom Matriarch — plant vine-spawner pillars, swarmer hordes & spore blooms
 	BOSS_CRYO_ARCHON = 9,  ## Cryo-Archon Valkyrie — glacial dash-slashes, rime lances & whiteout blizzard eye
-	BOSS_CHRONOMANCER = 10 ## Astral Chronomancer — predictive starfall, temporal supernova & clockwork spiral
+	BOSS_CHRONOMANCER = 10 ## Astral Chronomancer — multi-clock zones & full-field Hades-Chronos shifting safe zones
 }
 
 @export var archetype_id: ArchetypeId = ArchetypeId.CHASER
@@ -29,7 +29,7 @@ enum ArchetypeId {
 @export var can_lunge: bool = false
 @export var accent_color: Color = Color(1.0, 0.4, 0.5, 1.0)
 
-var body_material: StandardMaterial3D = null
+var body_material: Material = null
 var trim_material: StandardMaterial3D = null
 var body_shape: SphereShape3D = null
 var hurtbox_shape: SphereShape3D = null
@@ -52,6 +52,10 @@ static var _impervious_shell_mat: StandardMaterial3D = null
 static var _status_poison_mat: StandardMaterial3D = null
 static var _status_burn_mat: StandardMaterial3D = null
 static var _status_frost_mat: StandardMaterial3D = null
+static var _vine_swarmer_mat: StandardMaterial3D = null
+static var _petal_mesh: BoxMesh = null
+static var _petal_mat: StandardMaterial3D = null
+static var _bloom_core_mat: StandardMaterial3D = null
 static var _hp_bar_material: ShaderMaterial = null
 static var _hp_quad_mesh: QuadMesh = null
 static var _contact_shadow_mesh: PlaneMesh = null
@@ -72,7 +76,7 @@ static func get_boss_epithet(id: int) -> String:
 		ArchetypeId.BOSS:
 			return "Magma Earthshaker"
 		ArchetypeId.BOSS_BLIGHTWEAVER:
-			return "Verdant Broodmother"
+			return "Verdant Thornlord"
 		ArchetypeId.BOSS_CRYO_ARCHON:
 			return "Rimeblade Sovereign"
 		ArchetypeId.BOSS_CHRONOMANCER:
@@ -87,14 +91,14 @@ static func _ensure_cache() -> void:
 	_unit_sphere_mesh = SphereMesh.new()
 	_unit_sphere_mesh.radius = 1.0
 	_unit_sphere_mesh.height = 2.0
-	_unit_sphere_mesh.radial_segments = 20
-	_unit_sphere_mesh.rings = 12
+	_unit_sphere_mesh.radial_segments = 36
+	_unit_sphere_mesh.rings = 22
 
 	_trim_ring_mesh = TorusMesh.new()
-	_trim_ring_mesh.inner_radius = 1.18
-	_trim_ring_mesh.outer_radius = 1.32
-	_trim_ring_mesh.rings = 24
-	_trim_ring_mesh.ring_segments = 8
+	_trim_ring_mesh.inner_radius = 1.22
+	_trim_ring_mesh.outer_radius = 1.30
+	_trim_ring_mesh.rings = 48
+	_trim_ring_mesh.ring_segments = 14
 
 	_burrow_ring_mesh = TorusMesh.new()
 	_burrow_ring_mesh.inner_radius = 0.72
@@ -117,14 +121,14 @@ static func _ensure_cache() -> void:
 	_scope_ring_mesh = TorusMesh.new()
 	_scope_ring_mesh.inner_radius = 0.42
 	_scope_ring_mesh.outer_radius = 0.54
-	_scope_ring_mesh.rings = 18
-	_scope_ring_mesh.ring_segments = 6
+	_scope_ring_mesh.rings = 36
+	_scope_ring_mesh.ring_segments = 12
 
 	_sac_orb_mesh = SphereMesh.new()
 	_sac_orb_mesh.radius = 0.46
 	_sac_orb_mesh.height = 0.92
-	_sac_orb_mesh.radial_segments = 12
-	_sac_orb_mesh.rings = 8
+	_sac_orb_mesh.radial_segments = 24
+	_sac_orb_mesh.rings = 14
 
 	_hit_flash_material = StandardMaterial3D.new()
 	_hit_flash_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -145,6 +149,12 @@ static func _ensure_cache() -> void:
 	_status_poison_mat = _make_status_mat(Color(0.32, 0.90, 0.44), Color(0.10, 0.45, 0.16))
 	_status_burn_mat = _make_status_mat(Color(1.0, 0.46, 0.14), Color(0.58, 0.16, 0.02))
 	_status_frost_mat = _make_status_mat(Color(0.46, 0.88, 1.0), Color(0.12, 0.38, 0.54))
+	_vine_swarmer_mat = _make_status_mat(Color(0.24, 0.84, 0.34), Color(0.08, 0.40, 0.12))
+
+	_petal_mesh = BoxMesh.new()
+	_petal_mesh.size = Vector3(0.46, 0.10, 0.92)
+	_petal_mat = _make_status_mat(Color(0.24, 0.78, 0.32), Color(0.08, 0.36, 0.14))
+	_bloom_core_mat = _make_status_mat(Color(0.96, 0.92, 0.30), Color(0.55, 0.46, 0.08), 1.0)
 
 	_hp_bar_material = ShaderMaterial.new()
 	_hp_bar_material.shader = OVERHEAD_BAR_SHADER
@@ -203,9 +213,9 @@ static func _ensure_cache() -> void:
 		Color(0.88, 0.24, 0.22), Color(0.48, 0.10, 0.06), Color(1.0, 0.72, 0.24)
 	)
 	_cache[ArchetypeId.BOSS_BLIGHTWEAVER] = _build_entry(
-		ArchetypeId.BOSS_BLIGHTWEAVER, "Blightweaver Core",
+		ArchetypeId.BOSS_BLIGHTWEAVER, "Briarbloom Matriarch",
 		1.04, 720.0, 13.0, 3.2, 15.0, false,
-		Color(0.24, 0.76, 0.44), Color(0.08, 0.36, 0.18), Color(0.78, 1.0, 0.44)
+		Color(0.18, 0.58, 0.28), Color(0.06, 0.28, 0.10), Color(0.76, 0.98, 0.34)
 	)
 	_cache[ArchetypeId.BOSS_CRYO_ARCHON] = _build_entry(
 		ArchetypeId.BOSS_CRYO_ARCHON, "Cryo-Archon Valkyrie",
@@ -215,11 +225,21 @@ static func _ensure_cache() -> void:
 	_cache[ArchetypeId.BOSS_CHRONOMANCER] = _build_entry(
 		ArchetypeId.BOSS_CHRONOMANCER, "Astral Chronomancer",
 		1.04, 740.0, 13.0, 3.2, 15.0, false,
-		Color(0.28, 0.22, 0.72), Color(0.14, 0.10, 0.46), Color(1.0, 0.86, 0.38)
+		Color(0.22, 0.19, 0.62), Color(0.10, 0.08, 0.34), Color(1.0, 0.86, 0.38)
 	)
+	var chrono_entry: EnemyArchetypeData = _cache[ArchetypeId.BOSS_CHRONOMANCER]
+	var chrono_trim := StandardMaterial3D.new()
+	chrono_trim.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	chrono_trim.specular_mode = BaseMaterial3D.SPECULAR_TOON
+	chrono_trim.albedo_color = Color(1.0, 0.86, 0.44)
+	chrono_trim.roughness = 0.25
+	chrono_trim.emission_enabled = true
+	chrono_trim.emission = Color(0.95, 0.74, 0.26)
+	chrono_trim.emission_energy_multiplier = 0.85
+	chrono_entry.trim_material = chrono_trim
 
 
-static func _make_status_mat(albedo: Color, emission: Color) -> StandardMaterial3D:
+static func _make_status_mat(albedo: Color, emission: Color, emit_energy: float = 0.95) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
 	mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
@@ -227,7 +247,7 @@ static func _make_status_mat(albedo: Color, emission: Color) -> StandardMaterial
 	mat.roughness = 0.32
 	mat.emission_enabled = true
 	mat.emission = emission
-	mat.emission_energy_multiplier = 0.95
+	mat.emission_energy_multiplier = emit_energy
 	return mat
 
 
@@ -365,6 +385,26 @@ static func get_status_burn_material() -> StandardMaterial3D:
 static func get_status_frost_material() -> StandardMaterial3D:
 	_ensure_cache()
 	return _status_frost_mat
+
+
+static func get_vine_swarmer_material() -> StandardMaterial3D:
+	_ensure_cache()
+	return _vine_swarmer_mat
+
+
+static func get_petal_mesh() -> BoxMesh:
+	_ensure_cache()
+	return _petal_mesh
+
+
+static func get_petal_material() -> StandardMaterial3D:
+	_ensure_cache()
+	return _petal_mat
+
+
+static func get_bloom_core_material() -> StandardMaterial3D:
+	_ensure_cache()
+	return _bloom_core_mat
 
 
 static func get_contact_shadow_mesh() -> PlaneMesh:

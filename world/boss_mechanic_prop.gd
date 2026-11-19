@@ -3,17 +3,15 @@ extends StaticBody3D
 
 ## Interactive 3D Boss Arena Prop supporting:
 ## - BASALT_PILLAR: Solid destructible lava pillar (shatters boss Monolith Armor on Bull-Rush impact)
-## - BLIGHT_CONDUIT: Tethered emerald spire keeping Blightweaver Impervious until destroyed
+## - VINE_SPAWNER: Coiled briar vine pillar spawning verdant swarmers while Briarbloom Matriarch stays impervious
 ## - SPORE_SAC: Swelling toxic pod that pops harmlessly if focused or erupts room-wide at 4.5s
 ## - ICE_OBELISK: Solid crystalline pillar casting a safe Whiteout shelter shadow & shattering on Lance/Dash
-## - STAR_BEACON: Floating golden astrolabe ring (stand inside 1.1s OR shoot down to cancel Time Rewind)
 
 enum PropKind {
 	BASALT_PILLAR = 0,
-	BLIGHT_CONDUIT = 1,
+	VINE_SPAWNER = 1,
 	SPORE_SAC = 2,
-	ICE_OBELISK = 3,
-	STAR_BEACON = 4
+	ICE_OBELISK = 3
 }
 
 const HazardScript = preload("res://world/enemy_hazard_effect.gd")
@@ -24,6 +22,7 @@ signal prop_destroyed(prop: BossMechanicProp, was_player_cleared: bool)
 signal pillar_impacted(prop: BossMechanicProp, shattered: bool)
 signal obelisk_shattered(prop: BossMechanicProp, world_pos: Vector3)
 signal spore_detonated(prop: BossMechanicProp, world_pos: Vector3)
+signal vine_spawn_requested(prop: BossMechanicProp, world_pos: Vector3)
 
 var prop_kind: int = PropKind.BASALT_PILLAR
 var anchor_index: int = -1
@@ -36,12 +35,10 @@ var _elapsed: float = 0.0
 var _durability: int = 2
 var _max_durability: int = 2
 
-# Conduit / Spore / Beacon gameplay timers
+# Vine / Spore gameplay timers
 var _ability_timer: float = 2.0
 var _fuse_timer: float = 0.0
 var _fuse_duration: float = 4.5
-var _capture_progress: float = 0.0
-var _capture_duration: float = 1.1
 var _hit_flash_timer: float = 0.0
 
 # Components
@@ -54,7 +51,7 @@ var _hurt_col: CollisionShape3D = null
 var _visual_root: Node3D = null
 var _main_mesh: MeshInstance3D = null
 var _accent_mesh: MeshInstance3D = null
-var _tether_mesh: MeshInstance3D = null
+var _vine_cluster_root: Node3D = null
 var _ring_disc: MeshInstance3D = null
 var _shelter_pivot: Node3D = null
 var _shelter_mesh: MeshInstance3D = null
@@ -66,10 +63,11 @@ var _main_mat_normal: StandardMaterial3D = null
 
 static var _mesh_hex_pillar: CylinderMesh = null
 static var _mesh_ice_spire: CylinderMesh = null
-static var _mesh_conduit: CylinderMesh = null
+static var _mesh_vine_mound: CylinderMesh = null
+static var _mesh_vine_stalk: CylinderMesh = null
+static var _mesh_vine_leaf: BoxMesh = null
 static var _mesh_sac: SphereMesh = null
 static var _mesh_torus_band: TorusMesh = null
-static var _mesh_tether_beam: BoxMesh = null
 static var _mesh_floor_plane: PlaneMesh = null
 static var _mesh_shelter_plane: PlaneMesh = null
 static var _mesh_hp_quad: QuadMesh = null
@@ -77,13 +75,13 @@ static var _mesh_hp_quad: QuadMesh = null
 static var _mat_basalt: StandardMaterial3D = null
 static var _mat_basalt_cracked: StandardMaterial3D = null
 static var _mat_magma_glow: StandardMaterial3D = null
-static var _mat_conduit: StandardMaterial3D = null
-static var _mat_tether: StandardMaterial3D = null
+static var _mat_vine_bark: StandardMaterial3D = null
+static var _mat_vine_leaf: StandardMaterial3D = null
+static var _mat_vine_bud: StandardMaterial3D = null
 static var _mat_spore: StandardMaterial3D = null
 static var _mat_ice: StandardMaterial3D = null
 static var _mat_ice_core: StandardMaterial3D = null
 static var _mat_shelter: StandardMaterial3D = null
-static var _mat_beacon: StandardMaterial3D = null
 static var _mat_hit_flash: StandardMaterial3D = null
 static var _base_hp_bar_mat: ShaderMaterial = null
 
@@ -104,11 +102,20 @@ static func _ensure_shared() -> void:
 	_mesh_ice_spire.height = 3.3
 	_mesh_ice_spire.radial_segments = 5
 
-	_mesh_conduit = CylinderMesh.new()
-	_mesh_conduit.top_radius = 0.18
-	_mesh_conduit.bottom_radius = 0.68
-	_mesh_conduit.height = 2.4
-	_mesh_conduit.radial_segments = 6
+	_mesh_vine_mound = CylinderMesh.new()
+	_mesh_vine_mound.top_radius = 0.54
+	_mesh_vine_mound.bottom_radius = 1.18
+	_mesh_vine_mound.height = 0.52
+	_mesh_vine_mound.radial_segments = 8
+
+	_mesh_vine_stalk = CylinderMesh.new()
+	_mesh_vine_stalk.top_radius = 0.28
+	_mesh_vine_stalk.bottom_radius = 0.54
+	_mesh_vine_stalk.height = 2.75
+	_mesh_vine_stalk.radial_segments = 7
+
+	_mesh_vine_leaf = BoxMesh.new()
+	_mesh_vine_leaf.size = Vector3(0.96, 0.08, 0.36)
 
 	_mesh_sac = SphereMesh.new()
 	_mesh_sac.radius = 0.65
@@ -122,9 +129,6 @@ static func _ensure_shared() -> void:
 	_mesh_torus_band.rings = 18
 	_mesh_torus_band.ring_segments = 6
 
-	_mesh_tether_beam = BoxMesh.new()
-	_mesh_tether_beam.size = Vector3(0.16, 0.16, 1.0)
-
 	_mesh_floor_plane = PlaneMesh.new()
 	_mesh_floor_plane.size = Vector2(2.0, 2.0)
 
@@ -137,13 +141,13 @@ static func _ensure_shared() -> void:
 	_mat_basalt = _make_toon_mat(Color(0.20, 0.17, 0.21), Color(0.28, 0.10, 0.04), 0.55)
 	_mat_basalt_cracked = _make_toon_mat(Color(0.32, 0.18, 0.16), Color(0.95, 0.36, 0.08), 1.35)
 	_mat_magma_glow = _make_unshaded_mat(Color(1.0, 0.56, 0.16, 0.95), false)
-	_mat_conduit = _make_toon_mat(Color(0.26, 0.86, 0.46), Color(0.18, 0.54, 0.24), 1.05)
-	_mat_tether = _make_unshaded_mat(Color(0.40, 1.0, 0.58, 0.82), true)
+	_mat_vine_bark = _make_toon_mat(Color(0.14, 0.44, 0.18), Color(0.05, 0.22, 0.08), 0.65)
+	_mat_vine_leaf = _make_toon_mat(Color(0.28, 0.80, 0.32), Color(0.10, 0.38, 0.14), 0.85)
+	_mat_vine_bud = _make_toon_mat(Color(0.84, 1.0, 0.30), Color(0.46, 0.72, 0.10), 1.15)
 	_mat_spore = _make_toon_mat(Color(0.48, 0.94, 0.34), Color(0.26, 0.55, 0.12), 1.15)
 	_mat_ice = _make_toon_mat(Color(0.68, 0.94, 1.0), Color(0.18, 0.54, 0.78), 0.90)
 	_mat_ice_core = _make_unshaded_mat(Color(0.56, 0.94, 1.0, 0.92), false)
 	_mat_shelter = _make_unshaded_mat(Color(0.14, 0.82, 0.98, 0.34), true)
-	_mat_beacon = _make_unshaded_mat(Color(1.0, 0.86, 0.38, 0.96), false)
 	_mat_hit_flash = _make_unshaded_mat(Color(1.0, 0.98, 0.92, 1.0), false)
 
 	_base_hp_bar_mat = ShaderMaterial.new()
@@ -227,13 +231,49 @@ func _ensure_nodes() -> void:
 	_accent_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_visual_root.add_child(_accent_mesh)
 
-	_tether_mesh = MeshInstance3D.new()
-	_tether_mesh.name = "TetherBeam"
-	_tether_mesh.mesh = _mesh_tether_beam
-	_tether_mesh.material_override = _mat_tether
-	_tether_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_tether_mesh.visible = false
-	add_child(_tether_mesh)
+	_vine_cluster_root = Node3D.new()
+	_vine_cluster_root.name = "VineClusterRoot"
+	_vine_cluster_root.visible = false
+	_visual_root.add_child(_vine_cluster_root)
+
+	var mound := MeshInstance3D.new()
+	mound.name = "VineMound"
+	mound.mesh = _mesh_vine_mound
+	mound.material_override = _mat_vine_bark
+	mound.position = Vector3(0.0, 0.26, 0.0)
+	mound.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_vine_cluster_root.add_child(mound)
+
+	var coil_heights: Array[float] = [0.80, 1.50, 2.20]
+	var coil_scales: Array[float] = [0.58, 0.50, 0.42]
+	var coil_rots: Array[Vector3] = [Vector3(28.0, 0.0, -24.0), Vector3(-26.0, 40.0, 22.0), Vector3(24.0, -35.0, -20.0)]
+	for c_i in range(3):
+		var coil := MeshInstance3D.new()
+		coil.name = "VineCoil_%d" % c_i
+		coil.mesh = _mesh_torus_band
+		coil.material_override = _mat_vine_leaf
+		coil.position = Vector3(0.0, coil_heights[c_i], 0.0)
+		coil.scale = Vector3.ONE * coil_scales[c_i]
+		coil.rotation_degrees = coil_rots[c_i]
+		coil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_vine_cluster_root.add_child(coil)
+
+	for l_i in range(4):
+		var l_ang: float = float(l_i) * (TAU / 4.0) + 0.4
+		var l_piv := Node3D.new()
+		l_piv.name = "VineLeafPivot_%d" % l_i
+		l_piv.position = Vector3(0.0, 1.10 if (l_i % 2 == 0) else 1.95, 0.0)
+		l_piv.rotation = Vector3(0.0, l_ang, 0.0)
+		_vine_cluster_root.add_child(l_piv)
+
+		var leaf := MeshInstance3D.new()
+		leaf.name = "VineLeaf_%d" % l_i
+		leaf.mesh = _mesh_vine_leaf
+		leaf.material_override = _mat_vine_leaf
+		leaf.position = Vector3(0.0, 0.08, 0.62)
+		leaf.rotation_degrees = Vector3(-26.0, 0.0, 0.0)
+		leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		l_piv.add_child(leaf)
 
 	_ring_mat = ShaderMaterial.new()
 	_ring_mat.shader = HAZARD_SHADER
@@ -296,15 +336,14 @@ func configure(
 	_is_cleaned_up = false
 	_elapsed = 0.0
 	_hit_flash_timer = 0.0
-	_capture_progress = 0.0
 	_fuse_timer = 0.0
-	_ability_timer = 2.0 + float(maxi(0, p_anchor_idx) % 3) * 0.85
+	_ability_timer = 1.8 + float(maxi(0, p_anchor_idx) % 4) * 0.75
 
 	global_position = Vector3(p_pos.x, 0.0, p_pos.z)
 	if is_inside_tree():
 		reset_physics_interpolation()
 
-	_tether_mesh.visible = false
+	_vine_cluster_root.visible = false
 	_ring_disc.visible = false
 	_shelter_pivot.visible = false
 	_hp_bar_root.visible = false
@@ -337,29 +376,34 @@ func configure(
 			_accent_mesh.scale = Vector3(1.06, 1.0, 1.06)
 			_accent_mesh.visible = true
 
-		PropKind.BLIGHT_CONDUIT:
+		PropKind.VINE_SPAWNER:
 			is_targetable = true
 			collision_layer = 4
-			body_cyl.radius = 0.72
-			body_cyl.height = 2.4
-			_body_col.position = Vector3(0.0, 1.2, 0.0)
+			body_cyl.radius = 0.86
+			body_cyl.height = 2.8
+			_body_col.position = Vector3(0.0, 1.4, 0.0)
 			_body_col.set_deferred("disabled", false)
-			hurt_cyl.radius = 0.90
-			hurt_cyl.height = 2.5
-			_hurt_col.position = Vector3(0.0, 1.25, 0.0)
-			_main_mesh.mesh = _mesh_conduit
-			_main_mesh.position = Vector3(0.0, 1.2, 0.0)
+			hurt_cyl.radius = 1.05
+			hurt_cyl.height = 2.9
+			_hurt_col.position = Vector3(0.0, 1.45, 0.0)
+			_main_mesh.mesh = _mesh_vine_stalk
+			_main_mesh.position = Vector3(0.0, 1.38, 0.0)
 			_main_mesh.scale = Vector3.ONE
-			_main_mat_normal = _mat_conduit
-			_main_mesh.material_override = _mat_conduit
+			_main_mat_normal = _mat_vine_bark
+			_main_mesh.material_override = _mat_vine_bark
 			_accent_mesh.mesh = _mesh_sac
-			_accent_mesh.material_override = _mat_tether
-			_accent_mesh.position = Vector3(0.0, 2.35, 0.0)
+			_accent_mesh.material_override = _mat_vine_bud
+			_accent_mesh.position = Vector3(0.0, 2.78, 0.0)
 			_accent_mesh.rotation_degrees = Vector3.ZERO
-			_accent_mesh.scale = Vector3.ONE * 0.45
+			_accent_mesh.scale = Vector3.ONE * 0.46
 			_accent_mesh.visible = true
-			_tether_mesh.visible = (_boss_node != null and is_instance_valid(_boss_node))
-			_hp_bar_root.position = Vector3(0.0, 3.05, 0.0)
+			_vine_cluster_root.visible = true
+			_ring_mat.set_shader_parameter("hazard_color", Color(0.28, 0.94, 0.38, 1.0))
+			_ring_mat.set_shader_parameter("border_danger_color", Color(0.86, 1.0, 0.34, 1.0))
+			_ring_mat.set_shader_parameter("progress", 0.0)
+			_ring_disc.scale = Vector3(2.5, 1.0, 2.5)
+			_ring_disc.visible = true
+			_hp_bar_root.position = Vector3(0.0, 3.45, 0.0)
 
 		PropKind.SPORE_SAC:
 			is_targetable = true
@@ -403,36 +447,6 @@ func configure(
 			_accent_mesh.scale = Vector3(0.76, 1.0, 0.76)
 			_accent_mesh.visible = true
 
-		PropKind.STAR_BEACON:
-			is_targetable = true
-			_capture_duration = 1.1
-			collision_layer = 4
-			body_cyl.radius = 0.72
-			body_cyl.height = 2.6
-			_body_col.position = Vector3(0.0, 1.3, 0.0)
-			_body_col.set_deferred("disabled", false)
-			hurt_cyl.radius = 0.88
-			hurt_cyl.height = 2.6
-			_hurt_col.position = Vector3(0.0, 1.3, 0.0)
-			_main_mesh.mesh = _mesh_conduit
-			_main_mesh.position = Vector3(0.0, 1.25, 0.0)
-			_main_mesh.scale = Vector3(0.85, 0.95, 0.85)
-			_main_mat_normal = _mat_beacon
-			_main_mesh.material_override = _mat_beacon
-			_accent_mesh.mesh = _mesh_torus_band
-			_accent_mesh.material_override = _mat_ice_core
-			_accent_mesh.position = Vector3(0.0, 1.75, 0.0)
-			_accent_mesh.rotation_degrees = Vector3(32.0, 0.0, 22.0)
-			_accent_mesh.scale = Vector3(0.82, 0.82, 0.82)
-			_accent_mesh.visible = true
-			_tether_mesh.visible = (_boss_node != null and is_instance_valid(_boss_node))
-			_ring_mat.set_shader_parameter("hazard_color", Color(1.0, 0.86, 0.34, 1.0))
-			_ring_mat.set_shader_parameter("border_danger_color", Color(0.42, 0.94, 1.0, 1.0))
-			_ring_mat.set_shader_parameter("progress", 0.0)
-			_ring_disc.scale = Vector3(2.75, 1.0, 2.75)
-			_ring_disc.visible = true
-			_hp_bar_root.position = Vector3(0.0, 3.05, 0.0)
-
 	if is_targetable:
 		if not is_in_group("active_enemies"):
 			add_to_group("active_enemies")
@@ -452,9 +466,8 @@ func configure(
 
 func is_targetable_prop() -> bool:
 	return (
-		prop_kind == PropKind.BLIGHT_CONDUIT
+		prop_kind == PropKind.VINE_SPAWNER
 		or prop_kind == PropKind.SPORE_SAC
-		or prop_kind == PropKind.STAR_BEACON
 	)
 
 
@@ -532,32 +545,22 @@ func _process(delta: float) -> void:
 		_visual_root.scale = _visual_root.scale.lerp(Vector3.ONE, clampf(12.0 * delta, 0.0, 1.0))
 
 	match prop_kind:
-		PropKind.BLIGHT_CONDUIT:
-			if _accent_mesh:
-				_accent_mesh.position.y = 2.35 + sin(_elapsed * 4.5) * 0.14
-			_update_tether_to_boss(Vector3(0.0, 2.25, 0.0), Vector3(0.0, 1.05, 0.0))
+		PropKind.VINE_SPAWNER:
+			if _visual_root:
+				var phase_off: float = float(maxi(0, anchor_index)) * 1.1
+				_visual_root.rotation.z = sin(_elapsed * 2.3 + phase_off) * 0.05
+				_visual_root.rotation.x = cos(_elapsed * 1.9 + phase_off) * 0.04
 			_ability_timer -= delta
+			var charge: float = clampf(1.0 - _ability_timer / 4.4, 0.0, 1.0)
+			if _accent_mesh:
+				_accent_mesh.scale = Vector3.ONE * lerpf(0.42, 0.68, charge)
+			if _ring_mat:
+				_ring_mat.set_shader_parameter("progress", charge)
 			if _ability_timer <= 0.0:
-				_ability_timer = 4.0
-				if ProjectilePool and ProjectilePool.has_method("spawn_enemy_ground_hazard") and _players_root != null:
-					var target_pt: Vector3 = global_position
-					var np: Node3D = _find_nearest_player()
-					if np != null:
-						target_pt = np.global_position
-					ProjectilePool.call(
-						"spawn_enemy_ground_hazard",
-						HazardScript.HazardMode.GROUND_QUAKE,
-						global_position,
-						target_pt,
-						2.5,
-						0.0,
-						9.0,
-						1.25,
-						0.28,
-						Color(0.36, 0.96, 0.56),
-						0.12,
-						_players_root
-					)
+				_ability_timer = 4.4
+				if _visual_root:
+					_visual_root.scale = Vector3(1.24, 0.82, 1.24)
+				vine_spawn_requested.emit(self, global_position)
 
 		PropKind.SPORE_SAC:
 			_fuse_timer += delta
@@ -587,56 +590,6 @@ func _process(delta: float) -> void:
 					)
 				spore_detonated.emit(self, pos)
 				_finish_destroy(false)
-
-		PropKind.STAR_BEACON:
-			if _accent_mesh:
-				_accent_mesh.rotation.y += delta * 2.8
-			_update_tether_to_boss(Vector3(0.0, 1.75, 0.0), Vector3(0.0, 1.05, 0.0))
-			if _is_any_player_inside(2.75):
-				_capture_progress = clampf(_capture_progress + delta / maxf(0.2, _capture_duration), 0.0, 1.0)
-				if _ring_mat:
-					_ring_mat.set_shader_parameter("progress", _capture_progress)
-				if _capture_progress >= 1.0:
-					_finish_destroy(true)
-			elif _capture_progress > 0.0:
-				_capture_progress = maxf(0.0, _capture_progress - delta * 0.45)
-				if _ring_mat:
-					_ring_mat.set_shader_parameter("progress", _capture_progress)
-
-
-func _update_tether_to_boss(local_start: Vector3, boss_off: Vector3) -> void:
-	if _tether_mesh == null:
-		return
-	if _boss_node == null or not is_instance_valid(_boss_node) or not _boss_node.visible:
-		_tether_mesh.visible = false
-		return
-	var start_pt: Vector3 = global_position + local_start
-	var end_pt: Vector3 = _boss_node.global_position + boss_off
-	var diff: Vector3 = end_pt - start_pt
-	var len_d: float = diff.length()
-	if len_d < 0.25 or (diff.x * diff.x + diff.z * diff.z) < 0.04:
-		_tether_mesh.visible = false
-		return
-	_tether_mesh.visible = true
-	_tether_mesh.global_position = (start_pt + end_pt) * 0.5
-	_tether_mesh.look_at(end_pt, Vector3.UP)
-	var pulse: float = 0.85 + 0.35 * sin(_elapsed * 12.0)
-	_tether_mesh.scale = Vector3(pulse, pulse, len_d)
-
-
-func _is_any_player_inside(radius: float) -> bool:
-	if _players_root == null or not is_instance_valid(_players_root):
-		return false
-	var r2: float = radius * radius
-	for i in range(_players_root.get_child_count()):
-		var p3d: Node3D = _players_root.get_child(i) as Node3D
-		if p3d == null or not p3d.visible:
-			continue
-		var dx: float = p3d.global_position.x - global_position.x
-		var dz: float = p3d.global_position.z - global_position.z
-		if (dx * dx + dz * dz) <= r2:
-			return true
-	return false
 
 
 func _find_nearest_player() -> Node3D:
