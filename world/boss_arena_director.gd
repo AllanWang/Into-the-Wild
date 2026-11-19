@@ -585,7 +585,7 @@ func _fire_single_vine_slam(
 		aim_dir = Vector3.FORWARD
 	else:
 		aim_dir = aim_dir.normalized()
-	prop.trigger_vine_slam(aim_dir, telegraph_s)
+	prop.trigger_vine_slam(aim_dir, telegraph_s, length, width)
 	if ProjectilePool and ProjectilePool.has_method("spawn_enemy_vine_slam_ribbon") and _players_root != null:
 		ProjectilePool.call(
 			"spawn_enemy_vine_slam_ribbon",
@@ -623,7 +623,7 @@ func _step_vine_slam_attack(delta: float) -> void:
 				if _vine_slam_spawned < _vine_slam_total:
 					_vine_slam_spawn_timer = _vine_slam_spawn_interval
 				else:
-					_vine_slam_finish_timer = 1.55
+					_vine_slam_finish_timer = 1.72
 		else:
 			_vine_slam_finish_timer -= delta
 			if _vine_slam_finish_timer <= 0.0:
@@ -644,7 +644,7 @@ func _step_vine_slam_attack(delta: float) -> void:
 					0.0
 				)
 				_vine_slam_volleys_left -= 1
-				_vine_slam_volley_timer = tel_s + (0.62 if _vine_slam_volleys_left > 0 else 0.58)
+				_vine_slam_volley_timer = tel_s + (0.66 if _vine_slam_volleys_left > 0 else 0.64)
 			else:
 				_finish_vine_slam_attack()
 

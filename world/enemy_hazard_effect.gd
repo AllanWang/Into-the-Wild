@@ -56,8 +56,8 @@ var orb_mesh: MeshInstance3D = null
 var beam_mesh: MeshInstance3D = null
 var spike_ring_root: Node3D = null
 var _spike_meshes: Array[MeshInstance3D] = []
-var whip_pivot: Node3D = null
-var whip_scale_node: Node3D = null
+var ribbon_thorns_root: Node3D = null
+var _ribbon_thorn_meshes: Array[MeshInstance3D] = []
 
 var _ring_mat: StandardMaterial3D = null
 var _hazard_mat: ShaderMaterial = null
@@ -71,10 +71,7 @@ static var _shared_orb: SphereMesh = null
 static var _shared_lance: BoxMesh = null
 static var _shared_beam: BoxMesh = null
 static var _shared_spike_mesh: CylinderMesh = null
-static var _shared_whip_shaft: CylinderMesh = null
-static var _shared_whip_thorn: BoxMesh = null
-static var _shared_whip_bark_mat: StandardMaterial3D = null
-static var _shared_whip_thorn_mat: StandardMaterial3D = null
+static var _shared_edge_thorn_mat: StandardMaterial3D = null
 
 
 static func _ensure_shared() -> void:
@@ -108,27 +105,14 @@ static func _ensure_shared() -> void:
 	_shared_spike_mesh.height = 0.95
 	_shared_spike_mesh.radial_segments = 4
 
-	_shared_whip_shaft = CylinderMesh.new()
-	_shared_whip_shaft.top_radius = 0.08
-	_shared_whip_shaft.bottom_radius = 0.28
-	_shared_whip_shaft.height = 1.0
-	_shared_whip_shaft.radial_segments = 8
-
-	_shared_whip_thorn = BoxMesh.new()
-	_shared_whip_thorn.size = Vector3(0.52, 0.10, 0.24)
-
-	_shared_whip_bark_mat = StandardMaterial3D.new()
-	_shared_whip_bark_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
-	_shared_whip_bark_mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
-	_shared_whip_bark_mat.albedo_color = Color(0.12, 0.48, 0.18)
-	_shared_whip_bark_mat.roughness = 0.35
-	_shared_whip_bark_mat.emission_enabled = true
-	_shared_whip_bark_mat.emission = Color(0.06, 0.26, 0.08)
-	_shared_whip_bark_mat.emission_energy_multiplier = 0.75
-
-	_shared_whip_thorn_mat = StandardMaterial3D.new()
-	_shared_whip_thorn_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_shared_whip_thorn_mat.albedo_color = Color(0.76, 1.0, 0.32, 1.0)
+	_shared_edge_thorn_mat = StandardMaterial3D.new()
+	_shared_edge_thorn_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	_shared_edge_thorn_mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
+	_shared_edge_thorn_mat.albedo_color = Color(0.24, 0.78, 0.34, 0.85)
+	_shared_edge_thorn_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_shared_edge_thorn_mat.emission_enabled = true
+	_shared_edge_thorn_mat.emission = Color(0.75, 0.96, 0.32)
+	_shared_edge_thorn_mat.emission_energy_multiplier = 0.90
 
 
 func _ready() -> void:
@@ -206,33 +190,20 @@ func _ensure_nodes() -> void:
 		spike_ring_root.add_child(sp)
 		_spike_meshes.append(sp)
 
-	whip_pivot = Node3D.new()
-	whip_pivot.name = "WhipPivot"
-	whip_pivot.position = Vector3(0.0, 0.16, 0.0)
-	whip_pivot.visible = false
-	add_child(whip_pivot)
+	ribbon_thorns_root = Node3D.new()
+	ribbon_thorns_root.name = "RibbonThornsRoot"
+	ribbon_thorns_root.visible = false
+	add_child(ribbon_thorns_root)
 
-	whip_scale_node = Node3D.new()
-	whip_scale_node.name = "WhipScaleNode"
-	whip_pivot.add_child(whip_scale_node)
-
-	var shaft := MeshInstance3D.new()
-	shaft.name = "WhipShaft"
-	shaft.mesh = _shared_whip_shaft
-	shaft.material_override = _shared_whip_bark_mat
-	shaft.position = Vector3(0.0, 0.5, 0.0)
-	shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	whip_scale_node.add_child(shaft)
-
-	for t_i in range(5):
-		var thorn := MeshInstance3D.new()
-		thorn.name = "WhipThorn_%d" % t_i
-		thorn.mesh = _shared_whip_thorn
-		thorn.material_override = _shared_whip_thorn_mat
-		thorn.position = Vector3(0.0, 0.18 + float(t_i) * 0.18, 0.0)
-		thorn.rotation_degrees = Vector3(0.0, 35.0 if (t_i % 2 == 0) else -35.0, 0.0)
-		thorn.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		whip_scale_node.add_child(thorn)
+	_ribbon_thorn_meshes.clear()
+	for rt_i in range(10):
+		var rt_mesh := MeshInstance3D.new()
+		rt_mesh.name = "RibbonEdgeThorn_%d" % rt_i
+		rt_mesh.mesh = _shared_spike_mesh
+		rt_mesh.material_override = _shared_edge_thorn_mat
+		rt_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ribbon_thorns_root.add_child(rt_mesh)
+		_ribbon_thorn_meshes.append(rt_mesh)
 
 	_ray_query = PhysicsRayQueryParameters3D.new()
 	_ray_query.collision_mask = 1 # World walls & VineBarriers only
@@ -254,8 +225,8 @@ func deactivate() -> void:
 		fill_disc.position = Vector3.ZERO
 	if spike_ring_root:
 		spike_ring_root.visible = false
-	if whip_pivot:
-		whip_pivot.visible = false
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 
 
 func activate_orb(
@@ -288,8 +259,8 @@ func activate_orb(
 	fill_disc.position = Vector3.ZERO
 	beam_mesh.visible = false
 	spike_ring_root.visible = false
-	if whip_pivot:
-		whip_pivot.visible = false
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 	orb_mesh.visible = true
 	orb_mesh.mesh = (_shared_lance as Mesh) if p_is_lance else (_shared_orb as Mesh)
 	orb_mesh.position = Vector3.ZERO
@@ -332,8 +303,8 @@ func activate_sightline(
 	fill_disc.position = Vector3.ZERO
 	orb_mesh.visible = false
 	spike_ring_root.visible = false
-	if whip_pivot:
-		whip_pivot.visible = false
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 	beam_mesh.visible = true
 	beam_mesh.scale = Vector3(1.0, 1.0, _max_range)
 	beam_mesh.position = Vector3(0.0, 0.32, -_max_range * 0.5)
@@ -390,8 +361,8 @@ func activate_ground_hazard(
 	inner_ring.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
-	if whip_pivot:
-		whip_pivot.visible = false
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 
 	var in_ratio: float = (_inner_radius / _radius) if (_mode == HazardMode.DONUT_AFTERSHOCK and _inner_radius > 0.2) else 0.0
 	_hazard_mat.set_shader_parameter("hazard_color", p_color)
@@ -462,8 +433,8 @@ func activate_clock_sector(
 	orb_mesh.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
-	if whip_pivot:
-		whip_pivot.visible = false
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 
 	_hazard_mat.set_shader_parameter("hazard_color", p_color)
 	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.16, 0.26, 1.0))
@@ -528,8 +499,8 @@ func activate_clock_safe_circle(
 	orb_mesh.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
-	if whip_pivot:
-		whip_pivot.visible = false
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 
 	var rel_uv := Vector2(
 		(_safe_world_pos.x - p_center.x) / _radius,
@@ -596,11 +567,8 @@ func activate_vine_slam_ribbon(
 	beam_mesh.visible = false
 	spike_ring_root.visible = false
 	spike_ring_root.rotation = Vector3.ZERO
-	if whip_pivot:
-		whip_pivot.visible = false
-		whip_pivot.rotation = Vector3.ZERO
-	if whip_scale_node:
-		whip_scale_node.scale = Vector3.ONE
+	if ribbon_thorns_root:
+		ribbon_thorns_root.visible = false
 
 	_hazard_mat.set_shader_parameter("hazard_color", p_color)
 	_hazard_mat.set_shader_parameter("border_danger_color", Color(1.0, 0.16, 0.24, 1.0))
@@ -608,6 +576,15 @@ func activate_vine_slam_ribbon(
 	_hazard_mat.set_shader_parameter("progress", 0.0)
 	_hazard_mat.set_shader_parameter("hazard_stage", 6)
 	_hazard_mat.set_shader_parameter("fade_out", 1.0)
+
+	var edge_off: float = _ribbon_width * 0.44
+	for rt_i in range(_ribbon_thorn_meshes.size()):
+		var rt_mesh: MeshInstance3D = _ribbon_thorn_meshes[rt_i]
+		var along: float = 0.08 + (float(rt_i) / maxf(1.0, float(_ribbon_thorn_meshes.size() - 1))) * 0.86
+		var side_s: float = -1.0 if (rt_i % 2 == 0) else 1.0
+		rt_mesh.position = Vector3(side_s * edge_off, 0.05, -along * _max_range)
+		rt_mesh.rotation = Vector3(-0.22, 0.0, -0.44 * side_s)
+		rt_mesh.scale = Vector3(1.15, 0.08, 1.15)
 
 	fill_disc.visible = true
 	fill_disc.position = Vector3(0.0, 0.0, -_max_range * 0.5)
@@ -788,26 +765,23 @@ func _process(delta: float) -> void:
 					_detonated = true
 					_hazard_mat.set_shader_parameter("hazard_stage", 7)
 					_hazard_mat.set_shader_parameter("progress", 1.0)
-					if whip_pivot and whip_scale_node:
-						whip_pivot.visible = true
-						whip_pivot.rotation.x = -0.55
-						whip_scale_node.scale = Vector3(1.15, _max_range * 0.45, 1.15)
+					if ribbon_thorns_root:
+						ribbon_thorns_root.visible = true
 					_damage_players_in_ribbon()
 					if _shake_amount > 0.01 and is_inside_tree():
 						get_tree().call_group("world_camera_shake", "add_camera_shake", _shake_amount)
 			else:
 				var fade_r: float = clampf((_elapsed - _telegraph_time) / _active_duration, 0.0, 1.0)
 				_hazard_mat.set_shader_parameter("fade_out", 1.0 - fade_r)
-				if whip_pivot and whip_scale_node:
-					if fade_r < 0.22:
-						var slam_t: float = clampf(fade_r / 0.22, 0.0, 1.0)
-						whip_pivot.rotation.x = lerpf(-0.55, -PI * 0.49, slam_t)
-						whip_scale_node.scale = Vector3(1.22, lerpf(_max_range * 0.45, _max_range * 0.96, slam_t), 1.22)
-					else:
-						var recoil_t: float = clampf((fade_r - 0.22) / 0.78, 0.0, 1.0)
-						var thick: float = lerpf(1.22, 0.08, recoil_t)
-						whip_pivot.rotation.x = -PI * 0.49
-						whip_scale_node.scale = Vector3(thick, lerpf(_max_range * 0.96, _max_range * 0.40, recoil_t), thick)
+				if ribbon_thorns_root:
+					var denom_rt: float = maxf(1.0, float(_ribbon_thorn_meshes.size() - 1))
+					for rt_i in range(_ribbon_thorn_meshes.size()):
+						var along: float = float(rt_i) / denom_rt
+						var local_t: float = clampf((fade_r * 2.6) - along * 0.72, 0.0, 1.0)
+						var h_s: float = sin(local_t * PI) * 0.95 * (1.0 - fade_r * 0.55)
+						var rt_mesh: MeshInstance3D = _ribbon_thorn_meshes[rt_i]
+						rt_mesh.scale = Vector3(maxf(0.15, 1.15 * (1.0 - fade_r * 0.65)), maxf(0.04, h_s), maxf(0.15, 1.15 * (1.0 - fade_r * 0.65)))
+						rt_mesh.position.y = 0.42 * h_s
 				if fade_r >= 1.0:
 					deactivate()
 
